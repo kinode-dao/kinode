@@ -19,6 +19,7 @@ function App() {
     <div>
       <Router basename={BASE_URL}>
         <Header />
+        <button onClick={() => window.location.href = `${BASE_URL}/testing`}>Go to Testing</button>
         <Routes>
           <Route path="/testing" element={<Testing />} />
           <Route path={STORE_PATH} element={<StorePage />} />

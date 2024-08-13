@@ -75,17 +75,19 @@ interface chain {
 
     variant chains {
         get-app(package-id),
+        get-apps,
+        get-our-apps,
         start-auto-update(package-id),
         stop-auto-update(package-id),
     }
     
     record on-chain-app {
-        // include package_id? 
+        package-id: package-id,
+        tba: string,
         metadata-uri: string,
         metadata-hash: string,
-        // this might be a thing internally, but could also just be fetched on demand
-        // would negate them becoming outdated
         metadata: option<on-chain-metadata>,
+        auto-update: bool,
     }
 
     record on-chain-metadata {
@@ -109,8 +111,16 @@ interface chain {
         dependencies: option<list<string>>,
     }
 
+    record get-apps-response {
+        apps: list<on-chain-app>,
+    }
+
     record get-app-response {
         app: option<on-chain-app>,
+    }
+
+    record get-our-apps-response {
+        apps: list<on-chain-app>,
     }
 }
 

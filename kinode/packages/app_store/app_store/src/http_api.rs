@@ -1,5 +1,9 @@
 use crate::{
-    kinode::process::downloads::{DownloadRequest, DownloadResponse, Downloads},
+    kinode::process::chain::{
+        Chains, GetAppResponse, GetAppsResponse, GetOurAppsResponse, OnChainApp, OnChainMetadata,
+        OnChainProperties,
+    },
+    kinode::process::downloads::{AvailableFiles, DownloadRequest, DownloadResponse, Downloads},
     kinode::process::main::Error,
     state::{MirrorCheck, PackageState, State},
     Resp,
@@ -8,7 +12,7 @@ use crate::{
 use kinode_process_lib::{
     http::server,
     http::{self, Method, StatusCode},
-    Address, LazyLoadBlob, PackageId, Request,
+    println, Address, LazyLoadBlob, PackageId, Request,
 };
 use kinode_process_lib::{SendError, SendErrorKind};
 use serde_json::json;
@@ -44,7 +48,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         .serve_ui(
             &our,
             "ui",
-            vec!["/", "/app/:id", "/publish", "/downloads/:id"],
+            vec!["/", "/app/:id", "/publish", "/downloads/:id", "/testing"],
             config.clone(),
         )
         .expect("failed to serve static UI");
@@ -238,9 +242,7 @@ fn get_version_hash(url_params: &HashMap<String, String>) -> anyhow::Result<Stri
 }
 
 fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
-    // installed package.
-    // on-chain info combined somewhere else.
-
+    // installed package info
     json!({
         "package": id.package().to_string(),
         "publisher": id.publisher(),
@@ -264,20 +266,14 @@ fn serve_paths(
     match bound_path {
         // GET all apps
         "/apps" => {
-            // TODO COMBINE DOWNLOADED AND INSTALLED
-            if method != Method::GET {
-                return Ok((
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    None,
-                    format!("Invalid method {method} for {bound_path}").into_bytes(),
-                ));
-            }
-            let all: Vec<serde_json::Value> = state
-                .packages
-                .iter()
-                .map(|(package_id, listing)| gen_package_info(package_id, listing))
-                .collect();
-            return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
+            let chain = Address::from_str("our@chain:app_store:sys")?;
+            let resp = Request::new()
+                .target(chain)
+                .body(serde_json::to_vec(&Chains::GetApps)?)
+                .send_and_await_response(5)??;
+            let msg = serde_json::from_slice::<GetAppsResponse>(resp.body())?;
+            println!("apps response: {:?}", msg);
+            Ok((StatusCode::OK, None, resp.body().to_vec()))
         }
         "/downloads" => {
             // get all local downloads!
@@ -287,21 +283,30 @@ fn serve_paths(
                 .body(serde_json::to_vec(&Downloads::GetFiles(None))?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<Resp>(resp.body())?;
+            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
             println!("downlaods response: {:?}", msg);
             // shouldn't really return status code
             Ok((StatusCode::OK, None, resp.body().to_vec()))
         }
         "/installed" => {
-            // TODO format json for UI
-            println!("/installed response: {:?}", state.packages);
-
-            let body = serde_json::to_vec(&state.packages)?;
-            Ok((StatusCode::OK, None, body))
+            let all: Vec<serde_json::Value> = state
+                .packages
+                .iter()
+                .map(|(package_id, listing)| gen_package_info(package_id, listing))
+                .collect();
+            return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
         }
         "/ourapps" => {
-            // TODO, fetch from state
-            Ok((StatusCode::OK, None, vec![]))
+            let chain = Address::from_str("our@chain:app_store:sys")?;
+
+            let resp = Request::new()
+                .target(chain)
+                .body(serde_json::to_vec(&Chains::GetOurApps)?)
+                .send_and_await_response(5)??;
+            let msg = serde_json::from_slice::<GetOurAppsResponse>(resp.body())?;
+            println!("ourapps response: {:?}", msg);
+            // TODO, fetch from chain state!
+            Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?))
         }
         "/downloads/:id" => {
             // get downloads for a specific app
@@ -320,9 +325,8 @@ fn serve_paths(
                 .body(serde_json::to_vec(&Downloads::GetFiles(Some(package_id)))?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<Resp>(resp.body())?;
+            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
             println!("downlaods response: {:?}", msg);
-            // shouldn't really return status code
             Ok((StatusCode::OK, None, resp.body().to_vec()))
         }
         // GET detail about a specific app
@@ -369,7 +373,7 @@ fn serve_paths(
                 )),
             }
         }
-        // PUT /apps/:id/download
+        // POST /apps/:id/download
         // download a listed app from a mirror
         "/apps/:id/download" => {
             let Ok(package_id) = get_package_id(url_params) else {
@@ -415,28 +419,6 @@ fn serve_paths(
             let response: Resp = serde_json::from_slice(&response.body())?;
             println!("got download response: {:?}", response);
             Ok((StatusCode::OK, None, serde_json::to_vec(&response)?))
-        }
-        // POST /apps/:id/update
-        // update a downloaded app
-        "/apps/:id/update" => {
-            let Ok(package_id) = get_package_id(url_params) else {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    format!("Missing id").into_bytes(),
-                ));
-            };
-
-            // TODO send to downloads:
-            // // actually just install something, we go get it from vfs or ask for it from downloads?
-            // yeah this should be obsolete
-            match method {
-                _ => Ok((
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    None,
-                    format!("Invalid method {method} for {bound_path}").into_bytes(),
-                )),
-            }
         }
         // POST /apps/:id/install
         // install a downloaded app

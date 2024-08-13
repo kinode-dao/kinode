@@ -368,7 +368,7 @@ fn format_entries(entries: Vec<DirEntry>) -> Vec<Entry> {
     entries
         .into_iter()
         .filter_map(|entry| {
-            let name = entry.path.split('/').nth(0).unwrap_or_default();
+            let name = entry.path.rsplit('/').next().unwrap_or_default();
             let is_file = entry.file_type == vfs::FileType::File;
             let size = vfs::metadata(&entry.path, None).ok().map(|meta| meta.len);
             Some(Entry {

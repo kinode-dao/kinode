@@ -3,16 +3,21 @@
 //! manages indexing relevant packages and their versions from the kimap.
 //! keeps eth subscriptions open, keeps data updated.
 //!
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
 use crate::kinode::process::chain::{
-    Chains, GetAppResponse, OnChainApp, OnChainMetadata, OnChainProperties,
+    Chains, GetAppResponse, GetAppsResponse, GetOurAppsResponse, OnChainApp, OnChainMetadata,
+    OnChainProperties,
 };
 use crate::kinode::process::main::Error;
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_state, http, kernel_types as kt, kimap,
+    await_message, call_init, eth, get_blob, get_state, http, kernel_types as kt,
+    kimap::{self, namehash},
     print_to_terminal, println, Address, Message, PackageId, Response,
 };
 
@@ -52,8 +57,8 @@ pub struct State {
     pub last_saved_block: u64,
     /// onchain listings
     pub listings: HashMap<PackageId, PackageListing>,
-    // auto-update, maybe... -> means, when you get a new thing on this packge,
-    // tell download to go fetch it, and tell main to go install it
+    /// set of packages that we have published
+    pub published: HashSet<PackageId>,
 }
 
 /// listing information derived from metadata hash in listing event
@@ -83,7 +88,7 @@ fn init(our: Address) {
     let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
 
     let mut state = fetch_state(eth_provider);
-    fetch_and_subscribe_logs(&mut state);
+    fetch_and_subscribe_logs(&our, &mut state);
 
     loop {
         match await_message() {
@@ -122,7 +127,7 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
 
                 if let Ok(eth::EthSub { result, .. }) = eth_result {
                     if let eth::SubscriptionResult::Log(log) = result {
-                        handle_eth_log(state, *log)?;
+                        handle_eth_log(our, state, *log)?;
                     }
                 } else {
                     // attempt to resubscribe
@@ -146,16 +151,47 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
 fn handle_local_request(our: &Address, state: &mut State, chains: Chains) -> anyhow::Result<()> {
     match chains {
         Chains::GetApp(package_id) => {
-            let onchain_app =
-                state
-                    .listings
-                    .get(&package_id.to_process_lib())
-                    .map(|app| OnChainApp {
-                        metadata_uri: app.metadata_uri.clone(),
-                        metadata_hash: app.metadata_hash.clone(),
-                        metadata: app.metadata.as_ref().map(|m| m.clone().into()),
-                    });
+            let onchain_app = state
+                .listings
+                .get(&package_id.clone().to_process_lib())
+                .map(|app| OnChainApp {
+                    package_id: package_id,
+                    tba: app.tba.to_string(),
+                    metadata_uri: app.metadata_uri.clone(),
+                    metadata_hash: app.metadata_hash.clone(),
+                    metadata: app.metadata.as_ref().map(|m| m.clone().into()),
+                    auto_update: app.auto_update,
+                });
             let response = GetAppResponse { app: onchain_app };
+            Response::new()
+                .body(serde_json::to_vec(&response)?)
+                .send()?;
+        }
+        Chains::GetApps => {
+            let apps: Vec<OnChainApp> = state
+                .listings
+                .iter()
+                .map(|(id, listing)| listing.to_onchain_app(id))
+                .collect();
+
+            let response = GetAppsResponse { apps };
+            Response::new()
+                .body(serde_json::to_vec(&response)?)
+                .send()?;
+        }
+        Chains::GetOurApps => {
+            let apps: Vec<OnChainApp> = state
+                .published
+                .iter()
+                .filter_map(|id| {
+                    state
+                        .listings
+                        .get(id)
+                        .map(|listing| listing.to_onchain_app(id))
+                })
+                .collect();
+
+            let response = GetOurAppsResponse { apps };
             Response::new()
                 .body(serde_json::to_vec(&response)?)
                 .send()?;
@@ -179,7 +215,7 @@ fn handle_local_request(our: &Address, state: &mut State, chains: Chains) -> any
     Ok(())
 }
 
-fn handle_eth_log(state: &mut State, log: eth::Log) -> anyhow::Result<()> {
+fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Result<()> {
     let block_number: u64 = log.block_number.ok_or(anyhow::anyhow!("blocknumbaerror"))?;
     let note: kimap::Note =
         kimap::decode_note_log(&log).map_err(|e| anyhow::anyhow!("decodelogerror: {e:?}"))?;
@@ -202,6 +238,7 @@ fn handle_eth_log(state: &mut State, log: eth::Log) -> anyhow::Result<()> {
     //
 
     let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
+    let is_our_package = namehash(&package_id.publisher()) == namehash(&our.node);
 
     let (tba, metadata_hash) = {
         // generate ~metadata-hash full-path
@@ -213,11 +250,20 @@ fn handle_eth_log(state: &mut State, log: eth::Log) -> anyhow::Result<()> {
             anyhow::anyhow!("metadata hash mismatch")
         })?;
 
-        let Some(hash_note) = data else {
-            return Err(anyhow::anyhow!("metadata not found"));
-        };
-
-        (tba, String::from_utf8_lossy(&hash_note).to_string())
+        match data {
+            None => {
+                // if ~metadata-uri is also empty, this is an unpublish action!
+                if metadata_uri.is_empty() {
+                    state.published.remove(&package_id);
+                    if is_our_package {
+                        state.listings.remove(&package_id);
+                    }
+                    return Ok(());
+                }
+                return Err(anyhow::anyhow!("metadata hash not found"));
+            }
+            Some(hash_note) => (tba, String::from_utf8_lossy(&hash_note).to_string()),
+        }
     };
 
     // fetch metadata from the URI (currently only handling HTTP(S) URLs!)
@@ -263,7 +309,7 @@ pub fn app_store_filter(state: &State) -> eth::Filter {
 }
 
 /// create a filter to fetch app store event logs from chain and subscribe to new events
-pub fn fetch_and_subscribe_logs(state: &mut State) {
+pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State) {
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
     // subscribe first so we don't miss any logs
@@ -272,7 +318,7 @@ pub fn fetch_and_subscribe_logs(state: &mut State) {
         &state.kimap.provider,
         &filter.from_block(state.last_saved_block),
     ) {
-        if let Err(e) = handle_eth_log(state, log) {
+        if let Err(e) = handle_eth_log(our, state, log) {
             print_to_terminal(1, &format!("error ingesting log: {e}"));
         };
     }
@@ -346,6 +392,7 @@ pub fn fetch_state(provider: eth::Provider) -> State {
         kimap: kimap::Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
         last_saved_block: 0,
         listings: HashMap::new(),
+        published: HashSet::new(),
     }
 }
 
@@ -363,6 +410,21 @@ impl crate::kinode::process::main::PackageId {
         Self {
             package_name: package_id.package_name,
             publisher_node: package_id.publisher_node,
+        }
+    }
+}
+
+impl PackageListing {
+    pub fn to_onchain_app(&self, package_id: &PackageId) -> OnChainApp {
+        OnChainApp {
+            package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                package_id.clone(),
+            ),
+            tba: self.tba.to_string(),
+            metadata_uri: self.metadata_uri.clone(),
+            metadata_hash: self.metadata_hash.clone(),
+            metadata: self.metadata.as_ref().map(|m| m.clone().into()),
+            auto_update: self.auto_update,
         }
     }
 }
