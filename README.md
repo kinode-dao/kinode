@@ -38,6 +38,10 @@ rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 
+# Install NPM so we can build frontends for "distro" packages.
+# https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
+# If you want to skip this step, run cargo build with the environment variable SKIP_BUILD_FRONTEND=true
+
 # Build the runtime, along with a number of "distro" Wasm modules.
 # The compiled binary will be at `kinode/target/debug/kinode`
 # OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
