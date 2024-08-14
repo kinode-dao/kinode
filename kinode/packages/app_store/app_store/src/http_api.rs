@@ -26,19 +26,21 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
     let config = server::HttpBindingConfig::default();
 
     for path in [
-        "/apps",              // all apps, combination of downloads, installed
-        "/downloads",         // all downloads
-        "/installed",         // all installed apps
-        "/ourapps",           // all apps we've published
-        "/apps/:id",          // detail about a specific app
+        "/apps",          // all on-chain apps
+        "/downloads",     // all downloads
+        "/installed",     // all installed apps
+        "/ourapps",       // all apps we've published
+        "/apps/:id",      // detail about an on-chain app
+        "/downloads/:id", // local downloads for an app
+        "/installed/:id", // detail about an installed app
+        // actions
         "/apps/:id/download", // download a listed app
         "/apps/:id/install",  // install a downloaded app
-        "/apps/:id/update",
-        "/apps/:id/caps",
-        "/apps/:id/mirror",
-        "/apps/:id/auto-update",
-        "/apps/rebuild-index",
-        "/mirrorcheck/:node",
+        // doublecheck initialization here.
+        "/apps/:id/caps",        // get/approve capabilities for a downloaded app
+        "/downloads/:id/mirror", // start mirroring a version of a downloaded app
+        "/apps/:id/auto-update", // set auto-updating a version of a downloaded app
+        "/mirrorcheck/:node",    // check if a node/mirror is online/offline
     ] {
         http_server
             .bind_http_path(path, config.clone())
@@ -48,7 +50,15 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         .serve_ui(
             &our,
             "ui",
-            vec!["/", "/app/:id", "/publish", "/downloads/:id", "/testing"],
+            vec![
+                "/",
+                "/app/:id",
+                "/publish",
+                "/download/:id",
+                "my-downloads",
+                "my-apps",
+                "/testing",
+            ],
             config.clone(),
         )
         .expect("failed to serve static UI");
@@ -275,60 +285,6 @@ fn serve_paths(
             println!("apps response: {:?}", msg);
             Ok((StatusCode::OK, None, resp.body().to_vec()))
         }
-        "/downloads" => {
-            // get all local downloads!
-            let downloads = Address::from_str("our@downloads:app_store:sys")?;
-            let resp = Request::new()
-                .target(downloads)
-                .body(serde_json::to_vec(&Downloads::GetFiles(None))?)
-                .send_and_await_response(5)??;
-
-            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
-            println!("downlaods response: {:?}", msg);
-            // shouldn't really return status code
-            Ok((StatusCode::OK, None, resp.body().to_vec()))
-        }
-        "/installed" => {
-            let all: Vec<serde_json::Value> = state
-                .packages
-                .iter()
-                .map(|(package_id, listing)| gen_package_info(package_id, listing))
-                .collect();
-            return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
-        }
-        "/ourapps" => {
-            let chain = Address::from_str("our@chain:app_store:sys")?;
-
-            let resp = Request::new()
-                .target(chain)
-                .body(serde_json::to_vec(&Chains::GetOurApps)?)
-                .send_and_await_response(5)??;
-            let msg = serde_json::from_slice::<GetOurAppsResponse>(resp.body())?;
-            println!("ourapps response: {:?}", msg);
-            // TODO, fetch from chain state!
-            Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?))
-        }
-        "/downloads/:id" => {
-            // get downloads for a specific app
-            let Ok(package_id) = get_package_id(url_params) else {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    format!("Missing id").into_bytes(),
-                ));
-            };
-            // fix
-            let package_id = crate::kinode::process::main::PackageId::from_process_lib(package_id);
-            let downloads = Address::from_str("our@downloads:app_store:sys")?;
-            let resp = Request::new()
-                .target(downloads)
-                .body(serde_json::to_vec(&Downloads::GetFiles(Some(package_id)))?)
-                .send_and_await_response(5)??;
-
-            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
-            println!("downlaods response: {:?}", msg);
-            Ok((StatusCode::OK, None, resp.body().to_vec()))
-        }
         // GET detail about a specific app
         // update a downloaded app: PUT
         "/apps/:id" => {
@@ -342,20 +298,16 @@ fn serve_paths(
 
             match method {
                 Method::GET => {
-                    let Some(listing) = state.packages.get(&package_id) else {
-                        return Ok((
-                            StatusCode::NOT_FOUND,
-                            None,
-                            format!("App not found: {package_id}").into_bytes(),
-                        ));
-                    };
-                    Ok((
-                        StatusCode::OK,
-                        None,
-                        gen_package_info(&package_id, listing)
-                            .to_string()
-                            .into_bytes(),
-                    ))
+                    let package_id =
+                        crate::kinode::process::main::PackageId::from_process_lib(package_id);
+                    let chain = Address::from_str("our@chain:app_store:sys")?;
+                    let resp = Request::new()
+                        .target(chain)
+                        .body(serde_json::to_vec(&Chains::GetApp(package_id))?)
+                        .send_and_await_response(5)??;
+                    let msg = serde_json::from_slice::<GetAppResponse>(resp.body())?;
+                    println!("apps response: {:?}", msg);
+                    Ok((StatusCode::OK, None, resp.body().to_vec()))
                 }
                 Method::DELETE => {
                     // uninstall an app
@@ -372,6 +324,84 @@ fn serve_paths(
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
+        }
+        "/downloads" => {
+            // get all local downloads!
+            let downloads = Address::from_str("our@downloads:app_store:sys")?;
+            let resp = Request::new()
+                .target(downloads)
+                .body(serde_json::to_vec(&Downloads::GetFiles(None))?)
+                .send_and_await_response(5)??;
+
+            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
+            println!("downlaods response: {:?}", msg);
+            // shouldn't really return status code
+            Ok((StatusCode::OK, None, resp.body().to_vec()))
+        }
+        "/downloads/:id" => {
+            // get all local downloads!
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+            let package_id = crate::kinode::process::main::PackageId::from_process_lib(package_id);
+            let downloads = Address::from_str("our@downloads:app_store:sys")?;
+            let resp = Request::new()
+                .target(downloads)
+                .body(serde_json::to_vec(&Downloads::GetFiles(Some(package_id)))?)
+                .send_and_await_response(5)??;
+
+            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
+            println!("downlaods response: {:?}", msg);
+            // shouldn't really return status code
+            Ok((StatusCode::OK, None, resp.body().to_vec()))
+        }
+        "/installed" => {
+            let all: Vec<serde_json::Value> = state
+                .packages
+                .iter()
+                .map(|(package_id, listing)| gen_package_info(package_id, listing))
+                .collect();
+            return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
+        }
+        "/installed/:id" => {
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+            let specific_package_info = state
+                .packages
+                .get(&package_id)
+                .map(|listing| gen_package_info(&package_id, listing))
+                .ok_or_else(|| {
+                    anyhow::Error::new(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("Package with id {} not found", package_id),
+                    ))
+                })?;
+            return Ok((
+                StatusCode::OK,
+                None,
+                serde_json::to_vec(&specific_package_info)?,
+            ));
+        }
+        "/ourapps" => {
+            let chain = Address::from_str("our@chain:app_store:sys")?;
+
+            let resp = Request::new()
+                .target(chain)
+                .body(serde_json::to_vec(&Chains::GetOurApps)?)
+                .send_and_await_response(5)??;
+            let msg = serde_json::from_slice::<GetOurAppsResponse>(resp.body())?;
+            println!("ourapps response: {:?}", msg);
+            // TODO, fetch from chain state!
+            Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?))
         }
         // POST /apps/:id/download
         // download a listed app from a mirror
@@ -499,7 +529,7 @@ fn serve_paths(
         }
         // start mirroring a downloaded app: PUT
         // stop mirroring a downloaded app: DELETE
-        "/apps/:id/mirror" => {
+        "/downloads/:id/mirror" => {
             let Ok(package_id) = get_package_id(url_params) else {
                 return Ok((
                     StatusCode::BAD_REQUEST,
@@ -530,7 +560,7 @@ fn serve_paths(
         }
         // start auto-updating a downloaded app: PUT
         // stop auto-updating a downloaded app: DELETE
-        "/apps/:id/auto-update" => {
+        "/downloads/:id/auto-update" => {
             let Ok(package_id) = get_package_id(url_params) else {
                 return Ok((
                     StatusCode::BAD_REQUEST,
@@ -538,6 +568,8 @@ fn serve_paths(
                     format!("Missing id").into_bytes(),
                 ));
             };
+
+            // add version hash etc.
 
             match method {
                 // start auto-updating an app

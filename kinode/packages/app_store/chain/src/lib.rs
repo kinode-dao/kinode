@@ -16,8 +16,7 @@ use crate::kinode::process::main::Error;
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_state, http, kernel_types as kt,
-    kimap::{self, namehash},
+    await_message, call_init, eth, get_blob, get_state, http, kernel_types as kt, kimap,
     print_to_terminal, println, Address, Message, PackageId, Response,
 };
 
@@ -38,9 +37,9 @@ const CHAIN_ID: u64 = 31337; // local
 const CHAIN_TIMEOUT: u64 = 60; // 60s
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &str = kimap::KIMAP_ADDRESS;
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
 #[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
+const KIMAP_ADDRESS: &str = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
 
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK;
@@ -216,6 +215,7 @@ fn handle_local_request(our: &Address, state: &mut State, chains: Chains) -> any
 }
 
 fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Result<()> {
+    println!("handling eth log!");
     let block_number: u64 = log.block_number.ok_or(anyhow::anyhow!("blocknumbaerror"))?;
     let note: kimap::Note =
         kimap::decode_note_log(&log).map_err(|e| anyhow::anyhow!("decodelogerror: {e:?}"))?;
@@ -238,7 +238,7 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
     //
 
     let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
-    let is_our_package = namehash(&package_id.publisher()) == namehash(&our.node);
+    let is_our_package = &package_id.publisher() == &our.node();
 
     let (tba, metadata_hash) = {
         // generate ~metadata-hash full-path
@@ -270,7 +270,7 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
     // assert that the metadata hash matches the fetched data
     let metadata = fetch_metadata_from_url(&metadata_uri, &metadata_hash, 30)?;
 
-    match state.listings.entry(package_id) {
+    match state.listings.entry(package_id.clone()) {
         std::collections::hash_map::Entry::Occupied(mut listing) => {
             let listing = listing.get_mut();
             listing.metadata_uri = metadata_uri;
@@ -288,6 +288,11 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
             });
         }
     }
+
+    if is_our_package {
+        state.published.insert(package_id);
+    }
+
     state.last_saved_block = block_number;
 
     Ok(())

@@ -35,11 +35,11 @@ export default function PublishPage() {
     }
   }, [state])
 
-  useEffect(() => {
-    setMyPublishedApps(
-      apps.filter((app) => app.publisher?.toLowerCase() === window.our.node?.toLowerCase())
-    );
-  }, [apps, address])
+  // useEffect(() => {
+  //   setMyPublishedApps(
+  //     apps.filter((app) => app.publisher?.toLowerCase() === window.our.node?.toLowerCase())
+  //   );
+  // }, [apps, address])
 
   const calculateMetadataHash = useCallback(async () => {
     if (!metadataUrl) {

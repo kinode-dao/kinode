@@ -3,8 +3,7 @@
 //! manages downloading and sharing of versioned packages.
 //!
 use crate::kinode::process::downloads::{
-    AddDownloadRequest, AvailableFiles, DownloadRequest, DownloadResponse, Downloads, Entry,
-    ProgressUpdate,
+    AvailableFiles, DownloadRequest, DownloadResponse, Downloads, Entry, ProgressUpdate,
 };
 use crate::kinode::process::main::Error;
 use std::{collections::HashSet, str::FromStr};

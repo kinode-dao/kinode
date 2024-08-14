@@ -22,8 +22,8 @@ function App() {
         <button onClick={() => window.location.href = `${BASE_URL}/testing`}>Go to Testing</button>
         <Routes>
           <Route path="/testing" element={<Testing />} />
-          <Route path={STORE_PATH} element={<StorePage />} />
-          <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} />
+          {/* <Route path={STORE_PATH} element={<StorePage />} />
+          <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} /> */}
           <Route path={PUBLISH_PATH} element={<PublishPage />} />
         </Routes>
       </Router>

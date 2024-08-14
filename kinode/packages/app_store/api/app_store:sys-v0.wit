@@ -6,10 +6,12 @@ interface downloads {
     use standard.{package-id};
 
     variant downloads {
+        // local and remote
         download(download-request),
         chunk(chunk-request),
         progress(progress-update),
         size(size-update),
+        // local only
         get-files(option<package-id>),
         add-download(add-download-request),
     }
