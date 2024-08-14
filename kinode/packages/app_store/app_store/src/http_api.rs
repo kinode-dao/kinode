@@ -254,7 +254,11 @@ fn get_version_hash(url_params: &HashMap<String, String>) -> anyhow::Result<Stri
 fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
     // installed package info
     json!({
-        "package": id.package().to_string(),
+        "package_id": {
+            "package_name": id.package(),
+            "publisher_node": id.publisher(),
+        },
+        "our_version_hash": state.our_version_hash,
         "publisher": id.publisher(),
         "our_version_hash": state.our_version_hash,
         "verified": state.verified,
@@ -334,9 +338,9 @@ fn serve_paths(
                 .send_and_await_response(5)??;
 
             let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
-            println!("downlaods response: {:?}", msg);
+            println!("downlaods response: {:?}", msg.files);
             // shouldn't really return status code
-            Ok((StatusCode::OK, None, resp.body().to_vec()))
+            Ok((StatusCode::OK, None, serde_json::to_vec(&msg.files)?))
         }
         "/downloads/:id" => {
             // get all local downloads!
@@ -357,7 +361,7 @@ fn serve_paths(
             let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
             println!("downlaods response: {:?}", msg);
             // shouldn't really return status code
-            Ok((StatusCode::OK, None, resp.body().to_vec()))
+            Ok((StatusCode::OK, None, serde_json::to_vec(&msg.files)?))
         }
         "/installed" => {
             let all: Vec<serde_json::Value> = state

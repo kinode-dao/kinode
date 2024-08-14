@@ -1,86 +1,133 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { AppInfo, MirrorCheckFile, PackageManifest } from '../types/Apps'
+import { PackageState, AppListing, MirrorCheckFile, PackageManifest, Download, PackageId } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http'
-import { appId } from '../utils/app'
-import KinodeClientApi from "@kinode/client-api";
+import KinodeClientApi from "@kinode/client-api"
 import { WEBSOCKET_URL } from '../utils/ws'
 
 const BASE_URL = '/main:app_store:sys'
 
 interface AppsStore {
-  apps: AppInfo[]
+  listings: AppListing[]
+  installed: PackageState[]
+  downloads: Record<string, Download[]>
+  ourApps: AppListing[]
   ws: KinodeClientApi
-  downloads: Record<string, [number, number]>
-  getApps: () => Promise<void>
-  getApp: (id: string) => Promise<AppInfo>
-  checkMirror: (node: string) => Promise<MirrorCheckFile>
-  installApp: (app: AppInfo) => Promise<void>
-  updateApp: (app: AppInfo, downloadFrom: string) => Promise<void>
-  uninstallApp: (app: AppInfo) => Promise<void>
-  downloadApp: (app: AppInfo, downloadFrom: string) => Promise<void>
-  getCaps: (app: AppInfo) => Promise<PackageManifest>
-  approveCaps: (app: AppInfo) => Promise<void>
-  setMirroring: (app: AppInfo, mirroring: boolean) => Promise<void>
-  setAutoUpdate: (app: AppInfo, autoUpdate: boolean) => Promise<void>
-  rebuildIndex: () => Promise<void>
-  // new.
-  getDownloads: () => Promise<any>
-  getInstalledApps: () => Promise<any>
-  getOurApps: () => Promise<any>
-  getDownloadsForApp: (id: string) => Promise<any>
+  activeDownloads: Record<string, [number, number]>
 
+  fetchListings: () => Promise<void>
+  fetchListing: (id: string) => Promise<AppListing>
+  fetchInstalled: () => Promise<void>
+  fetchDownloads: () => Promise<void>
+  fetchOurApps: () => Promise<void>
+  fetchDownloadsForApp: (id: string) => Promise<Download[]>
+
+  checkMirror: (node: string) => Promise<MirrorCheckFile>
+  installApp: (id: string, version_hash: string) => Promise<void>
+  uninstallApp: (id: string) => Promise<void>
+  downloadApp: (id: string, version_hash: string, downloadFrom: string) => Promise<void>
+  getCaps: (id: string) => Promise<PackageManifest>
+  approveCaps: (id: string) => Promise<void>
+  setMirroring: (id: string, version_hash: string, mirroring: boolean) => Promise<void>
+  setAutoUpdate: (id: string, version_hash: string, autoUpdate: boolean) => Promise<void>
 }
+
+const appId = (id: string): PackageId => {
+  const [package_name, publisher_node] = id.split(":");
+  return { package_name, publisher_node };
+}
+
 
 const useAppsStore = create<AppsStore>()(
   persist(
-    (set, get) => ({
-      apps: [],
-
+    (set, get): AppsStore => ({
+      listings: [],
+      installed: [],
       downloads: {},
+      ourApps: [],
+      activeDownloads: {},
 
       ws: new KinodeClientApi({
         uri: WEBSOCKET_URL,
-        nodeId: window.our?.node,
+        nodeId: (window as any).our?.node,
         processId: "main:app_store:sys",
         onMessage: (message) => {
           const data = JSON.parse(message);
           if (data.kind === 'progress') {
             const appId = data.data.file_name.slice(1).replace('.zip', '');
-            console.log('got app id with progress: ', appId, data.data.chunks_received, data.data.total_chunks)
             set((state) => ({
-              downloads: {
-                ...state.downloads,
+              activeDownloads: {
+                ...state.activeDownloads,
                 [appId]: [data.data.chunks_received, data.data.total_chunks]
               }
             }));
 
             if (data.data.chunks_received === data.data.total_chunks) {
-              get().getApp(appId);
+              get().fetchDownloads();
             }
           }
         },
         onOpen: (_e) => {
-          console.log('open')
+          console.log('WebSocket connection opened')
         },
       }),
 
-      getApps: async () => {
+
+      fetchListings: async () => {
         const res = await fetch(`${BASE_URL}/apps`)
         if (res.status === HTTP_STATUS.OK) {
-          const apps = await res.json()
-          set({ apps })
+          const data = await res.json()
+          console.log('listings', data)
+          set({ listings: data.apps || [] })
         }
       },
 
-      getApp: async (id: string) => {
+      fetchListing: async (id: string) => {
         const res = await fetch(`${BASE_URL}/apps/${id}`)
         if (res.status === HTTP_STATUS.OK) {
-          const app = await res.json()
-          set(state => ({ apps: state.apps.map(a => a.package === app.package ? app : a) }))
-          return app
+          const listing = await res.json()
+          set((state) => ({
+            listings: state.listings.map(l => l.package_id === appId(id) ? listing : l)
+          }))
+          return listing
         }
-        throw new Error(`Failed to get app: ${id}`)
+        throw new Error(`Failed to get listing for app: ${id}`)
+      },
+
+      fetchInstalled: async () => {
+        const res = await fetch(`${BASE_URL}/installed`)
+        if (res.status === HTTP_STATUS.OK) {
+          const installed = await res.json()
+          set({ installed })
+        }
+      },
+
+      fetchDownloads: async () => {
+        const res = await fetch(`${BASE_URL}/downloads`)
+        if (res.status === HTTP_STATUS.OK) {
+          const downloads = await res.json()
+          set({ downloads })
+        }
+      },
+
+      fetchOurApps: async () => {
+        const res = await fetch(`${BASE_URL}/ourapps`)
+        if (res.status === HTTP_STATUS.OK) {
+          const ourApps = await res.json()
+          set({ ourApps })
+        }
+      },
+
+      fetchDownloadsForApp: async (id: string) => {
+        const res = await fetch(`${BASE_URL}/downloads/${id}`)
+        if (res.status === HTTP_STATUS.OK) {
+          const downloads = await res.json()
+          set((state) => ({
+            downloads: { ...state.downloads, [id]: downloads }
+          }))
+          return downloads
+        }
+        throw new Error(`Failed to get downloads for app: ${id}`)
       },
 
       checkMirror: async (node: string) => {
@@ -91,142 +138,73 @@ const useAppsStore = create<AppsStore>()(
         throw new Error(`Failed to check mirror status for node: ${node}`)
       },
 
-      installApp: async (app: AppInfo) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/install`, { method: 'POST' })
-        if (res.status !== HTTP_STATUS.CREATED) {
-          throw new Error(`Failed to install app: ${appId(app)}`)
-        }
-        await get().getApp(appId(app))
-      },
-
-      updateApp: async (app: AppInfo, downloadFrom: string) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/update`, {
+      installApp: async (id: string, version_hash: string) => {
+        const res = await fetch(`${BASE_URL}/apps/${id}/install`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ download_from: downloadFrom }),
-        });
-
-        if (res.status !== HTTP_STATUS.ACCEPTED) {
-          throw new Error(`Failed to update app: ${appId(app)}`);
-        }
-      },
-
-      uninstallApp: async (app: AppInfo) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}`, { method: 'DELETE' })
-        if (res.status !== HTTP_STATUS.NO_CONTENT) {
-          throw new Error(`Failed to uninstall app: ${appId(app)}`)
-        }
-        set(state => ({ apps: state.apps.filter(a => a.package !== app.package) }))
-      },
-
-      downloadApp: async (app: AppInfo, downloadFrom: string) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/download`, {
-          method: 'POST',
-          body: JSON.stringify({ download_from: downloadFrom }),
+          body: JSON.stringify({ version_hash })
         })
         if (res.status !== HTTP_STATUS.CREATED) {
-          throw new Error(`Failed to download app: ${appId(app)}`)
+          throw new Error(`Failed to install app: ${id}`)
+        }
+        await get().fetchInstalled()
+      },
+
+      uninstallApp: async (id: string) => {
+        const res = await fetch(`${BASE_URL}/apps/${id}`, { method: 'DELETE' })
+        if (res.status !== HTTP_STATUS.NO_CONTENT) {
+          throw new Error(`Failed to uninstall app: ${id}`)
+        }
+        await get().fetchInstalled()
+      },
+
+      downloadApp: async (id: string, version_hash: string, downloadFrom: string) => {
+        const res = await fetch(`${BASE_URL}/apps/${id}/download`, {
+          method: 'POST',
+          body: JSON.stringify({ download_from: downloadFrom, version_hash }),
+        })
+        if (res.status !== HTTP_STATUS.CREATED) {
+          throw new Error(`Failed to download app: ${id}`)
         }
       },
 
-
-      getCaps: async (app: AppInfo) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/caps`)
+      getCaps: async (id: string) => {
+        const res = await fetch(`${BASE_URL}/apps/${id}/caps`)
         if (res.status === HTTP_STATUS.OK) {
           return await res.json()
         }
-        throw new Error(`Failed to get caps for app: ${appId(app)}`)
+        throw new Error(`Failed to get caps for app: ${id}`)
       },
 
-      approveCaps: async (app: AppInfo) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/caps`, { method: 'POST' })
+      approveCaps: async (id: string) => {
+        const res = await fetch(`${BASE_URL}/apps/${id}/caps`, { method: 'POST' })
         if (res.status !== HTTP_STATUS.OK) {
-          throw new Error(`Failed to approve caps for app: ${appId(app)}`)
+          throw new Error(`Failed to approve caps for app: ${id}`)
         }
-        await get().getApp(appId(app))
+        await get().fetchListing(id)
       },
 
-      setMirroring: async (app: AppInfo, mirroring: boolean) => {
+      setMirroring: async (id: string, version_hash: string, mirroring: boolean) => {
         const method = mirroring ? 'PUT' : 'DELETE'
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/mirror`, { method })
+        const res = await fetch(`${BASE_URL}/apps/${id}/mirror`, {
+          method,
+          body: JSON.stringify({ version_hash })
+        })
         if (res.status !== HTTP_STATUS.OK) {
-          throw new Error(`Failed to ${mirroring ? 'start' : 'stop'} mirroring: ${appId(app)}`)
+          throw new Error(`Failed to ${mirroring ? 'start' : 'stop'} mirroring: ${id}`)
         }
-        await get().getApp(appId(app))
+        await get().fetchListing(id)
       },
 
-      setAutoUpdate: async (app: AppInfo, autoUpdate: boolean) => {
+      setAutoUpdate: async (id: string, version_hash: string, autoUpdate: boolean) => {
         const method = autoUpdate ? 'PUT' : 'DELETE'
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/auto-update`, { method })
+        const res = await fetch(`${BASE_URL}/apps/${id}/auto-update`, {
+          method,
+          body: JSON.stringify({ version_hash })
+        })
         if (res.status !== HTTP_STATUS.OK) {
-          throw new Error(`Failed to ${autoUpdate ? 'enable' : 'disable'} auto-update: ${appId(app)}`)
+          throw new Error(`Failed to ${autoUpdate ? 'enable' : 'disable'} auto-update: ${id}`)
         }
-        await get().getApp(appId(app))
-      },
-
-      rebuildIndex: async () => {
-        const res = await fetch(`${BASE_URL}/apps/rebuild-index`, { method: 'POST' })
-        if (res.status !== HTTP_STATUS.OK) {
-          throw new Error('Failed to rebuild index')
-        }
-      },
-
-      getDownloads: async () => {
-        try {
-          const res = await fetch(`${BASE_URL}/downloads`)
-          const data = await res.json()
-          if (!res.ok) {
-            console.error('Error fetching downloads:', data)
-          }
-          return data
-        } catch (error) {
-          console.error('Error fetching downloads:', error)
-          return { error: 'Failed to get downloads' }
-        }
-      },
-
-      getInstalledApps: async () => {
-        try {
-          const res = await fetch(`${BASE_URL}/installed`)
-          const data = await res.json()
-          if (!res.ok) {
-            console.error('Error fetching installed apps:', data)
-          }
-          return data
-        } catch (error) {
-          console.error('Error fetching installed apps:', error)
-          return { error: 'Failed to get installed apps' }
-        }
-      },
-
-      getOurApps: async () => {
-        try {
-          const res = await fetch(`${BASE_URL}/ourapps`)
-          const data = await res.json()
-          if (!res.ok) {
-            console.error('Error fetching our apps:', data)
-          }
-          return data
-        } catch (error) {
-          console.error('Error fetching our apps:', error)
-          return { error: 'Failed to get our apps' }
-        }
-      },
-
-      getDownloadsForApp: async (id: string) => {
-        try {
-          const res = await fetch(`${BASE_URL}/downloads/${id}`)
-          const data = await res.json()
-          if (!res.ok) {
-            console.error(`Error fetching downloads for app ${id}:`, data)
-          }
-          return data
-        } catch (error) {
-          console.error(`Error fetching downloads for app ${id}:`, error)
-          return { error: `Failed to get downloads for app: ${id}` }
-        }
+        await get().fetchListing(id)
       },
     }),
     {

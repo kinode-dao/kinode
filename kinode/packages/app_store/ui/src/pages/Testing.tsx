@@ -1,14 +1,40 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import useAppsStore from '../store'
 
 const Testing: React.FC = () => {
-    const { getDownloads, getInstalledApps, getOurApps, getDownloadsForApp } = useAppsStore()
+    const {
+        fetchListings,
+        fetchInstalled,
+        fetchDownloads,
+        fetchOurApps,
+        fetchDownloadsForApp,
+        listings,
+        installed,
+        downloads,
+        ourApps
+    } = useAppsStore()
     const [result, setResult] = useState<any>(null)
     const [appId, setAppId] = useState('')
 
-    const handleAction = async (action: () => Promise<any>) => {
+    useEffect(() => {
+        fetchListings()
+        fetchInstalled()
+        fetchDownloads()
+        fetchOurApps()
+    }, [])
+
+    const handleAction = async (action: () => Promise<void>, key: string) => {
         try {
-            const data = await action()
+            await action()
+            setResult(JSON.stringify(useAppsStore.getState()[key], null, 2))
+        } catch (error) {
+            setResult(`Error: ${error.message}`)
+        }
+    }
+
+    const handleDownloadsForApp = async () => {
+        try {
+            const data = await fetchDownloadsForApp(appId)
             setResult(JSON.stringify(data, null, 2))
         } catch (error) {
             setResult(`Error: ${error.message}`)
@@ -19,9 +45,10 @@ const Testing: React.FC = () => {
         <div>
             <h1>Testing Page</h1>
             <div>
-                <button onClick={() => handleAction(getDownloads)}>Get Downloads</button>
-                <button onClick={() => handleAction(getInstalledApps)}>Get Installed Apps</button>
-                <button onClick={() => handleAction(getOurApps)}>Get Our Apps</button>
+                <button onClick={() => handleAction(fetchListings, 'listings')}>Refresh Listings</button>
+                <button onClick={() => handleAction(fetchInstalled, 'installed')}>Refresh Installed Apps</button>
+                <button onClick={() => handleAction(fetchDownloads, 'downloads')}>Refresh Downloads</button>
+                <button onClick={() => handleAction(fetchOurApps, 'ourApps')}>Refresh Our Apps</button>
             </div>
             <div>
                 <input
@@ -30,7 +57,7 @@ const Testing: React.FC = () => {
                     onChange={(e) => setAppId(e.target.value)}
                     placeholder="Enter App ID"
                 />
-                <button onClick={() => handleAction(() => getDownloadsForApp(appId))}>
+                <button onClick={handleDownloadsForApp}>
                     Get Downloads for App
                 </button>
             </div>
