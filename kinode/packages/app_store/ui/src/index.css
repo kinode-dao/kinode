@@ -858,3 +858,90 @@ button svg,
     margin: 0;
     color: light-dark(var(--off-black), var(--off-white));
 }
+
+.downloads-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.app-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.app-icon {
+    width: 64px;
+    height: 64px;
+    margin-right: 20px;
+}
+
+.app-title h2 {
+    margin: 0;
+}
+
+.app-id {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.app-description {
+    margin-bottom: 20px;
+}
+
+.mirror-selection {
+    margin-bottom: 20px;
+}
+
+.mirror-selection select {
+    width: 100%;
+    padding: 10px;
+    font-size: 1em;
+}
+
+.downloads-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+.downloads-table th,
+.downloads-table td {
+    padding: 10px;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+.downloads-table th {
+    background-color: #f2f2f2;
+}
+
+.download-button,
+.install-button {
+    padding: 5px 10px;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+
+.error-message {
+    color: #d32f2f;
+    margin-bottom: 20px;
+}
+
+.detail-section {
+    margin-bottom: 20px;
+}
+
+.detail-section h3 {
+    cursor: pointer;
+    user-select: none;
+}
+
+.json-display {
+    background-color: #f2f2f2;
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.9em;
+}

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { PackageState, AppListing, MirrorCheckFile, PackageManifest, Download, PackageId } from '../types/Apps'
+import { PackageState, AppListing, MirrorCheckFile, PackageManifest, DownloadItem, PackageId } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http'
 import KinodeClientApi from "@kinode/client-api"
 import { WEBSOCKET_URL } from '../utils/ws'
@@ -10,7 +10,7 @@ const BASE_URL = '/main:app_store:sys'
 interface AppsStore {
   listings: AppListing[]
   installed: PackageState[]
-  downloads: Record<string, Download[]>
+  downloads: Record<string, DownloadItem[]>
   ourApps: AppListing[]
   ws: KinodeClientApi
   activeDownloads: Record<string, [number, number]>
@@ -18,11 +18,11 @@ interface AppsStore {
   fetchListings: () => Promise<void>
   fetchListing: (id: string) => Promise<AppListing>
   fetchInstalled: () => Promise<void>
-  fetchDownloads: () => Promise<void>
-  fetchOurApps: () => Promise<void>
-  fetchDownloadsForApp: (id: string) => Promise<Download[]>
-
+  fetchDownloads: () => Promise<DownloadItem[]>;
+  fetchOurApps: () => Promise<void>;
+  fetchDownloadsForApp: (id: string) => Promise<DownloadItem[]>;
   checkMirror: (node: string) => Promise<MirrorCheckFile>
+
   installApp: (id: string, version_hash: string) => Promise<void>
   uninstallApp: (id: string) => Promise<void>
   downloadApp: (id: string, version_hash: string, downloadFrom: string) => Promise<void>
@@ -106,8 +106,10 @@ const useAppsStore = create<AppsStore>()(
         const res = await fetch(`${BASE_URL}/downloads`)
         if (res.status === HTTP_STATUS.OK) {
           const downloads = await res.json()
-          set({ downloads })
+          set({ downloads: { root: downloads } })
+          return downloads
         }
+        return []
       },
 
       fetchOurApps: async () => {

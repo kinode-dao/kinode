@@ -47,7 +47,7 @@ const Testing: React.FC = () => {
             <div>
                 <button onClick={() => handleAction(fetchListings, 'listings')}>Refresh Listings</button>
                 <button onClick={() => handleAction(fetchInstalled, 'installed')}>Refresh Installed Apps</button>
-                <button onClick={() => handleAction(fetchDownloads, 'downloads')}>Refresh Downloads</button>
+                {/* <button onClick={() => handleAction(fetchDownloads, 'downloads')}>Refresh Downloads</button> */}
                 <button onClick={() => handleAction(fetchOurApps, 'ourApps')}>Refresh Our Apps</button>
             </div>
             <div>

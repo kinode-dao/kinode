@@ -11,10 +11,12 @@ export default function StorePage() {
     fetchListings();
   }, [fetchListings]);
 
-  const filteredApps = listings?.filter((app) =>
-    app.package_id.package_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.metadata?.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || [];
+  const filteredApps = Array.isArray(listings)
+    ? listings.filter((app) =>
+      app.package_id.package_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.metadata?.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    : [];
 
   return (
     <div className="store-page">
@@ -27,7 +29,7 @@ export default function StorePage() {
         />
       </div>
       <div className="app-list">
-        {listings === undefined ? (
+        {!Array.isArray(listings) ? (
           <p>Loading...</p>
         ) : listings.length === 0 ? (
           <p>No apps available.</p>
@@ -53,6 +55,7 @@ export default function StorePage() {
   );
 }
 
+// ... rest of the code remains the same
 interface AppRowProps {
   app: AppListing;
 }

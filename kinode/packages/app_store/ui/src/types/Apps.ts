@@ -12,7 +12,7 @@ export interface AppListing {
     auto_update: boolean
 }
 
-export interface Download {
+export interface DownloadItem {
     name: string,
     is_file: boolean,
     size?: number

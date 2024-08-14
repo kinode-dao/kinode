@@ -1,55 +1,49 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FaDownload, FaCheck, FaTimes, FaPlay } from "react-icons/fa";
 import useAppsStore from "../store";
+import { AppListing, PackageState } from "../types/Apps";
 
 export default function AppPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { listings, installed, fetchListings, fetchInstalled } = useAppsStore();
+  const [app, setApp] = useState<AppListing | null>(null);
+  const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchListings();
-    fetchInstalled();
-  }, [fetchListings, fetchInstalled]);
+    const loadData = async () => {
+      await Promise.all([fetchListings(), fetchInstalled()]);
 
-  const app = useMemo(() => {
-    const foundApp = listings.find(a => `${a.package_id.package_name}:${a.package_id.publisher_node}` === id) || null;
-    console.log("Found app:", foundApp);
-    return foundApp;
-  }, [listings, id]);
+      const foundApp = listings.find(a => `${a.package_id.package_name}:${a.package_id.publisher_node}` === id) || null;
+      setApp(foundApp);
 
-  const installedApp = useMemo(() => {
-    if (!app) return null;
-    const foundInstalledApp = installed.find(i =>
-      i.package_id.package_name === app.package_id.package_name &&
-      i.package_id.publisher_node === app.package_id.publisher_node
-    ) || null;
-    console.log("Found installed app:", foundInstalledApp);
-    return foundInstalledApp;
-  }, [app, installed]);
+      if (foundApp) {
+        const foundInstalledApp = installed.find(i =>
+          i.package_id.package_name === foundApp.package_id.package_name &&
+          i.package_id.publisher_node === foundApp.package_id.publisher_node
+        ) || null;
+        setInstalledApp(foundInstalledApp);
 
-  const { currentVersion, latestVersion } = useMemo(() => {
-    let current: string | null = null;
-    let latest: string | null = null;
-    if (app?.metadata?.properties?.code_hashes) {
-      console.log("Code hashes:", app.metadata.properties.code_hashes);
-      const versions = app.metadata.properties.code_hashes;
-      if (versions.length > 0) {
-        latest = versions[versions.length - 1][0];
-        if (installedApp) {
-          const installedVersion = versions.find(([_, hash]) => hash === installedApp.our_version_hash);
-          if (installedVersion) {
-            current = installedVersion[0];
+        if (foundApp.metadata?.properties?.code_hashes) {
+          const versions = foundApp.metadata.properties.code_hashes;
+          if (versions.length > 0) {
+            setLatestVersion(versions[versions.length - 1][0]);
+            if (foundInstalledApp) {
+              const installedVersion = versions.find(([_, hash]) => hash === foundInstalledApp.our_version_hash);
+              if (installedVersion) {
+                setCurrentVersion(installedVersion[0]);
+              }
+            }
           }
         }
       }
-    } else {
-      console.log("No code hashes found in app metadata");
-    }
-    console.log("Current version:", current, "Latest version:", latest);
-    return { currentVersion: current, latestVersion: latest };
-  }, [app, installedApp]);
+    };
+
+    loadData();
+  }, [id, fetchListings, fetchInstalled, listings, installed]);
 
   if (!app) {
     return <div className="app-page"><h4>App details not found for {id}</h4></div>;
