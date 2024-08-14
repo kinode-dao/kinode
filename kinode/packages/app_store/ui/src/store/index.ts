@@ -77,7 +77,6 @@ const useAppsStore = create<AppsStore>()(
         const res = await fetch(`${BASE_URL}/apps`)
         if (res.status === HTTP_STATUS.OK) {
           const data = await res.json()
-          console.log('listings', data)
           set({ listings: data.apps || [] })
         }
       },
@@ -114,9 +113,10 @@ const useAppsStore = create<AppsStore>()(
 
       fetchOurApps: async () => {
         const res = await fetch(`${BASE_URL}/ourapps`)
+
         if (res.status === HTTP_STATUS.OK) {
-          const ourApps = await res.json()
-          set({ ourApps })
+          const data = await res.json()
+          set({ ourApps: data.apps || [] })
         }
       },
 
