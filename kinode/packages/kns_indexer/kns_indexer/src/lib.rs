@@ -306,8 +306,8 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             let child_hash = decoded.childhash.to_string();
             let name = String::from_utf8(decoded.label.to_vec())?;
 
-            if !kimap::valid_name(&name, false) {
-                return Err(anyhow::anyhow!("skipping invalid entry"));
+            if !kimap::valid_name(&name) {
+                return Err(anyhow::anyhow!("skipping invalid name: {name}"));
             }
 
             let full_name = match get_parent_name(&state.names, &parent_hash) {
@@ -333,6 +333,10 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
 
             let note = String::from_utf8(decoded.label.to_vec())?;
             let node_hash = decoded.parenthash.to_string();
+
+            if !kimap::valid_note(&note) {
+                return Err(anyhow::anyhow!("skipping invalid note: {note}"));
+            }
 
             let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
                 return Err(anyhow::anyhow!("parent node for note not found"));

@@ -72,6 +72,10 @@ impl TerminalState {
                     ProcessId::new(Some("echo"), "terminal", "sys"),
                 ),
                 (
+                    "help".to_string(),
+                    ProcessId::new(Some("help"), "terminal", "sys"),
+                ),
+                (
                     "hi".to_string(),
                     ProcessId::new(Some("hi"), "terminal", "sys"),
                 ),
@@ -110,14 +114,23 @@ impl TerminalState {
 
 call_init!(init);
 fn init(our: Address) {
-    let mut state: TerminalState = match get_typed_state(|bytes| bincode::deserialize(bytes)) {
-        Some(s) => s,
-        None => {
-            let state = TerminalState::new(our);
-            set_state(&bincode::serialize(&state).unwrap());
-            state
-        }
-    };
+    let mut state: TerminalState =
+        match get_typed_state(|bytes| bincode::deserialize::<TerminalState>(bytes)) {
+            Some(mut s) => {
+                // **add** the pre-installed scripts to the terminal state
+                // in case new ones have been added or if user has deleted aliases
+                let default_state = TerminalState::new(our);
+                for (alias, process) in default_state.aliases {
+                    s.aliases.insert(alias, process);
+                }
+                s
+            }
+            None => {
+                let state = TerminalState::new(our);
+                set_state(&bincode::serialize(&state).unwrap());
+                state
+            }
+        };
 
     loop {
         let message = match await_message() {
