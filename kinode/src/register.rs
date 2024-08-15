@@ -386,10 +386,9 @@ async fn handle_boot(
                     .recover_address_from_prehash(&hash)
                     .map_err(|_| warp::reject())?;
 
-                println!("recovered_address: {}", recovered_address);
-                println!("owner: {}", owner);
-
                 if recovered_address != owner {
+                    println!("recovered_address: {}\r", recovered_address);
+                    println!("owner: {}\r", owner);
                     attempts += 1;
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     continue;
