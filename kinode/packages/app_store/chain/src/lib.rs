@@ -221,7 +221,6 @@ fn handle_local_request(
 }
 
 fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Result<()> {
-    println!("handling eth log!");
     let block_number: u64 = log.block_number.ok_or(anyhow::anyhow!("blocknumbaerror"))?;
     let note: kimap::Note =
         kimap::decode_note_log(&log).map_err(|e| anyhow::anyhow!("decodelogerror: {e:?}"))?;

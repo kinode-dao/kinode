@@ -2373,7 +2373,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "wit-bindgen",
- "zip 2.1.6",
+ "zip 1.1.4",
 ]
 
 [[package]]
@@ -7400,35 +7400,6 @@ dependencies = [
  "sha1",
  "thiserror",
  "time",
- "zopfli",
- "zstd 0.13.2",
-]
-
-[[package]]
-name = "zip"
-version = "2.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40dd8c92efc296286ce1fbd16657c5dbefff44f1b4ca01cc5f517d8b7b3d3e2e"
-dependencies = [
- "aes",
- "arbitrary",
- "bzip2",
- "constant_time_eq 0.3.0",
- "crc32fast",
- "crossbeam-utils",
- "deflate64",
- "displaydoc",
- "flate2",
- "hmac",
- "indexmap",
- "lzma-rs",
- "memchr",
- "pbkdf2 0.12.2",
- "rand 0.8.5",
- "sha1",
- "thiserror",
- "time",
- "zeroize",
  "zopfli",
  "zstd 0.13.2",
 ]
