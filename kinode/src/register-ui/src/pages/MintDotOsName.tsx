@@ -44,6 +44,12 @@ function MintDotOsName({
 
   useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
+  useEffect(() => {
+    if (!address) {
+      openConnectModal?.();
+    }
+  }, [address, openConnectModal]);
+
   let handleMint = useCallback(async (e: FormEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -107,26 +113,26 @@ function MintDotOsName({
   return (
     <div className="container fade-in">
       <div className="section">
-        {Boolean(address) && (
+        {
           <form className="form" onSubmit={handleMint}>
             {isPending || isConfirming ? (
-              <Loader msg={isConfirming ? 'Minting .os name...' : 'Please confirm the transaction in your wallet'} />
+              <Loader msg={isConfirming ? 'Minting name...' : 'Please confirm the transaction in your wallet'} />
             ) : (
               <>
                 <div className="button-group">
                   <button type="submit" className="button">
-                    Mint pre-committed .os name
+                    Mint {knsName}
                   </button>
                 </div>
               </>
             )}
             {isError && (
               <p className="error-message">
-                Error: {error?.message || 'There was an error minting your dot-os-name, please try again.'}
+                Error: {error?.message || 'There was an error minting your name, please try again.'}
               </p>
             )}
           </form>
-        )}
+        }
       </div>
     </div>
   );

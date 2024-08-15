@@ -17,7 +17,7 @@ interface RegisterOsNameProps extends PageProps { }
 function CommitDotOsName({
     direct,
     setDirect,
-    setOsName,
+    setKnsName,
     setNetworkingKey,
     setIpAddress,
     setWsPort,
@@ -51,7 +51,13 @@ function CommitDotOsName({
 
     useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
-    const enterOsNameProps = { name, setName, nameValidities, setNameValidities, triggerNameCheck }
+    const enterOsNameProps = { address, name, setName, nameValidities, setNameValidities, triggerNameCheck }
+
+    useEffect(() => {
+        if (!address) {
+            openConnectModal?.();
+        }
+    }, [address, openConnectModal]);
 
     let handleCommit = useCallback(async (e: FormEvent) => {
         e.preventDefault()
@@ -80,23 +86,23 @@ function CommitDotOsName({
 
     useEffect(() => {
         if (isConfirmed) {
-            setOsName(`${name}.os`);
+            setKnsName(`${name}.os`);
             navigate("/mint-os-name");
         }
-    }, [isConfirmed, address, name, setOsName, navigate]);
+    }, [isConfirmed, address, name, setKnsName, navigate]);
 
     return (
         <div className="container fade-in">
             <div className="section">
-                {Boolean(address) && (
+                {
                     <form className="form" onSubmit={handleCommit}>
                         {isPending || isConfirming ? (
-                            <Loader msg={isConfirming ? 'Pre-committing to chosen ID...' : 'Please confirm the transaction in your wallet'} />
+                            <Loader msg={isConfirming ? 'Pre-committing to chosen name...' : 'Please confirm the transaction in your wallet'} />
                         ) : (
                             <>
                                 <h3 className="form-label">
                                     <Tooltip text="Kinodes need an onchain node identity in order to communicate with other nodes in the network.">
-                                        Choose a name for your Kinode
+                                        Choose a name for your node
                                     </Tooltip>
                                 </h3>
                                 <EnterKnsName {...enterOsNameProps} />
@@ -107,21 +113,22 @@ function CommitDotOsName({
                                         type="submit"
                                         className="button"
                                     >
-                                        Register .os name
+                                        Register name
                                     </button>
+                                    <p>This will confirm availability of the name and reserve it, then on the next screen you will be prompted to mint.</p>
                                     <Link to="/reset" className="button secondary">
-                                        Already have a dot-os-name?
+                                        Already have a node?
                                     </Link>
                                 </div>
                             </>
                         )}
                         {isError && (
                             <p className="error-message">
-                                Error: {error?.message || 'There was an error registering your dot-os-name, please try again.'}
+                                Error: {error?.message || 'There was an error registering your name, please try again.'}
                             </p>
                         )}
                     </form>
-                )}
+                }
             </div>
         </div>
     );

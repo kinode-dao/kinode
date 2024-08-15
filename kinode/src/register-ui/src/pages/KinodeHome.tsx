@@ -12,7 +12,7 @@ function KinodeHome({ knsName }: OsHomeProps) {
     const resetRedir = () => navigate('/reset')
     const importKeyfileRedir = () => navigate('/import-keyfile')
     const loginRedir = () => navigate('/login')
-
+    const customRegisterRedir = () => navigate('/custom-register')
     const previouslyBooted = Boolean(knsName)
 
     useEffect(() => {
@@ -27,24 +27,27 @@ function KinodeHome({ knsName }: OsHomeProps) {
                         {previouslyBooted ? (
                             <div className="text-center">
                                 <h2 className="mb-2">Welcome back!</h2>
-                                <button onClick={loginRedir} className="button">Login</button>
+                                <button onClick={loginRedir} className="button">Log in</button>
                             </div>
                         ) : (
                             <>
                                 <h2 className="text-center mb-2">Welcome to Kinode</h2>
-                                <h4 className="text-center mb-2">New here? Register a username to get started</h4>
+                                <h4 className="text-center mb-2">New here? Register a name to get started</h4>
                                 <div className="button-group">
                                     <button onClick={registerRedir} className="button">
-                                        Register Kinode Name
+                                        Register .os Name
                                     </button>
                                 </div>
                                 <h4 className="text-center mt-2 mb-2">Other options</h4>
                                 <div className="button-group">
-                                    <button onClick={resetRedir} className="button secondary">
-                                        Reset Kinode Name
-                                    </button>
                                     <button onClick={importKeyfileRedir} className="button secondary">
                                         Import Keyfile
+                                    </button>
+                                    <button onClick={resetRedir} className="button secondary">
+                                        Reset Existing Name
+                                    </button>
+                                    <button onClick={customRegisterRedir} className="button secondary">
+                                        Register Non-.os Name (Advanced)
                                     </button>
                                 </div>
                             </>

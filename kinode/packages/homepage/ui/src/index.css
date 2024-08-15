@@ -11,11 +11,12 @@ a {
 
 #homepage {
     max-width: 960px;
-    margin: 0 auto;
+    margin: 10px auto;
 }
 
 header {
     width: 100%;
+    margin-bottom: 30px;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
@@ -46,7 +47,7 @@ header button {
     flex-wrap: wrap;
     gap: 10px;
     justify-content: center;
-    background-color: #4f000055;
+    background-color: light-dark(#4f000055, var(--tasteful-dark));
     padding: 10px;
     border-radius: 10px;
     margin: 0 auto;
@@ -80,7 +81,16 @@ header button {
     right: 0;
     padding: 2px;
     margin: 0;
-    font-size: 0.7em;
+    width: 24px;
+    height: 24px;
+}
+
+.app-fave-button span {
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 1.1em;
 }
 
 .no-ui {
@@ -91,6 +101,7 @@ header button {
 
 #widgets {
     width: 100%;
+    margin-top: 30px;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
@@ -143,20 +154,28 @@ footer {
     position: fixed;
     bottom: 0;
     width: 90vw;
-    margin: 0 auto;
     max-height: 100vh;
     max-width: 960px;
+    left: 50%;
+    transform: translate(-50%, 0);
+}
+
+.footer-button {
+    background-color: var(--blue);
+    color: light-dark(var(--off-black), var(--off-white));
+    border-radius: 25px 25px 0px 0px;
 }
 
 #all-apps {
     border: 1px solid black;
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
     gap: 10px;
     justify-content: space-evenly;
     padding: 10px;
-    background-color: #4f000085;
-    border-radius: 5px 5px 0px 0px;
+    background-color: light-dark(var(--gray), var(--tasteful-dark));
+    border-radius: 25px 25px 0px 0px;
 }
 
 .app-icon {
@@ -200,4 +219,8 @@ footer {
     display: flex;
     flex-direction: row;
     gap: 10px;
+}
+
+.widget-settings div {
+    padding: 20px;
 }

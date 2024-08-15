@@ -105,6 +105,7 @@ pub async fn register(
         .or(warp::path("reset"))
         .or(warp::path("import-keyfile"))
         .or(warp::path("set-password"))
+        .or(warp::path("custom-register"))
         .and(warp::get())
         .map(move |_| warp::reply::html(include_str!("register-ui/build/index.html")));
 
@@ -347,7 +348,6 @@ async fn handle_boot(
     // this call can fail if the indexer has not caught up to the transaction
     // that just got confirmed on our frontend. for this reason, we retry
     // the call a few times before giving up.
-    // todo remove?
 
     let mut attempts = 0;
     let mut get_result = Err(());
@@ -443,6 +443,7 @@ async fn handle_import_keyfile(
     sender: Arc<RegistrationSender>,
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
+    println!("received base64 keyfile: {}\r", info.keyfile);
     // if keyfile was not present in node and is present from user upload
     let encoded_keyfile = match base64_standard.decode(info.keyfile) {
         Ok(k) => k,
@@ -455,6 +456,10 @@ async fn handle_import_keyfile(
         }
     };
 
+    println!(
+        "received keyfile: {}\r",
+        String::from_utf8_lossy(&encoded_keyfile)
+    );
     let (decoded_keyfile, mut our) =
         match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
             Ok(k) => {

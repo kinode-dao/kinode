@@ -3,6 +3,7 @@ import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
 import { useNavigate } from "react-router-dom";
 import { sha256, toBytes } from "viem";
+import { Tooltip } from "../components/Tooltip";
 
 interface LoginProps extends PageProps { }
 
@@ -13,7 +14,7 @@ function Login({
   routers,
   setRouters,
   knsName,
-  setOsName,
+  setKnsName,
 }: LoginProps) {
   const navigate = useNavigate();
 
@@ -29,7 +30,7 @@ function Login({
           res.json()
         )) as UnencryptedIdentity;
         setRouters(infoData.allowed_routers);
-        setOsName(infoData.name);
+        setKnsName(infoData.name);
       } catch { }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -89,8 +90,9 @@ function Login({
         >
           <div className="form-group">
             <div className="form-header">
-              <h3>{knsName}</h3>
-              <span>({isDirect ? "direct" : "indirect"} node)</span>
+              <Tooltip text={`(${isDirect ? "direct" : "indirect"} node)`}>
+                <h3>{knsName}</h3>
+              </Tooltip>
             </div>
             <input
               type="password"
@@ -113,14 +115,14 @@ function Login({
             </div>
           )}
 
-          <button type="submit">Login</button>
+          <button type="submit">Log in</button>
 
           <div className="additional-options">
             <button
-              className="clear"
+              className="secondary"
               onClick={() => navigate('/reset')}
             >
-              Reset Node & Networking Info
+              Reset Password & Networking Info
             </button>
           </div>
         </form>

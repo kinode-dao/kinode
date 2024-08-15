@@ -4,7 +4,7 @@ import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
 import { sha256, toBytes } from "viem";
 import { useSignTypedData, useAccount, useChainId } from 'wagmi'
-import { KINOMAP } from "../abis";
+import { KIMAP } from "../abis";
 
 type SetPasswordProps = {
   direct: boolean;
@@ -61,7 +61,7 @@ function SetPassword({
             name: "Kimap",
             version: "1",
             chainId: chainId,
-            verifyingContract: KINOMAP,
+            verifyingContract: KIMAP,
           },
           types: {
             Boot: [
@@ -111,7 +111,6 @@ function SetPassword({
               res.status < 300 &&
               Number(res.headers.get("content-length")) !== appSizeOnLoad
             ) {
-              console.log("WE GOOD, ROUTING")
               clearInterval(interval);
               window.location.replace("/");
             }
@@ -132,8 +131,8 @@ function SetPassword({
       ) : (
         <form className="form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <Tooltip text="This password will be used to log in if you restart your node or switch browsers.">
-              <label className="form-label" htmlFor="password">New Password</label>
+            <Tooltip text="This password will be used to log in when you restart your node or switch browsers.">
+              <label className="form-label" htmlFor="password">Set Password</label>
             </Tooltip>
             <input
               type="password"
@@ -141,7 +140,7 @@ function SetPassword({
               required
               minLength={6}
               name="password"
-              placeholder="Min 6 characters"
+              placeholder="6 characters minimum"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
               autoFocus
@@ -155,7 +154,7 @@ function SetPassword({
               required
               minLength={6}
               name="confirm-password"
-              placeholder="Min 6 characters"
+              placeholder="6 characters minimum"
               value={pw2}
               onChange={(e) => setPw2(e.target.value)}
             />

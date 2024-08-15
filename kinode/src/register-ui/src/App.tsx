@@ -3,6 +3,7 @@ import { Navigate, BrowserRouter as Router, Route, Routes, useParams } from 'rea
 
 import CommitDotOsName from "./pages/CommitDotOsName";
 import MintDotOsName from "./pages/MintDotOsName";
+import MintCustom from "./pages/MintCustom";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
 import ResetDotOsName from './pages/ResetDotOsName'
@@ -19,7 +20,7 @@ function App() {
   const [keyFileName, setKeyFileName] = useState<string>('');
   const [reset, setReset] = useState<boolean>(false);
   const [direct, setDirect] = useState<boolean>(false);
-  const [knsName, setOsName] = useState<string>('');
+  const [knsName, setKnsName] = useState<string>('');
   const [appSizeOnLoad, setAppSizeOnLoad] = useState<number>(0);
   const [networkingKey, setNetworkingKey] = useState<string>('');
   const [ipAddress, setIpAddress] = useState<number>(0);
@@ -50,7 +51,7 @@ function App() {
           const info: UnencryptedIdentity = await infoResponse.json()
 
           if (initialVisit) {
-            setOsName(info.name)
+            setKnsName(info.name)
             setRouters(info.allowed_routers)
             setNavigateToLogin(true)
             setInitialVisit(false)
@@ -87,7 +88,7 @@ function App() {
     keyFileName, setKeyFileName,
     reset, setReset,
     pw, setPw,
-    knsName, setOsName,
+    knsName, setKnsName,
     connectOpen, openConnect, closeConnect,
     networkingKey, setNetworkingKey,
     ipAddress, setIpAddress,
@@ -114,6 +115,7 @@ function App() {
               <Route path="/reset" element={<ResetDotOsName {...props} />} />
               <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
               <Route path="/login" element={<Login {...props} />} />
+              <Route path="/custom-register" element={<MintCustom {...props} />} />
             </Routes>
           </main>
         </Router>

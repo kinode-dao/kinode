@@ -29,6 +29,7 @@
 }
 
 .tooltip-text {
+    font-size: 0.8em;
     visibility: hidden;
     width: 200px;
     background-color: #555;
@@ -127,13 +128,14 @@
 .kns-input {
     flex-grow: 1;
     padding: 0.5rem;
+    font-size: 1.2em;
     border: 1px solid var(--gray);
     border-radius: 4px 0 0 4px;
 }
 
 .kns-suffix {
     padding: 0.5rem;
-    background-color: var(--gray);
+    background-color: var(--blue);
     border: 1px solid var(--tasteful-dark);
     border-left: none;
     border-radius: 0 4px 4px 0;
@@ -148,6 +150,7 @@
 .error-message {
     color: var(--ansi-red);
     margin-top: 0.5rem;
+    overflow-wrap: break-word;
 }
 
 .direct-checkbox {
@@ -215,6 +218,7 @@
 
 .checkbox-label {
     margin-left: 10px;
+    font-size: 0.9em;
 }
 
 .file-input-label {
@@ -235,4 +239,8 @@
 .file-input-label:hover .button {
     background-color: var(--dark-orange);
     color: var(--off-white);
+}
+
+button.secondary {
+    width: 100%;
 }

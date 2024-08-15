@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import KinodeBird from '../components/KinodeBird'
 import useHomepageStore from '../store/homepageStore'
-import { FaChevronDown, FaChevronUp, FaScrewdriverWrench } from 'react-icons/fa6'
+import { FaChevronDown, FaChevronUp } from 'react-icons/fa6'
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
 import Widgets from '../components/Widgets'
@@ -59,15 +59,15 @@ function Homepage() {
             : new Date().getHours() < 18
               ? 'Good afternoon'
               : 'Good evening'}, {our}</h2>
-        <a href="https://github.com/kinode-dao/kinode/releases" target="_blank">[v{version}]</a>
-        <button onClick={() => setShowWidgetsSettings(true)}>
-          <FaScrewdriverWrench />
-        </button>
+        <a href="https://github.com/kinode-dao/kinode/releases" target="_blank">[kinode v{version}]</a>
+        <a href="#" onClick={(e) => { e.preventDefault(); setShowWidgetsSettings(true); }}>
+          [⚙]
+        </a>
       </header>
       <AppsDock />
       <Widgets />
       <footer>
-        <button onClick={() => setAllAppsExpanded(!allAppsExpanded)}>
+        <button className="footer-button" onClick={() => setAllAppsExpanded(!allAppsExpanded)}>
           {allAppsExpanded ? <FaChevronDown /> : <FaChevronUp />}
           <span>{allAppsExpanded ? 'Collapse' : 'All apps'}</span>
         </button>

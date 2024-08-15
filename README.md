@@ -38,6 +38,10 @@ rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 
+# Install NPM so we can build frontends for "distro" packages.
+# https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
+# If you want to skip this step, run cargo build with the environment variable SKIP_BUILD_FRONTEND=true
+
 # Build the runtime, along with a number of "distro" Wasm modules.
 # The compiled binary will be at `kinode/target/debug/kinode`
 # OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
@@ -139,8 +143,9 @@ A list of the terminal scripts included in this distro:
     - Example: `cat /terminal:sys/pkg/scripts.json`
 - `echo <text>`: print text to the terminal.
     - Example: `echo foo`
+- `help <command>`: print the help message for a command. Leave the command blank to print the help message for all commands.
 - `hi <name> <string>`: send a text message to another node's command line.
-    - Example: `hi ben.os hello world`
+    - Example: `hi mothu.kino hello world`
 - `kfetch`: print system information a la neofetch. No arguments.
 - `kill <process-id>`: terminate a running process. This will bypass any restart behavior–use judiciously.
     - Example: `kill chess:chess:sys`
