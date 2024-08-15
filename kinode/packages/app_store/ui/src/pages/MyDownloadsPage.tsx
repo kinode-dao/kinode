@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { FaFolder, FaFile, FaChevronLeft, FaSync, FaRocket, FaSpinner, FaCheck } from "react-icons/fa";
 import useAppsStore from "../store";
-import { DownloadItem, PackageManifest } from "../types/Apps";
+import { DownloadItem, PackageManifest, PackageState } from "../types/Apps";
 
 export default function MyDownloadsPage() {
     const { fetchDownloads, fetchDownloadsForApp, startMirroring, stopMirroring, installApp, getCaps, approveCaps, fetchInstalled, installed } = useAppsStore();
@@ -19,13 +19,18 @@ export default function MyDownloadsPage() {
     }, [currentPath]);
 
     const loadItems = async () => {
-        let downloads: DownloadItem[];
-        if (currentPath.length === 0) {
-            downloads = await fetchDownloads();
-        } else {
-            downloads = await fetchDownloadsForApp(currentPath.join(':'));
+        try {
+            let downloads: DownloadItem[];
+            if (currentPath.length === 0) {
+                downloads = await fetchDownloads();
+            } else {
+                downloads = await fetchDownloadsForApp(currentPath.join(':'));
+            }
+            setItems(downloads);
+        } catch (error) {
+            console.error("Error loading items:", error);
+            setError(`Error loading items: ${error instanceof Error ? error.message : String(error)}`);
         }
-        setItems(downloads);
     };
 
     const navigateToItem = (item: DownloadItem) => {
@@ -89,6 +94,11 @@ export default function MyDownloadsPage() {
         }
     };
 
+    const isAppInstalled = (name: string): boolean => {
+        const packageName = name.replace('.zip', '');
+        return Object.values(installed).some(app => app.package_id.package_name === packageName);
+    };
+
     return (
         <div className="downloads-page">
             <h2>Downloads</h2>
@@ -115,7 +125,7 @@ export default function MyDownloadsPage() {
                         {items.map((item, index) => {
                             const isFile = !!item.File;
                             const name = isFile ? item.File!.name : item.Dir!.name;
-                            const isInstalled = isFile && installed.some(i => i.package_id.package_name === name.replace('.zip', ''));
+                            const isInstalled = isFile && isAppInstalled(name);
                             return (
                                 <tr key={index} onClick={() => navigateToItem(item)} className={isFile ? 'file' : 'directory'}>
                                     <td>

@@ -8,8 +8,8 @@ import { WEBSOCKET_URL } from '../utils/ws'
 const BASE_URL = '/main:app_store:sys'
 
 interface AppsStore {
-  listings: AppListing[]
-  installed: PackageState[]
+  listings: Record<string, AppListing>
+  installed: Record<string, PackageState>
   downloads: Record<string, DownloadItem[]>
   ourApps: AppListing[]
   ws: KinodeClientApi
@@ -18,9 +18,10 @@ interface AppsStore {
   fetchListings: () => Promise<void>
   fetchListing: (id: string) => Promise<AppListing>
   fetchInstalled: () => Promise<void>
-  fetchDownloads: () => Promise<DownloadItem[]>;
-  fetchOurApps: () => Promise<void>;
-  fetchDownloadsForApp: (id: string) => Promise<DownloadItem[]>;
+  fetchInstalledApp: (id: string) => Promise<PackageState | null>
+  fetchDownloads: () => Promise<DownloadItem[]>
+  fetchOurApps: () => Promise<void>
+  fetchDownloadsForApp: (id: string) => Promise<DownloadItem[]>
   checkMirror: (node: string) => Promise<MirrorCheckFile>
 
   installApp: (id: string, version_hash: string) => Promise<void>
@@ -42,8 +43,8 @@ const appId = (id: string): PackageId => {
 const useAppsStore = create<AppsStore>()(
   persist(
     (set, get): AppsStore => ({
-      listings: [],
-      installed: [],
+      listings: {},
+      installed: {},
       downloads: {},
       ourApps: [],
       activeDownloads: {},
@@ -77,29 +78,49 @@ const useAppsStore = create<AppsStore>()(
       fetchListings: async () => {
         const res = await fetch(`${BASE_URL}/apps`)
         if (res.status === HTTP_STATUS.OK) {
-          const data = await res.json()
-          set({ listings: data || [] })
+          const data: AppListing[] = await res.json()
+          const listingsMap = data.reduce((acc, listing) => {
+            acc[`${listing.package_id.package_name}:${listing.package_id.publisher_node}`] = listing
+            return acc
+          }, {} as Record<string, AppListing>)
+          set({ listings: listingsMap })
         }
       },
 
       fetchListing: async (id: string) => {
         const res = await fetch(`${BASE_URL}/apps/${id}`)
         if (res.status === HTTP_STATUS.OK) {
-          const listing = await res.json()
+          const listing: AppListing = await res.json()
           set((state) => ({
-            listings: state.listings.map(l => l.package_id === appId(id) ? listing : l)
+            listings: { ...state.listings, [id]: listing }
           }))
           return listing
         }
-        throw new Error(`Failed to get listing for app: ${id}`)
+        throw new Error(`Failed to fetch listing for app: ${id}`)
       },
 
       fetchInstalled: async () => {
         const res = await fetch(`${BASE_URL}/installed`)
         if (res.status === HTTP_STATUS.OK) {
-          const installed = await res.json()
-          set({ installed })
+          const data: PackageState[] = await res.json()
+          const installedMap = data.reduce((acc, pkg) => {
+            acc[`${pkg.package_id.package_name}:${pkg.package_id.publisher_node}`] = pkg
+            return acc
+          }, {} as Record<string, PackageState>)
+          set({ installed: installedMap })
         }
+      },
+
+      fetchInstalledApp: async (id: string) => {
+        const res = await fetch(`${BASE_URL}/installed/${id}`)
+        if (res.status === HTTP_STATUS.OK) {
+          const installedApp: PackageState = await res.json()
+          set((state) => ({
+            installed: { ...state.installed, [id]: installedApp }
+          }))
+          return installedApp
+        }
+        return null
       },
 
       fetchDownloads: async () => {
@@ -114,17 +135,16 @@ const useAppsStore = create<AppsStore>()(
 
       fetchOurApps: async () => {
         const res = await fetch(`${BASE_URL}/ourapps`)
-
         if (res.status === HTTP_STATUS.OK) {
-          const data = await res.json()
-          set({ ourApps: data || [] })
+          const data: AppListing[] = await res.json()
+          set({ ourApps: data })
         }
       },
 
       fetchDownloadsForApp: async (id: string) => {
         const res = await fetch(`${BASE_URL}/downloads/${id}`)
         if (res.status === HTTP_STATUS.OK) {
-          const downloads = await res.json()
+          const downloads: DownloadItem[] = await res.json()
           set((state) => ({
             downloads: { ...state.downloads, [id]: downloads }
           }))
@@ -136,7 +156,7 @@ const useAppsStore = create<AppsStore>()(
       checkMirror: async (node: string) => {
         const res = await fetch(`${BASE_URL}/mirrorcheck/${node}`)
         if (res.status === HTTP_STATUS.OK) {
-          return await res.json()
+          return await res.json() as MirrorCheckFile
         }
         throw new Error(`Failed to check mirror status for node: ${node}`)
       },
@@ -173,7 +193,7 @@ const useAppsStore = create<AppsStore>()(
       getCaps: async (id: string) => {
         const res = await fetch(`${BASE_URL}/apps/${id}/caps`)
         if (res.status === HTTP_STATUS.OK) {
-          return await res.json()
+          return await res.json() as PackageManifest
         }
         throw new Error(`Failed to get caps for app: ${id}`)
       },

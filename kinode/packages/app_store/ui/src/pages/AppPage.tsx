@@ -3,55 +3,81 @@ import { useNavigate, useParams } from "react-router-dom";
 import { FaDownload, FaCheck, FaTimes, FaPlay } from "react-icons/fa";
 import useAppsStore from "../store";
 import { AppListing, PackageState } from "../types/Apps";
+import { compareVersions } from "../utils/compareVersions";
 
 export default function AppPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { listings, installed, fetchListings, fetchInstalled } = useAppsStore();
+  const { fetchListing, fetchInstalledApp, installApp } = useAppsStore();
   const [app, setApp] = useState<AppListing | null>(null);
   const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
-    await Promise.all([fetchListings(), fetchInstalled()]);
+    if (!id) return;
+    setIsLoading(true);
+    setError(null);
 
-    const foundApp = listings.find(a => `${a.package_id.package_name}:${a.package_id.publisher_node}` === id) || null;
-    setApp(foundApp);
+    try {
+      const [appData, installedAppData] = await Promise.all([
+        fetchListing(id),
+        fetchInstalledApp(id)
+      ]);
 
-    if (foundApp) {
-      const foundInstalledApp = installed.find(i =>
-        i.package_id.package_name === foundApp.package_id.package_name &&
-        i.package_id.publisher_node === foundApp.package_id.publisher_node
-      ) || null;
-      setInstalledApp(foundInstalledApp);
+      setApp(appData);
+      setInstalledApp(installedAppData);
 
-      if (foundApp.metadata?.properties?.code_hashes) {
-        const versions = foundApp.metadata.properties.code_hashes;
+      if (appData.metadata?.properties?.code_hashes) {
+        const versions = appData.metadata.properties.code_hashes;
         if (versions.length > 0) {
-          setLatestVersion(versions[versions.length - 1][0]);
-          if (foundInstalledApp) {
-            const installedVersion = versions.find(([_, hash]) => hash === foundInstalledApp.our_version_hash);
+          const latestVer = versions.reduce((latest, current) =>
+            compareVersions(current[0], latest[0]) > 0 ? current : latest
+          )[0];
+          setLatestVersion(latestVer);
+
+          if (installedAppData) {
+            const installedVersion = versions.find(([_, hash]) => hash === installedAppData.our_version_hash);
             if (installedVersion) {
               setCurrentVersion(installedVersion[0]);
             }
           }
         }
       }
+    } catch (err) {
+      setError("Failed to load app details. Please try again.");
+      console.error(err);
+    } finally {
+      setIsLoading(false);
     }
-  }, [id, fetchListings, fetchInstalled]);
+  }, [id, fetchListing, fetchInstalledApp]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  if (!app) {
-    return <div className="app-page"><h4>App details not found for {id}</h4></div>;
-  }
-
   const handleDownload = () => {
     navigate(`/download/${id}`);
   };
+
+  const handleLaunch = () => {
+    // Implement launch functionality
+    console.log("Launching app:", app?.package_id.package_name);
+  };
+
+  if (isLoading) {
+    return <div className="app-page"><h4>Loading app details...</h4></div>;
+  }
+
+  if (error) {
+    return <div className="app-page"><h4>{error}</h4></div>;
+  }
+
+  if (!app) {
+    return <div className="app-page"><h4>App details not found for {id}</h4></div>;
+  }
 
   return (
     <section className="app-page">
@@ -89,7 +115,7 @@ export default function AppPage() {
           <FaDownload /> Download
         </button>
         {installedApp && (
-          <button className="primary">
+          <button onClick={handleLaunch} className="primary">
             <FaPlay /> Launch
           </button>
         )}

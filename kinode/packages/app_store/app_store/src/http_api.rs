@@ -566,7 +566,7 @@ fn serve_paths(
                 ));
             };
 
-            let downloads = Address::from_str("downloads@downloads:app_store:sys")?;
+            let downloads = Address::from_str("our@downloads:app_store:sys")?;
 
             match method {
                 // start mirroring an app

@@ -8,7 +8,6 @@ import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
 
 export default function PublishPage() {
-  const { state } = useLocation();
   const { openConnectModal } = useConnectModal();
   const { ourApps, fetchOurApps } = useAppsStore();
   const publicClient = usePublicClient();
@@ -83,7 +82,6 @@ export default function PublishPage() {
           [tba, owner, _data] = data as [string, string, string];
           isUpdate = false; // It's a new package, but we might have a publisher TBA
           currentTBA = (tba && tba !== '0x') ? tba as `0x${string}` : null;
-          console.log('NEWcurrenttba, isupdate: ', currentTBA, isUpdate)
         }
 
         let metadata = metadataHash;
@@ -252,10 +250,10 @@ export default function PublishPage() {
 
       <div className="my-packages">
         <h2>Packages You Own</h2>
-        {ourApps.length > 0 ? (
+        {Object.keys(ourApps).length > 0 ? (
           <ul>
-            {ourApps.map((app) => (
-              <li key={`${app.package_id.package_name}:{app.package_id.publisher_node}`}>
+            {Object.values(ourApps).map((app) => (
+              <li key={`${app.package_id.package_name}:${app.package_id.publisher_node}`}>
                 <Link to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`} className="app-name">
                   {app.metadata?.name || app.package_id.package_name}
                 </Link>

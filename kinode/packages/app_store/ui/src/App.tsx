@@ -8,7 +8,6 @@ import StorePage from "./pages/StorePage";
 import AppPage from "./pages/AppPage";
 import DownloadPage from "./pages/DownloadPage";
 import PublishPage from "./pages/PublishPage";
-import Testing from "./pages/Testing";
 import MyDownloadsPage from "./pages/MyDownloadsPage";
 
 
@@ -21,9 +20,7 @@ function App() {
     <div>
       <Router basename={BASE_URL}>
         <Header />
-        <button onClick={() => window.location.href = `${BASE_URL}/testing`}>Go to Testing</button>
         <Routes>
-          <Route path="/testing" element={<Testing />} />
           <Route path={STORE_PATH} element={<StorePage />} />
           <Route path={MY_DOWNLOADS_PATH} element={<MyDownloadsPage />} />
           <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} />

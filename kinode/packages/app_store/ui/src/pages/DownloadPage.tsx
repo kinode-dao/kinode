@@ -2,14 +2,14 @@ import React, { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { FaDownload, FaCheck, FaSpinner, FaRocket, FaChevronDown, FaChevronUp, FaExclamationTriangle } from "react-icons/fa";
 import useAppsStore from "../store";
-import { AppListing, DownloadItem, MirrorCheckFile, PackageManifest } from "../types/Apps";
+import { DownloadItem, PackageManifest, AppListing } from "../types/Apps";
 
 export default function DownloadPage() {
     const { id } = useParams();
     const { listings, fetchListings, fetchDownloadsForApp, downloadApp, installApp, checkMirror, fetchInstalled, installed, getCaps, approveCaps } = useAppsStore();
     const [downloads, setDownloads] = useState<DownloadItem[]>([]);
     const [selectedMirror, setSelectedMirror] = useState<string | null>(null);
-    const [mirrorStatuses, setMirrorStatuses] = useState<{ [mirror: string]: MirrorCheckFile | null }>({});
+    const [mirrorStatuses, setMirrorStatuses] = useState<{ [mirror: string]: { status: 'unchecked' | 'checking' | 'online' | 'offline' } }>({});
     const [isDownloading, setIsDownloading] = useState(false);
     const [isInstalling, setIsInstalling] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -19,8 +19,10 @@ export default function DownloadPage() {
     const [manifest, setManifest] = useState<PackageManifest | null>(null);
     const [showCapApproval, setShowCapApproval] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+    const [showManualMirror, setShowManualMirror] = useState(false);
+    const [manualMirror, setManualMirror] = useState("");
 
-    const app = listings.find(a => `${a.package_id.package_name}:${a.package_id.publisher_node}` === id);
+    const app = listings[id as string];
 
     useEffect(() => {
         fetchListings();
@@ -32,20 +34,30 @@ export default function DownloadPage() {
 
     useEffect(() => {
         if (app) {
-            checkMirrors();
+            initializeMirrors();
         }
     }, [app]);
 
-    const checkMirrors = async () => {
+    const initializeMirrors = () => {
         if (!app) return;
         const mirrors = [app.package_id.publisher_node, ...(app.metadata?.properties?.mirrors || [])];
-        const statuses: { [mirror: string]: MirrorCheckFile | null } = {};
-        for (const mirror of mirrors) {
+        const initialStatuses: { [mirror: string]: { status: 'unchecked' | 'checking' | 'online' | 'offline' } } = {};
+        mirrors.forEach(mirror => {
+            initialStatuses[mirror] = { status: 'unchecked' };
+        });
+        setMirrorStatuses(initialStatuses);
+        setSelectedMirror(app.package_id.publisher_node);
+        mirrors.forEach(checkMirrorStatus);
+    };
+
+    const checkMirrorStatus = async (mirror: string) => {
+        setMirrorStatuses(prev => ({ ...prev, [mirror]: { status: 'checking' } }));
+        try {
             const status = await checkMirror(mirror);
-            statuses[mirror] = status;
+            setMirrorStatuses(prev => ({ ...prev, [mirror]: { status: status.is_online ? 'online' : 'offline' } }));
+        } catch (error) {
+            setMirrorStatuses(prev => ({ ...prev, [mirror]: { status: 'offline' } }));
         }
-        setMirrorStatuses(statuses);
-        setSelectedMirror(statuses[app.package_id.publisher_node]?.is_online ? app.package_id.publisher_node : mirrors.find(m => statuses[m]?.is_online) || null);
     };
 
     const handleDownload = async (version: string) => {
@@ -115,25 +127,64 @@ export default function DownloadPage() {
             <div className="mirror-selection">
                 <h3>Select Mirror</h3>
                 <select
-                    value={selectedMirror || ''}
-                    onChange={(e) => setSelectedMirror(e.target.value)}
+                    value={selectedMirror === manualMirror ? 'manual' : selectedMirror || ''}
+                    onChange={(e) => {
+                        if (e.target.value === 'manual') {
+                            setShowManualMirror(true);
+                        } else {
+                            setSelectedMirror(e.target.value);
+                            setShowManualMirror(false);
+                            setManualMirror('');
+                        }
+                    }}
                     disabled={isDownloading}
                 >
                     <option value="" disabled>Select Mirror</option>
-                    {Object.entries(mirrorStatuses).map(([mirror, status]) => (
-                        <option key={mirror} value={mirror} disabled={!status?.is_online}>
-                            {mirror} {status?.is_online ? '(Online)' : '(Offline)'}
+                    {Object.entries(mirrorStatuses).map(([mirror, { status }]) => (
+                        <option key={mirror} value={mirror} disabled={status === 'offline'}>
+                            {mirror} {status === 'checking' ? '(Checking...)' : status === 'online' ? '(Online)' : status === 'offline' ? '(Offline)' : ''}
                         </option>
                     ))}
+                    <option value="manual">Manual Mirror (Advanced)</option>
                 </select>
+                {(showManualMirror || selectedMirror === manualMirror) && (
+                    <div className="manual-mirror-input">
+                        <input
+                            type="text"
+                            value={manualMirror}
+                            onChange={(e) => setManualMirror(e.target.value)}
+                            placeholder="Enter mirror node"
+                        />
+                        <button
+                            onClick={() => {
+                                if (manualMirror) {
+                                    setSelectedMirror(manualMirror);
+                                    setShowManualMirror(true);
+                                }
+                            }}
+                            disabled={!manualMirror}
+                        >
+                            Set Manual Mirror
+                        </button>
+                        <button
+                            onClick={() => {
+                                setSelectedMirror(app.package_id.publisher_node);
+                                setShowManualMirror(false);
+                                setManualMirror('');
+                            }}
+                        >
+                            Reset to Default Mirror
+                        </button>
+                    </div>
+                )}
             </div>
+
 
             <h3>Available Versions</h3>
             <table className="downloads-table">
                 <thead>
                     <tr>
                         <th>Version</th>
-                        <th>Size</th>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
@@ -147,12 +198,11 @@ export default function DownloadPage() {
                             return false;
                         });
                         const isDownloaded = !!download;
-                        const isInstalled = installed.some(i => i.package_id.package_name === app.package_id.package_name && i.our_version_hash === version);
+                        const isInstalled = installed[id as string]?.our_version_hash === hash;
 
                         return (
                             <tr key={version}>
                                 <td>{version}</td>
-                                <td>{download?.File?.size ? `${(download.File.size / 1024 / 1024).toFixed(2)} MB` : 'N/A'}</td>
                                 <td>
                                     {isInstalled ? 'Installed' : isDownloaded ? 'Downloaded' : 'Not downloaded'}
                                 </td>
@@ -160,7 +210,7 @@ export default function DownloadPage() {
                                     {!isDownloaded && (
                                         <button
                                             onClick={() => handleDownload(version)}
-                                            disabled={!selectedMirror || isDownloading}
+                                            disabled={!selectedMirror || isDownloading || selectedMirror === 'manual'}
                                             className="download-button"
                                         >
                                             {isDownloading ? <FaSpinner className="fa-spin" /> : <FaDownload />} Download
