@@ -132,7 +132,10 @@ pub async fn terminal(
     // the kernel will try and print all events by default so that booting with
     // verbosity mode 3 guarantees all events from boot are shown.
     if verbose_mode != 3 {
-        let _ = debug_event_loop.send(DebugCommand::ToggleEventLoop).await;
+        debug_event_loop
+            .send(DebugCommand::ToggleEventLoop)
+            .await
+            .expect("failed to toggle full event loop off");
     }
 
     // only create event stream if not in detached mode
@@ -336,8 +339,21 @@ async fn handle_event(
             match verbose_mode {
                 0 => *verbose_mode = 1,
                 1 => *verbose_mode = 2,
-                2 => *verbose_mode = 3,
-                _ => *verbose_mode = 0,
+                2 => {
+                    *verbose_mode = 3;
+                    debug_event_loop
+                        .send(DebugCommand::ToggleEventLoop)
+                        .await
+                        .expect("failed to toggle ON full event loop");
+                }
+                3 => {
+                    *verbose_mode = 0;
+                    debug_event_loop
+                        .send(DebugCommand::ToggleEventLoop)
+                        .await
+                        .expect("failed to toggle OFF full event loop");
+                }
+                _ => unreachable!(),
             }
             Printout::new(
                 0,
@@ -347,15 +363,13 @@ async fn handle_event(
                         0 => "off",
                         1 => "debug",
                         2 => "super-debug",
-                        _ => "full event loop",
+                        3 => "full event loop",
+                        _ => unreachable!(),
                     }
                 ),
             )
             .send(&print_tx)
             .await;
-            if *verbose_mode == 3 {
-                let _ = debug_event_loop.send(DebugCommand::ToggleEventLoop).await;
-            }
         }
         //
         // CTRL+J: toggle debug mode -- makes system-level event loop step-through

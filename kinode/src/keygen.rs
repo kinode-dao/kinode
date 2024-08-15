@@ -17,7 +17,7 @@ type DiskKey = [u8; CREDENTIAL_LEN];
 
 pub const CREDENTIAL_LEN: usize = ring::digest::SHA256_OUTPUT_LEN;
 pub const ITERATIONS: u32 = 1_000_000;
-pub static PBKDF2_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256; // TODO maybe look into Argon2
+pub static PBKDF2_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
 
 pub fn encode_keyfile(
     password_hash: String,

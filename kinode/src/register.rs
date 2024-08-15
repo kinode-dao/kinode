@@ -348,7 +348,6 @@ async fn handle_boot(
     // this call can fail if the indexer has not caught up to the transaction
     // that just got confirmed on our frontend. for this reason, we retry
     // the call a few times before giving up.
-    // todo remove?
 
     let mut attempts = 0;
     let mut get_result = Err(());
