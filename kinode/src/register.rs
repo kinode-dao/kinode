@@ -348,14 +348,71 @@ async fn handle_boot(
     // this call can fail if the indexer has not caught up to the transaction
     // that just got confirmed on our frontend. for this reason, we retry
     // the call a few times before giving up.
-
     let mut attempts = 0;
-    let mut get_result = Err(());
     while attempts < 5 {
         match provider.call(&tx).await {
             Ok(get) => {
-                get_result = Ok(get);
-                break;
+                let Ok(node_info) = getCall::abi_decode_returns(&get, false) else {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&"Failed to decode kimap entry from return bytes"),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                    .into_response());
+                };
+                let owner = node_info.owner;
+
+                let chain_id: u64 = 10;
+
+                let domain = eip712_domain! {
+                    name: "Kimap",
+                    version: "1",
+                    chain_id: chain_id,
+                    verifying_contract: kimap,
+                };
+
+                let boot = Boot {
+                    username: our.name.clone(),
+                    password_hash,
+                    timestamp: U256::from(info.timestamp),
+                    direct: info.direct,
+                    reset: info.reset,
+                    chain_id: U256::from(chain_id),
+                };
+
+                let hash = boot.eip712_signing_hash(&domain);
+                let sig = Signature::from_str(&info.signature).map_err(|_| warp::reject())?;
+
+                let recovered_address = sig
+                    .recover_address_from_prehash(&hash)
+                    .map_err(|_| warp::reject())?;
+
+                if recovered_address != owner {
+                    attempts += 1;
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+
+                let decoded_keyfile = Keyfile {
+                    username: our.name.clone(),
+                    routers: our.routers().unwrap_or(&vec![]).clone(),
+                    networking_keypair: signature::Ed25519KeyPair::from_pkcs8(
+                        networking_keypair.as_ref(),
+                    )
+                    .unwrap(),
+                    jwt_secret_bytes: jwt_secret.to_vec(),
+                    file_key: keygen::generate_file_key(),
+                };
+
+                let encoded_keyfile = keygen::encode_keyfile(
+                    info.password_hash,
+                    decoded_keyfile.username.clone(),
+                    decoded_keyfile.routers.clone(),
+                    &networking_keypair,
+                    &decoded_keyfile.jwt_secret_bytes,
+                    &decoded_keyfile.file_key,
+                );
+
+                return success_response(sender, our, decoded_keyfile, encoded_keyfile).await;
             }
             Err(_) => {
                 attempts += 1;
@@ -363,76 +420,12 @@ async fn handle_boot(
             }
         }
     }
-    let Ok(get) = get_result else {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to fetch kimap entry for username"),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response());
-    };
 
-    let Ok(node_info) = getCall::abi_decode_returns(&get, false) else {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to decode kimap entry from return bytes"),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response());
-    };
-
-    let owner = node_info.owner;
-
-    let chain_id: u64 = 10;
-
-    let domain = eip712_domain! {
-        name: "Kimap",
-        version: "1",
-        chain_id: chain_id,
-        verifying_contract: kimap,
-    };
-
-    let boot = Boot {
-        username: our.name.clone(),
-        password_hash,
-        timestamp: U256::from(info.timestamp),
-        direct: info.direct,
-        reset: info.reset,
-        chain_id: U256::from(chain_id),
-    };
-
-    let hash = boot.eip712_signing_hash(&domain);
-    let sig = Signature::from_str(&info.signature).map_err(|_| warp::reject())?;
-
-    let recovered_address = sig
-        .recover_address_from_prehash(&hash)
-        .map_err(|_| warp::reject())?;
-
-    if recovered_address != owner {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Recovered address does not match owner"),
-            StatusCode::UNAUTHORIZED,
-        )
-        .into_response());
-    }
-
-    let decoded_keyfile = Keyfile {
-        username: our.name.clone(),
-        routers: our.routers().unwrap_or(&vec![]).clone(),
-        networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
-            .unwrap(),
-        jwt_secret_bytes: jwt_secret.to_vec(),
-        file_key: keygen::generate_file_key(),
-    };
-
-    let encoded_keyfile = keygen::encode_keyfile(
-        info.password_hash,
-        decoded_keyfile.username.clone(),
-        decoded_keyfile.routers.clone(),
-        &networking_keypair,
-        &decoded_keyfile.jwt_secret_bytes,
-        &decoded_keyfile.file_key,
-    );
-
-    success_response(sender, our, decoded_keyfile, encoded_keyfile).await
+    return Ok(warp::reply::with_status(
+        warp::reply::json(&"Recovered address does not match owner"),
+        StatusCode::UNAUTHORIZED,
+    )
+    .into_response());
 }
 
 async fn handle_import_keyfile(
