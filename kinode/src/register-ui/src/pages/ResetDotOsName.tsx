@@ -22,6 +22,7 @@ function ResetKnsName({
   setDirect,
   setReset,
   knsName,
+  setKnsName,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
@@ -73,6 +74,8 @@ function ResetKnsName({
         openConnectModal?.();
         return;
       }
+
+      setKnsName(name + ".os");
 
       try {
         const data = await generateNetworkingKeys({
