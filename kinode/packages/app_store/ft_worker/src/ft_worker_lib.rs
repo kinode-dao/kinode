@@ -1,4 +1,6 @@
-use crate::kinode::process::downloads::{DownloadRequest, PackageId};
+use crate::kinode::process::downloads::{
+    DownloadRequests, LocalDownloadRequest, PackageId, RemoteDownloadRequest,
+};
 
 use kinode_process_lib::*;
 
@@ -26,14 +28,13 @@ pub fn spawn_send_transfer(
         .target((&our.node, worker_process_id))
         .expects_response(timeout + 1)
         .body(
-            serde_json::to_vec(&DownloadRequest {
+            serde_json::to_vec(&DownloadRequests::RemoteDownload(RemoteDownloadRequest {
                 package_id: package_id.clone(),
                 desired_version_hash: version_hash.to_string(),
-                download_from: Some(to_addr.to_string()),
-            })
+                worker_address: to_addr.to_string(),
+            }))
             .unwrap(),
         );
-
     req.send()?;
     Ok(())
 }
@@ -43,6 +44,7 @@ pub fn spawn_receive_transfer(
     our: &Address,
     package_id: &PackageId,
     version_hash: &str,
+    from_node: &str,
     timeout: u64,
 ) -> anyhow::Result<Address> {
     let transfer_id: u64 = rand::random();
@@ -61,11 +63,11 @@ pub fn spawn_receive_transfer(
         .target((&our.node, worker_process_id.clone()))
         .expects_response(timeout + 1)
         .body(
-            serde_json::to_vec(&DownloadRequest {
+            serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
                 package_id: package_id.clone(),
                 desired_version_hash: version_hash.to_string(),
-                download_from: None,
-            })
+                download_from: from_node.to_string(),
+            }))
             .unwrap(),
         );
 

@@ -1,8 +1,8 @@
 use {
     crate::{
         kinode::process::{
-            chain::{Chains, GetAppResponse, OnChainMetadata},
-            downloads::{AddDownloadRequest, DownloadResponse, Downloads},
+            chain::{ChainRequests, ChainResponses, OnchainMetadata},
+            downloads::{AddDownloadRequest, DownloadRequests, DownloadResponses},
         },
         state::{PackageState, State},
         VFS_TIMEOUT,
@@ -75,17 +75,17 @@ pub fn fetch_package_manifest(
 
 pub fn fetch_package_metadata(
     package_id: &crate::kinode::process::main::PackageId,
-) -> anyhow::Result<OnChainMetadata> {
+) -> anyhow::Result<OnchainMetadata> {
     let chain = Address::from_str("our@chain:app_store:sys")?;
     let resp = Request::new()
         .target(chain)
-        .body(serde_json::to_vec(&Chains::GetApp(package_id.clone())).unwrap())
+        .body(serde_json::to_vec(&ChainRequests::GetApp(package_id.clone())).unwrap())
         .send_and_await_response(5)??;
 
-    let resp = serde_json::from_slice::<GetAppResponse>(&resp.body())?;
-    let app = match resp.app {
-        Some(app) => app,
-        None => {
+    let resp = serde_json::from_slice::<ChainResponses>(&resp.body())?;
+    let app = match resp {
+        ChainResponses::GetApp(Some(app)) => app,
+        _ => {
             return Err(anyhow::anyhow!(
                 "No app data found in response from chain:app_store:sys"
             ))
@@ -113,7 +113,7 @@ pub fn new_package(
     let downloads = Address::from_str("our@downloads:app_store:sys")?;
     let resp = Request::new()
         .target(downloads)
-        .body(serde_json::to_vec(&Downloads::AddDownload(
+        .body(serde_json::to_vec(&DownloadRequests::AddDownload(
             AddDownloadRequest {
                 package_id: package_id.clone(),
                 version_hash: version_hash.clone(),
@@ -123,15 +123,15 @@ pub fn new_package(
         .blob_bytes(bytes)
         .send_and_await_response(5)??;
 
-    let download_resp = serde_json::from_slice::<DownloadResponse>(&resp.body())?;
+    let download_resp = serde_json::from_slice::<DownloadResponses>(&resp.body())?;
     println!("got download resp: {:?}", download_resp);
-    if !download_resp.success {
-        return Err(anyhow::anyhow!(
-            "failed to add download: {:?}",
-            download_resp.error
-        ));
-    };
 
+    match download_resp {
+        DownloadResponses::Error(e) => {
+            return Err(anyhow::anyhow!("failed to add download: {:?}", e));
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -220,7 +220,7 @@ pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
 /// using this function, own that capability ourselves.
 pub fn install(
     package_id: &crate::kinode::process::main::PackageId,
-    metadata: Option<OnChainMetadata>,
+    metadata: Option<OnchainMetadata>,
     version_hash: &str,
     state: &mut State,
     our_node: &str,

@@ -1,10 +1,6 @@
 use crate::{
-    kinode::process::chain::{
-        Chains, GetAppResponse, GetAppsResponse, GetOurAppsResponse, OnChainApp, OnChainMetadata,
-        OnChainProperties,
-    },
-    kinode::process::downloads::{AvailableFiles, DownloadRequest, DownloadResponse, Downloads},
-    kinode::process::main::Error,
+    kinode::process::chain::{ChainRequests, ChainResponses},
+    kinode::process::downloads::{DownloadRequests, DownloadResponses, LocalDownloadRequest},
     state::{MirrorCheck, PackageState, State},
     Resp,
 };
@@ -226,10 +222,7 @@ pub fn handle_http_request(
             server::HttpResponse::new(http::StatusCode::INTERNAL_SERVER_ERROR),
             Some(LazyLoadBlob {
                 mime: None,
-                bytes: serde_json::to_vec(&Error {
-                    reason: e.to_string(),
-                })
-                .unwrap(),
+                bytes: serde_json::to_vec(&json!({"error": e.to_string()})).unwrap(),
             }),
         ),
     }
@@ -283,11 +276,15 @@ fn serve_paths(
             let chain = Address::from_str("our@chain:app_store:sys")?;
             let resp = Request::new()
                 .target(chain)
-                .body(serde_json::to_vec(&Chains::GetApps)?)
+                .body(serde_json::to_vec(&ChainRequests::GetApps)?)
                 .send_and_await_response(5)??;
-            let msg = serde_json::from_slice::<GetAppsResponse>(resp.body())?;
-            println!("apps response: {:?}", msg);
-            Ok((StatusCode::OK, None, resp.body().to_vec()))
+            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+            match msg {
+                ChainResponses::GetApps(apps) => {
+                    Ok((StatusCode::OK, None, serde_json::to_vec(&apps)?))
+                }
+                _ => Err(anyhow::anyhow!("Invalid response from chain: {:?}", msg)),
+            }
         }
         // GET detail about a specific app
         // update a downloaded app: PUT
@@ -307,11 +304,15 @@ fn serve_paths(
                     let chain = Address::from_str("our@chain:app_store:sys")?;
                     let resp = Request::new()
                         .target(chain)
-                        .body(serde_json::to_vec(&Chains::GetApp(package_id))?)
+                        .body(serde_json::to_vec(&ChainRequests::GetApp(package_id))?)
                         .send_and_await_response(5)??;
-                    let msg = serde_json::from_slice::<GetAppResponse>(resp.body())?;
-                    println!("apps response: {:?}", msg);
-                    Ok((StatusCode::OK, None, resp.body().to_vec()))
+                    let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+                    match msg {
+                        ChainResponses::GetApp(app) => {
+                            Ok((StatusCode::OK, None, serde_json::to_vec(&app)?))
+                        }
+                        _ => Err(anyhow::anyhow!("Invalid response from chain: {:?}", msg)),
+                    }
                 }
                 Method::DELETE => {
                     // uninstall an app
@@ -334,13 +335,22 @@ fn serve_paths(
             let downloads = Address::from_str("our@downloads:app_store:sys")?;
             let resp = Request::new()
                 .target(downloads)
-                .body(serde_json::to_vec(&Downloads::GetFiles(None))?)
+                .body(serde_json::to_vec(&DownloadRequests::GetFiles(None))?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
-            println!("downlaods response: {:?}", msg.files);
-            // shouldn't really return status code
-            Ok((StatusCode::OK, None, serde_json::to_vec(&msg.files)?))
+            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            match msg {
+                DownloadResponses::GetFiles(files) => {
+                    Ok((StatusCode::OK, None, serde_json::to_vec(&files)?))
+                }
+                DownloadResponses::Error(e) => {
+                    Err(anyhow::anyhow!("Error from downloads: {:?}", e))
+                }
+                _ => Err(anyhow::anyhow!(
+                    "Invalid response from downloads: {:?}",
+                    msg
+                )),
+            }
         }
         "/downloads/:id" => {
             // get all local downloads!
@@ -355,13 +365,24 @@ fn serve_paths(
             let downloads = Address::from_str("our@downloads:app_store:sys")?;
             let resp = Request::new()
                 .target(downloads)
-                .body(serde_json::to_vec(&Downloads::GetFiles(Some(package_id)))?)
+                .body(serde_json::to_vec(&DownloadRequests::GetFiles(Some(
+                    package_id,
+                )))?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<AvailableFiles>(resp.body())?;
-            println!("downlaods response: {:?}", msg);
-            // shouldn't really return status code
-            Ok((StatusCode::OK, None, serde_json::to_vec(&msg.files)?))
+            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            match msg {
+                DownloadResponses::GetFiles(files) => {
+                    Ok((StatusCode::OK, None, serde_json::to_vec(&files)?))
+                }
+                DownloadResponses::Error(e) => {
+                    Err(anyhow::anyhow!("Error from downloads: {:?}", e))
+                }
+                _ => Err(anyhow::anyhow!(
+                    "Invalid response from downloads: {:?}",
+                    msg
+                )),
+            }
         }
         "/installed" => {
             let all: Vec<serde_json::Value> = state
@@ -400,12 +421,15 @@ fn serve_paths(
 
             let resp = Request::new()
                 .target(chain)
-                .body(serde_json::to_vec(&Chains::GetOurApps)?)
+                .body(serde_json::to_vec(&ChainRequests::GetOurApps)?)
                 .send_and_await_response(5)??;
-            let msg = serde_json::from_slice::<GetOurAppsResponse>(resp.body())?;
-            println!("ourapps response: {:?}", msg);
-            // TODO, fetch from chain state!
-            Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?))
+            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+            match msg {
+                ChainResponses::GetOurApps(apps) => {
+                    Ok((StatusCode::OK, None, serde_json::to_vec(&apps)?))
+                }
+                _ => Err(anyhow::anyhow!("Invalid response from chain: {:?}", msg)),
+            }
         }
         // POST /apps/:id/download
         // download a listed app from a mirror
@@ -435,9 +459,9 @@ fn serve_paths(
 
             // TODO: handle HTTP urls here I think, with different context...
 
-            let download_request = DownloadRequest {
+            let download_request = LocalDownloadRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
-                download_from: Some(download_from),
+                download_from: download_from,
                 desired_version_hash: version_hash,
             };
             // TODO make these constants somewhere or something. this is so bad
@@ -565,31 +589,39 @@ fn serve_paths(
         // start auto-updating a downloaded app: PUT
         // stop auto-updating a downloaded app: DELETE
         "/downloads/:id/auto-update" => {
-            let Ok(package_id) = get_package_id(url_params) else {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    format!("Missing id").into_bytes(),
-                ));
+            let package_id = get_package_id(url_params)?;
+            let chain = Address::from_str("our@chain:app_store:sys")?;
+
+            let chain_request = match method {
+                Method::PUT => ChainRequests::StartAutoUpdate(
+                    crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                ),
+                Method::DELETE => ChainRequests::StopAutoUpdate(
+                    crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                ),
+                _ => {
+                    return Ok((
+                        StatusCode::METHOD_NOT_ALLOWED,
+                        None,
+                        format!("Invalid method {method} for {bound_path}").into_bytes(),
+                    ))
+                }
             };
 
-            // add version hash etc.
+            let resp = Request::new()
+                .target(chain)
+                .body(serde_json::to_vec(&chain_request)?)
+                .send_and_await_response(5)??;
 
-            match method {
-                // start auto-updating an app
-                // Method::PUT => {
-                //     state.start_auto_update(&package_id);
-                //     Ok((StatusCode::OK, None, vec![]))
-                // }
-                // // stop auto-updating an app
-                // Method::DELETE => {
-                //     state.stop_auto_update(&package_id);
-                //     Ok((StatusCode::OK, None, vec![]))
-                // }
+            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+            match msg {
+                ChainResponses::AutoUpdateStarted
+                | ChainResponses::AutoUpdateStopped
+                | ChainResponses::Error(_) => Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?)),
                 _ => Ok((
-                    StatusCode::METHOD_NOT_ALLOWED,
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     None,
-                    format!("Invalid method {method} for {bound_path}").into_bytes(),
+                    format!("Invalid response from chain: {:?}", msg).into_bytes(),
                 )),
             }
         }

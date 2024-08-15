@@ -3,21 +3,20 @@
 //! manages downloading and sharing of versioned packages.
 //!
 use crate::kinode::process::downloads::{
-    AvailableFiles, DownloadRequest, DownloadResponse, Downloads, Entry, ProgressUpdate,
+    DirEntry, DownloadError, DownloadRequests, DownloadResponses, Entry, FileEntry,
+    LocalDownloadRequest, ProgressUpdate, RemoteDownloadRequest,
 };
-use crate::kinode::process::main::Error;
-use std::{collections::HashSet, str::FromStr};
+use std::{collections::HashSet, io::Read, str::FromStr};
 
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
-use kinode_process_lib::get_blob;
 use kinode_process_lib::{
-    await_message, call_init,
+    await_message, call_init, get_blob, get_state,
     http::{
         self,
         client::{HttpClientError, HttpClientResponse},
     },
     print_to_terminal, println,
-    vfs::{self, DirEntry, Directory, File, SeekFrom},
+    vfs::{self, Directory, File},
     Address, Message, PackageId, ProcessId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
@@ -37,68 +36,55 @@ pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
-    Download(DownloadResponse),
+    Download(DownloadResponses),
     HttpClient(Result<HttpClientResponse, HttpClientError>),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
-    mirroring: HashSet<(PackageId, String)>, // (package_id, version_hash)
-                                             // Other implicit state needed?
-                                             // we could do something like a logfile for errors, downloads succeeded etc!
+    mirroring: HashSet<PackageId>,
+}
+
+impl State {
+    fn load() -> Self {
+        match get_state() {
+            Some(blob) => match serde_json::from_slice::<State>(&blob) {
+                Ok(state) => state,
+                Err(_) => State {
+                    mirroring: HashSet::new(),
+                },
+            },
+            None => State {
+                mirroring: HashSet::new(),
+            },
+        }
+    }
 }
 
 call_init!(init);
 fn init(our: Address) {
     println!("started");
 
-    // load from state, okay to decouple from vfs. it's "app-state" for downloads.
-    let mut state = State {
-        mirroring: HashSet::new(),
-    };
+    // mirroring metadata is separate from vfs downloads state.
+    let mut state = State::load();
 
-    // /log/.log file for debugs
-    vfs::create_drive(our.package_id(), "log", None).expect("could not create /log drive");
-    // /downloads/ for downloads
+    // /app_store:sys/downloads/
     vfs::create_drive(our.package_id(), "downloads", None)
         .expect("could not create /downloads drive");
 
-    let mut logfile =
-        vfs::open_file("/app_store:sys/log/.log", true, Some(5)).expect("could not open logfile");
-    logfile
-        .seek(SeekFrom::End(0))
-        .expect("could not seek to end of logfile");
-    // FIX this api... first creates (fails if already exists. second shouldn't fail like this... like files.)
-    let _ = vfs::open_dir("/app_store:sys/downloads", true, None);
     let mut downloads =
-        vfs::open_dir("/app_store:sys/downloads", false, None).expect("could not open downloads");
-    let _ = vfs::open_dir("/app_store:sys/downloads/tmp", true, None);
-    let mut tmp =
-        vfs::open_dir("/app_store:sys/downloads/tmp", false, None).expect("could not open tmp");
+        open_or_create_dir("/app_store:sys/downloads").expect("could not open downloads");
+    let mut tmp = open_or_create_dir("/app_store:sys/downloads/tmp").expect("could not open tmp");
 
     loop {
         match await_message() {
             Err(send_error) => {
-                println!("got network error: {send_error}");
+                print_to_terminal(1, &format!("got network error: {send_error}"));
             }
             Ok(message) => {
-                if let Err(e) = handle_message(
-                    &our,
-                    &mut state,
-                    &message,
-                    &mut logfile,
-                    &mut downloads,
-                    &mut tmp,
-                ) {
-                    println!("error handling message: {:?}", e);
-                    let _ = Response::new()
-                        .body(
-                            serde_json::to_vec(&Error {
-                                reason: e.to_string(),
-                            })
-                            .unwrap(),
-                        )
-                        .send();
+                if let Err(e) = handle_message(&our, &mut state, &message, &mut downloads, &mut tmp)
+                {
+                    print_to_terminal(1, &format!("error handling message: {:?}", e));
                 }
             }
         }
@@ -113,36 +99,79 @@ fn handle_message(
     our: &Address,
     state: &mut State,
     message: &Message,
-    logfile: &mut File,
     downloads: &mut Directory,
     tmp: &mut Directory,
 ) -> anyhow::Result<()> {
     if message.is_request() {
-        match serde_json::from_slice::<Downloads>(message.body())? {
-            Downloads::Download(download_request) => {
-                let is_local = message.is_local(our);
-                match handle_download_request(our, state, download_request, is_local) {
-                    Ok(()) => {
-                        Response::new()
-                            .body(serde_json::to_vec(&Resp::Download(DownloadResponse {
-                                success: true,
-                                error: None,
-                            }))?)
-                            .send()?;
-                    }
-                    Err(e) => {
-                        // make function, print and log!
-                        print_and_log(logfile, &format!("error handling download request: {e}"), 1);
-                        Response::new()
-                            .body(serde_json::to_vec(&Resp::Download(DownloadResponse {
-                                success: false,
-                                error: Some(e.to_string()),
-                            }))?)
-                            .send()?;
-                    }
+        match serde_json::from_slice::<DownloadRequests>(message.body())? {
+            DownloadRequests::LocalDownload(download_request) => {
+                // we want to download a package.
+                if !message.is_local(our) {
+                    return Err(anyhow::anyhow!("not local"));
                 }
+                let LocalDownloadRequest {
+                    package_id,
+                    desired_version_hash,
+                    download_from,
+                } = download_request;
+
+                if download_from.starts_with("http") {
+                    // use http_client to GET it
+                    let Ok(url) = url::Url::parse(&download_from) else {
+                        return Err(anyhow::anyhow!("bad url: {download_from}"));
+                    };
+                    // TODO: need context in this to get it back.
+                    http::client::send_request(http::Method::GET, url, None, Some(60), vec![]);
+                }
+
+                // go download from the node or url
+                // spawn a worker, and send a downlaod to the node.
+                let our_worker = spawn_receive_transfer(
+                    our,
+                    &package_id,
+                    &desired_version_hash,
+                    &download_from,
+                    APP_SHARE_TIMEOUT,
+                )?;
+
+                let target_node = Address::new(
+                    download_from,
+                    ProcessId::new(Some("downloads"), "app_store", "sys"),
+                );
+
+                Request::new()
+                    .target(target_node)
+                    .body(serde_json::to_vec(&DownloadRequests::RemoteDownload(
+                        RemoteDownloadRequest {
+                            package_id,
+                            desired_version_hash,
+                            worker_address: our_worker.to_string(),
+                        },
+                    ))?)
+                    .send()?;
+                // ok, now technically everything is ze ready. let's see what awaits and updates we send upstream/to the frontend.
             }
-            Downloads::Progress(ProgressUpdate {
+            DownloadRequests::RemoteDownload(download_request) => {
+                // this is a node requesting a download from us.
+                // check if we are mirroring. we should maybe implement some back and forth here.
+                // small handshake for started? but we do not really want to wait for that in this loop..
+                // might be okay. implement.
+                let RemoteDownloadRequest {
+                    package_id,
+                    desired_version_hash,
+                    worker_address,
+                } = download_request;
+
+                let target_worker = Address::from_str(&worker_address)?;
+                let _ = spawn_send_transfer(
+                    our,
+                    &package_id,
+                    &desired_version_hash,
+                    APP_SHARE_TIMEOUT,
+                    &target_worker,
+                )?;
+            }
+            DownloadRequests::Progress(ProgressUpdate {
                 package_id,
                 version_hash,
                 downloaded,
@@ -155,20 +184,20 @@ fn handle_message(
                 let _ = Request::new()
                     .target(target)
                     .body(
-                        serde_json::to_vec(&ProgressUpdate {
+                        serde_json::to_vec(&DownloadRequests::Progress(ProgressUpdate {
                             package_id,
                             version_hash,
                             downloaded,
                             total,
-                        })
+                        }))
                         .unwrap(),
                     )
                     .send();
             }
-            Downloads::GetFiles(maybe_id) => {
-                // if not local, throw to the boonies. (could also implement and discovery protocol here..)
+            DownloadRequests::GetFiles(maybe_id) => {
+                // if not local, throw to the boonies.
+                // note, can also implement a discovery protocol here in the future
                 if !message.is_local(our) {
-                    // todo figure out full error throwing for http pathways.
                     return Err(anyhow::anyhow!("not local"));
                 }
                 let files = match maybe_id {
@@ -177,21 +206,20 @@ fn handle_message(
                             format!("{}/{}", downloads.path, id.to_process_lib().to_string());
                         let dir = vfs::open_dir(&package_path, false, None)?;
                         let dir = dir.read()?;
-                        format_entries(dir)
+                        format_entries(dir, state)
                     }
                     None => {
                         let dir = downloads.read()?;
-                        format_entries(dir)
+                        format_entries(dir, state)
                     }
                 };
 
                 Response::new()
-                    .body(serde_json::to_vec(&AvailableFiles { files })?)
+                    .body(serde_json::to_string(&files)?)
                     .send()?;
             }
-            Downloads::AddDownload(add_req) => {
+            DownloadRequests::AddDownload(add_req) => {
                 if !message.is_local(our) {
-                    // todo figure out full error throwing for http pathways.
                     return Err(anyhow::anyhow!("not local"));
                 }
                 let Some(blob) = get_blob() else {
@@ -205,17 +233,39 @@ fn handle_message(
                     add_req.package_id.to_process_lib().to_string()
                 );
                 let _ = vfs::open_dir(&package_dir, true, None);
-                let file = vfs::create_file(
-                    &format!("{}/{}.zip", package_dir, add_req.version_hash),
-                    None,
-                )?;
-                let _ = file.write(bytes.as_slice())?;
+
+                // Write the zip file
+                let zip_path = format!("{}/{}.zip", package_dir, add_req.version_hash);
+                let file = vfs::create_file(&zip_path, None)?;
+                file.write(bytes.as_slice())?;
+
+                // Write the manifest file
+                // Extract and write the manifest
+                let manifest_path = format!("{}/{}.json", package_dir, add_req.version_hash);
+                extract_and_write_manifest(&bytes, &manifest_path)?;
 
                 Response::new()
-                    .body(serde_json::to_vec(&Resp::Download(DownloadResponse {
-                        success: true,
-                        error: None,
-                    }))?)
+                    .body(serde_json::to_vec(&Resp::Download(
+                        DownloadResponses::Success,
+                    ))?)
+                    .send()?;
+            }
+            DownloadRequests::StartMirroring(package_id) => {
+                let package_id = package_id.to_process_lib();
+                state.mirroring.insert(package_id);
+                Response::new()
+                    .body(serde_json::to_vec(&Resp::Download(
+                        DownloadResponses::Success,
+                    ))?)
+                    .send()?;
+            }
+            DownloadRequests::StopMirroring(package_id) => {
+                let package_id = package_id.to_process_lib();
+                state.mirroring.remove(&package_id);
+                Response::new()
+                    .body(serde_json::to_vec(&Resp::Download(
+                        DownloadResponses::Success,
+                    ))?)
                     .send()?;
             }
             _ => {}
@@ -224,6 +274,7 @@ fn handle_message(
         match serde_json::from_slice::<Resp>(message.body())? {
             Resp::Download(download_response) => {
                 // TODO handle download response
+                // maybe push to http? need await for that...
                 // send_and_awaits? this might not be needed.
             }
             Resp::HttpClient(resp) => {
@@ -245,87 +296,6 @@ fn handle_message(
             }
         }
     }
-    Ok(())
-}
-
-fn handle_download_request(
-    our: &Address,
-    state: &mut State,
-    download_request: DownloadRequest,
-    is_local: bool,
-) -> anyhow::Result<()> {
-    let DownloadRequest {
-        package_id,
-        desired_version_hash,
-        download_from,
-    } = download_request;
-
-    match is_local {
-        true => {
-            // we are requesting this: (handle http types in main?), forwarding here?
-            if let Some(node_or_url) = download_from {
-                if node_or_url.starts_with("http") {
-                    // use http_client to GET it
-                    let Ok(url) = url::Url::parse(&node_or_url) else {
-                        return Err(anyhow::anyhow!("bad url: {node_or_url}"));
-                    };
-                    // TODO: need context in this to get it back.
-                    http::client::send_request(http::Method::GET, url, None, Some(60), vec![]);
-                }
-
-                // go download from the node or url
-                // spawn a worker, and send a downlaod to the node.
-                let our_worker = spawn_receive_transfer(
-                    our,
-                    &package_id,
-                    &desired_version_hash,
-                    APP_SHARE_TIMEOUT,
-                )?;
-
-                let target_node = Address::new(
-                    node_or_url,
-                    ProcessId::new(Some("downloads"), "app_store", "sys"),
-                );
-
-                Request::new()
-                    .target(target_node)
-                    .body(
-                        serde_json::to_vec(&DownloadRequest {
-                            package_id,
-                            desired_version_hash,
-                            download_from: Some(our_worker.to_string()),
-                        })
-                        .unwrap(),
-                    )
-                    .send()?;
-                // ok, now technically everything is ze ready. let's see what awaits and updates we send upstream/to the frontend.
-            }
-        }
-        false => {
-            // Someone wants to download something from us!
-            // // check mirrors first! :]
-            // handle the errors that come from spawning.
-
-            if let Some(worker) = download_from {
-                // handle this error too.
-                let target_worker = Address::from_str(&worker)?;
-                let _ = spawn_send_transfer(
-                    our,
-                    &package_id,
-                    &desired_version_hash,
-                    APP_SHARE_TIMEOUT,
-                    &target_worker,
-                )?;
-            }
-
-            // bam, transfer should happen. again, handle errors.
-        }
-    }
-
-    // Update state to reflect that we're handling this download
-    // fix wit things
-    // state.mirroring.insert((package_id, desired_version_hash));
-
     Ok(())
 }
 
@@ -352,7 +322,7 @@ fn handle_receive_http_download(state: &mut State, name: &str) -> anyhow::Result
     // vfs::rename(&source_path, &dest_path)?;
 
     // Update state to reflect that we're now mirroring this package
-    state.mirroring.insert((package_id, version_hash.clone()));
+    // state.mirroring.insert(package_id);
 
     // TODO: Verify the integrity of the downloaded file (e.g., checksum)
 
@@ -363,72 +333,99 @@ fn handle_receive_http_download(state: &mut State, name: &str) -> anyhow::Result
     Ok(())
 }
 
-fn format_entries(entries: Vec<DirEntry>) -> Vec<Entry> {
+fn format_entries(entries: Vec<vfs::DirEntry>, state: &State) -> Vec<Entry> {
     entries
         .into_iter()
         .filter_map(|entry| {
-            let name = entry.path.rsplit('/').next().unwrap_or_default();
+            let name = entry
+                .path
+                .rsplit('/')
+                .next()
+                .unwrap_or_default()
+                .to_string();
             let is_file = entry.file_type == vfs::FileType::File;
-            let size = vfs::metadata(&entry.path, None).ok().map(|meta| meta.len);
-            Some(Entry {
-                name: name.to_string(),
-                is_file,
-                size,
-            })
+
+            if is_file {
+                if name.ends_with(".zip") {
+                    let size = vfs::metadata(&entry.path, None)
+                        .ok()
+                        .map(|meta| meta.len)
+                        .unwrap_or(0);
+                    let json_path = entry.path.replace(".zip", ".json");
+                    let manifest = if let Ok(file) = vfs::open_file(&json_path, false, None) {
+                        file.read_to_string().ok()
+                    } else {
+                        None
+                    };
+
+                    Some(Entry::File(FileEntry {
+                        name,
+                        size,
+                        manifest: manifest.unwrap_or_default(),
+                    }))
+                } else {
+                    None // ignore non-zip files
+                }
+            } else {
+                let mirroring = PackageId::from_str(&name)
+                    .map(|package_id| state.mirroring.contains(&package_id))
+                    .unwrap_or(false);
+
+                Some(Entry::Dir(DirEntry { name, mirroring }))
+            }
         })
-        .collect::<Vec<Entry>>()
+        .collect()
 }
 
-// Some useful comments for the immediate future:
+fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyhow::Result<()> {
+    let reader = std::io::Cursor::new(file_contents);
+    let mut archive = zip::ZipArchive::new(reader)?;
 
-// NOTE: we should handle NewPackage, kit start-package should just work
-//             (
-//                 match utils::new_package(
-//                     &package_id.to_process_lib(),
-//                     state,
-//                     metadata.to_erc721_metadata(),
-//                     mirror,
-//                     blob.bytes,
-//                 ) {
-//                     Ok(()) => LocalResponse::NewPackageResponse(NewPackageResponse::Success),
-//                     Err(_) => LocalResponse::NewPackageResponse(NewPackageResponse::InstallFailed),
-//                 },
-//                 None,
-//             )
-// Need start/stop mirror commands here too.
-// Auto updates... ?
-// I'd imagine this would be triggered on the chain side almost right?
-// that's where we hear about autoupdates first.
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.name() == "manifest.json" {
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)?;
 
-// then Apis.. we could do a get_apis, dependent on versions.
-// but I'm going to punt for now, api_api can be moved to main_install section, 1 api per installed system: )
-// that's actually a good system, because we don't really unzip unless we install (maybe in the future for inspecting files etc.)
-// but that really should be done on remote
+            let manifest_file = open_or_create_file(&manifest_path)?;
+            manifest_file.write(contents.as_bytes())?;
 
-//         LocalRequest::StartMirroring(package_id) => (
-//             match state.start_mirroring(&package_id.to_process_lib()) {
-//                 true => LocalResponse::MirrorResponse(MirrorResponse::Success),
-//                 false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-//             },
-//             None,
-//         ),
-//         LocalRequest::StopMirroring(package_id) => (
-//             match state.stop_mirroring(&package_id.to_process_lib()) {
-//                 true => LocalResponse::MirrorResponse(MirrorResponse::Success),
-//                 false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-//             },
-//             None,
-//
+            println!("Extracted and wrote manifest.json");
+            break;
+        }
+    }
+
+    Ok(())
+}
 
 // note this, might be tricky:
+// when ready, extract + write the damn manifest to a file location baby!
+
 // let wit_version = match metadata {
 //     Some(metadata) => metadata.properties.wit_version,
 //     None => Some(0),
 // };
 
-pub fn print_and_log(logfile: &mut File, message: &str, verbosity: u8) {
-    print_to_terminal(verbosity, message);
-    let _ = logfile.write_all(message.as_bytes());
+/// helper function for vfs files, open if exists, if not create
+fn open_or_create_file(path: &str) -> anyhow::Result<File> {
+    match vfs::open_file(path, false, None) {
+        Ok(file) => Ok(file),
+        Err(_) => match vfs::open_file(path, true, None) {
+            Ok(file) => Ok(file),
+            Err(_) => Err(anyhow::anyhow!("could not create file")),
+        },
+    }
+}
+
+/// helper function for vfs directories, open if exists, if not create
+fn open_or_create_dir(path: &str) -> anyhow::Result<Directory> {
+    match vfs::open_dir(path, false, None) {
+        Ok(dir) => Ok(dir),
+        Err(_) => match vfs::open_dir(path, true, None) {
+            Ok(dir) => Ok(dir),
+            Err(_) => Err(anyhow::anyhow!("could not create file")),
+        },
+    }
 }
 
 // quite annoyingly, we must convert from our gen'd version of PackageId

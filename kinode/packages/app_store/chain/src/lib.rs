@@ -3,21 +3,19 @@
 //! manages indexing relevant packages and their versions from the kimap.
 //! keeps eth subscriptions open, keeps data updated.
 //!
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-};
-
 use crate::kinode::process::chain::{
-    Chains, GetAppResponse, GetAppsResponse, GetOurAppsResponse, OnChainApp, OnChainMetadata,
-    OnChainProperties,
+    ChainError, ChainRequests, OnchainApp, OnchainMetadata, OnchainProperties,
 };
-use crate::kinode::process::main::Error;
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
+use kinode::process::chain::ChainResponses;
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, get_state, http, kernel_types as kt, kimap,
     print_to_terminal, println, Address, Message, PackageId, Response,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
@@ -76,7 +74,7 @@ pub struct PackageListing {
 #[serde(untagged)] // untagged as a meta-type for all incoming requests
 pub enum Req {
     Eth(eth::EthSubResult),
-    Request(Chains),
+    Request(ChainRequests),
 }
 
 call_init!(init);
@@ -92,20 +90,11 @@ fn init(our: Address) {
     loop {
         match await_message() {
             Err(send_error) => {
-                // TODO handle these based on what they are triggered by
-                println!("got network error: {send_error}");
+                print_to_terminal(1, &format!("got network error: {send_error}"));
             }
             Ok(message) => {
                 if let Err(e) = handle_message(&our, &mut state, &message) {
-                    println!("error handling message: {:?}", e);
-                    let _ = Response::new()
-                        .body(
-                            serde_json::to_vec(&Error {
-                                reason: e.to_string(),
-                            })
-                            .unwrap(),
-                        )
-                        .send();
+                    print_to_terminal(1, &format!("error handling message: {:?}", e));
                 }
             }
         }
@@ -147,13 +136,17 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
     Ok(())
 }
 
-fn handle_local_request(our: &Address, state: &mut State, chains: Chains) -> anyhow::Result<()> {
-    match chains {
-        Chains::GetApp(package_id) => {
+fn handle_local_request(
+    our: &Address,
+    state: &mut State,
+    req: ChainRequests,
+) -> anyhow::Result<()> {
+    match req {
+        ChainRequests::GetApp(package_id) => {
             let onchain_app = state
                 .listings
                 .get(&package_id.clone().to_process_lib())
-                .map(|app| OnChainApp {
+                .map(|app| OnchainApp {
                     package_id: package_id,
                     tba: app.tba.to_string(),
                     metadata_uri: app.metadata_uri.clone(),
@@ -161,25 +154,25 @@ fn handle_local_request(our: &Address, state: &mut State, chains: Chains) -> any
                     metadata: app.metadata.as_ref().map(|m| m.clone().into()),
                     auto_update: app.auto_update,
                 });
-            let response = GetAppResponse { app: onchain_app };
+            let response = ChainResponses::GetApp(onchain_app);
             Response::new()
                 .body(serde_json::to_vec(&response)?)
                 .send()?;
         }
-        Chains::GetApps => {
-            let apps: Vec<OnChainApp> = state
+        ChainRequests::GetApps => {
+            let apps: Vec<OnchainApp> = state
                 .listings
                 .iter()
                 .map(|(id, listing)| listing.to_onchain_app(id))
                 .collect();
 
-            let response = GetAppsResponse { apps };
+            let response = ChainResponses::GetApps(apps);
             Response::new()
                 .body(serde_json::to_vec(&response)?)
                 .send()?;
         }
-        Chains::GetOurApps => {
-            let apps: Vec<OnChainApp> = state
+        ChainRequests::GetOurApps => {
+            let apps: Vec<OnchainApp> = state
                 .published
                 .iter()
                 .filter_map(|id| {
@@ -190,25 +183,38 @@ fn handle_local_request(our: &Address, state: &mut State, chains: Chains) -> any
                 })
                 .collect();
 
-            let response = GetOurAppsResponse { apps };
+            let response = ChainResponses::GetOurApps(apps);
             Response::new()
                 .body(serde_json::to_vec(&response)?)
                 .send()?;
         }
-        Chains::StartAutoUpdate(package_id) => {
-            state
-                .listings
-                .get_mut(&package_id.to_process_lib())
-                .ok_or(anyhow::anyhow!("package not found"))?
-                .auto_update = true;
-            // send responses in these too.
+        ChainRequests::StartAutoUpdate(package_id) => {
+            if let Some(listing) = state.listings.get_mut(&package_id.to_process_lib()) {
+                listing.auto_update = true;
+                let response = ChainResponses::AutoUpdateStarted;
+                Response::new()
+                    .body(serde_json::to_vec(&response)?)
+                    .send()?;
+            } else {
+                let error_response = ChainResponses::Error(ChainError::NoPackage);
+                Response::new()
+                    .body(serde_json::to_vec(&error_response)?)
+                    .send()?;
+            }
         }
-        Chains::StopAutoUpdate(package_id) => {
-            state
-                .listings
-                .get_mut(&package_id.to_process_lib())
-                .ok_or(anyhow::anyhow!("package not found"))?
-                .auto_update = false;
+        ChainRequests::StopAutoUpdate(package_id) => {
+            if let Some(listing) = state.listings.get_mut(&package_id.to_process_lib()) {
+                listing.auto_update = false;
+                let response = ChainResponses::AutoUpdateStopped;
+                Response::new()
+                    .body(serde_json::to_vec(&response)?)
+                    .send()?;
+            } else {
+                let error_response = ChainResponses::Error(ChainError::NoPackage);
+                Response::new()
+                    .body(serde_json::to_vec(&error_response)?)
+                    .send()?;
+            }
         }
     }
     Ok(())
@@ -420,8 +426,8 @@ impl crate::kinode::process::main::PackageId {
 }
 
 impl PackageListing {
-    pub fn to_onchain_app(&self, package_id: &PackageId) -> OnChainApp {
-        OnChainApp {
+    pub fn to_onchain_app(&self, package_id: &PackageId) -> OnchainApp {
+        OnchainApp {
             package_id: crate::kinode::process::main::PackageId::from_process_lib(
                 package_id.clone(),
             ),
@@ -434,15 +440,15 @@ impl PackageListing {
     }
 }
 
-impl From<kt::Erc721Metadata> for OnChainMetadata {
+impl From<kt::Erc721Metadata> for OnchainMetadata {
     fn from(erc: kt::Erc721Metadata) -> Self {
-        OnChainMetadata {
+        OnchainMetadata {
             name: erc.name,
             description: erc.description,
             image: erc.image,
             external_url: erc.external_url,
             animation_url: erc.animation_url,
-            properties: OnChainProperties {
+            properties: OnchainProperties {
                 package_name: erc.properties.package_name,
                 publisher: erc.properties.publisher,
                 current_version: erc.properties.current_version,

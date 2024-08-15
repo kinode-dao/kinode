@@ -16,9 +16,9 @@
 //! - given permissions (necessary to complete install)
 //! - uninstalled + deleted
 //! - set to automatically update if a new version is available
-use crate::kinode::process::downloads::{DownloadResponse, ProgressUpdate};
+use crate::kinode::process::downloads::{DownloadResponses, ProgressUpdate};
 use crate::kinode::process::main::{
-    ApisResponse, Error, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
+    ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
     LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
 };
 use kinode_process_lib::{
@@ -26,7 +26,7 @@ use kinode_process_lib::{
     PackageId, Response,
 };
 use serde::{Deserialize, Serialize};
-use state::State; // REQUESTED PACKAGE
+use state::State;
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -55,8 +55,7 @@ pub enum Req {
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     LocalResponse(LocalResponse),
-    Download(DownloadResponse),
-    Err(Error),
+    Download(DownloadResponses),
 }
 
 call_init!(init);

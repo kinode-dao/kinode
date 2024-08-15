@@ -77,20 +77,6 @@ impl State {
         Ok(state)
     }
 
-    // /// returns True if the package was found and updated, False otherwise
-    // pub fn update_downloaded_package(
-    //     &mut self,
-    //     package_id: &PackageId,
-    //     fn_: impl FnOnce(&mut PackageState),
-    // ) -> bool {
-    //     let res = self
-    //         .packages
-    //         .get_mut(package_id)
-    //         .map(|listing| true)
-    //         .unwrap_or(false);
-    //     res
-    // }
-
     /// saves state
     pub fn populate_packages_from_filesystem(&mut self) -> anyhow::Result<()> {
         // call VFS and ask for all directories in our root drive

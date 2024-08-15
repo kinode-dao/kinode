@@ -1,8 +1,14 @@
 use crate::kinode::process::downloads::{
-    ChunkRequest, DownloadRequest, Downloads, ProgressUpdate, SizeUpdate,
+    ChunkRequest, DownloadRequests, LocalDownloadRequest, ProgressUpdate, RemoteDownloadRequest,
+    SizeUpdate,
 };
 use kinode_process_lib::*;
-use kinode_process_lib::{println, vfs::open_file, vfs::File, vfs::SeekFrom};
+use kinode_process_lib::{
+    println, timer,
+    vfs::{open_dir, open_file, Directory, File, SeekFrom},
+};
+use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::str::FromStr;
 
 pub mod ft_worker_lib;
@@ -16,11 +22,7 @@ wit_bindgen::generate!({
 
 const CHUNK_SIZE: u64 = 262144; // 256KB
 
-// TODO: Add a timer request that returns to us whenever the timeout time is back.
-// If we're still alive at that point for any reason, we are getting purged.
-
 call_init!(init);
-
 fn init(our: Address) {
     let Ok(Message::Request {
         source: parent_process,
@@ -35,28 +37,60 @@ fn init(our: Address) {
         panic!("ft_worker: got bad init message source");
     }
 
-    let req: DownloadRequest =
+    // killswitch timer, 2 minutes. sender or receiver gets killed/cleaned up.
+    timer::set_timer(120000, None);
+
+    // measure how long it took for println!("ft_worker: got init message");
+    let start = std::time::Instant::now();
+
+    let req: DownloadRequests =
         serde_json::from_slice(&body).expect("ft_worker: got unparseable init message");
 
-    if let Some(node) = req.download_from {
-        match handle_sender(&node, &req.package_id.into(), &req.desired_version_hash) {
-            Ok(_) => {}
-            Err(e) => println!("send error: {}", e),
+    match req {
+        DownloadRequests::LocalDownload(local_request) => {
+            let LocalDownloadRequest {
+                package_id,
+                desired_version_hash,
+                ..
+            } = local_request;
+            match handle_receiver(
+                &parent_process,
+                &package_id.to_process_lib(),
+                &desired_version_hash,
+            ) {
+                Ok(_) => println!(
+                    "ft_worker: downloaded package in {}s",
+                    start.elapsed().as_secs()
+                ),
+                Err(e) => println!("ft_worker: error: {}", e),
+            }
         }
-    } else {
-        match handle_receiver(
-            &parent_process,
-            &req.package_id.into(),
-            &req.desired_version_hash,
-        ) {
-            Ok(_) => {}
-            Err(e) => println!("receive error: {}", e),
+        DownloadRequests::RemoteDownload(remote_request) => {
+            let RemoteDownloadRequest {
+                package_id,
+                desired_version_hash,
+                worker_address,
+            } = remote_request;
+
+            match handle_sender(
+                &worker_address,
+                &package_id.to_process_lib(),
+                &desired_version_hash,
+            ) {
+                Ok(_) => println!(
+                    "ft_worker: sent package to {} in {}s",
+                    worker_address,
+                    start.elapsed().as_secs()
+                ),
+                Err(e) => println!("ft_worker: error: {}", e),
+            }
         }
+        _ => println!("ft_worker: got unexpected message"),
     }
 }
 
-fn handle_sender(node: &str, package_id: &PackageId, version_hash: &str) -> anyhow::Result<()> {
-    let target_worker = Address::from_str(node)?;
+fn handle_sender(worker: &str, package_id: &PackageId, version_hash: &str) -> anyhow::Result<()> {
+    let target_worker = Address::from_str(worker)?;
 
     let filename = format!(
         "/app_store:sys/downloads/{}:{}/{}.zip",
@@ -89,41 +123,52 @@ fn handle_receiver(
     version_hash: &str,
 ) -> anyhow::Result<()> {
     // TODO: write to a temporary location first, then check hash as we go, then rename to final location.
-    let package_dir = vfs::open_dir(
-        &format!(
-            "/app_store:sys/downloads/{}:{}/",
-            package_id.package_name,
-            package_id.publisher(),
-        ),
-        true,
-        None,
-    )?;
+    let package_dir = open_or_create_dir(&format!(
+        "/app_store:sys/downloads/{}:{}/",
+        package_id.package_name,
+        package_id.publisher(),
+    ))?;
 
-    let mut file = open_file(
-        &format!("{}/{}.zip", &package_dir.path, version_hash),
-        true,
-        None,
-    )?;
+    let timer_address = Address::from_str("our@timer:distro:sys")?;
 
+    let mut file = open_or_create_file(&format!("{}/{}.zip", &package_dir.path, version_hash))?;
     let mut size: Option<u64> = None;
+    let mut hasher = Sha256::new();
 
     loop {
-        let Ok(Message::Request { body, .. }) = await_message() else {
+        let Ok(Message::Request { body, source, .. }) = await_message() else {
             return Err(anyhow::anyhow!("ft_worker: got bad message"));
         };
 
-        let req: Downloads = serde_json::from_slice(&body)?;
+        // if source == killswitch timer, it's over.
+        if source == timer_address {
+            return Ok(());
+        }
+
+        let req: DownloadRequests = serde_json::from_slice(&body)?;
 
         match req {
-            Downloads::Chunk(chunk) => {
-                handle_chunk(&mut file, &chunk, parent_process, &mut size)?;
+            DownloadRequests::Chunk(chunk) => {
+                handle_chunk(&mut file, &chunk, parent_process, &mut size, &mut hasher)?;
                 if let Some(s) = size {
                     if chunk.offset + chunk.length >= s {
+                        let recieved_hash = format!("{:x}", hasher.finalize());
+
+                        if recieved_hash != version_hash {
+                            println!("big diff baby; {} != {}", recieved_hash, version_hash);
+                        }
+
+                        let manifest_filename =
+                            format!("{}{}.json", package_dir.path, version_hash);
+
+                        let contents = file.read()?;
+                        extract_and_write_manifest(&contents, &manifest_filename)?;
+
                         return Ok(());
                     }
                 }
             }
-            Downloads::Size(update) => {
+            DownloadRequests::Size(update) => {
                 size = Some(update.size);
             }
             _ => println!("ft_worker: got unexpected message"),
@@ -165,13 +210,16 @@ fn handle_chunk(
     chunk: &ChunkRequest,
     parent: &Address,
     size: &mut Option<u64>,
+    hasher: &mut Sha256,
 ) -> anyhow::Result<()> {
     let bytes = if let Some(blob) = get_blob() {
         blob.bytes
     } else {
         return Err(anyhow::anyhow!("ft_worker: got no blob"));
     };
+
     file.write_all(&bytes)?;
+    hasher.update(&bytes);
 
     if let Some(total_size) = size {
         // let progress = ((chunk.offset + chunk.length) as f64 / *total_size as f64 * 100.0) as u64;
@@ -190,6 +238,49 @@ fn handle_chunk(
     Ok(())
 }
 
+fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyhow::Result<()> {
+    let reader = std::io::Cursor::new(file_contents);
+    let mut archive = zip::ZipArchive::new(reader)?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.name() == "manifest.json" {
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)?;
+
+            let manifest_file = open_or_create_file(&manifest_path)?;
+            manifest_file.write(contents.as_bytes())?;
+
+            println!("Extracted and wrote manifest.json");
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+/// helper function for vfs files, open if exists, if not create
+fn open_or_create_file(path: &str) -> anyhow::Result<File> {
+    match open_file(path, false, None) {
+        Ok(file) => Ok(file),
+        Err(_) => match open_file(path, true, None) {
+            Ok(file) => Ok(file),
+            Err(_) => Err(anyhow::anyhow!("could not create file")),
+        },
+    }
+}
+
+/// helper function for vfs directories, open if exists, if not create
+fn open_or_create_dir(path: &str) -> anyhow::Result<Directory> {
+    match open_dir(path, false, None) {
+        Ok(dir) => Ok(dir),
+        Err(_) => match open_dir(path, true, None) {
+            Ok(dir) => Ok(dir),
+            Err(_) => Err(anyhow::anyhow!("could not create file")),
+        },
+    }
+}
+
 impl crate::kinode::process::main::PackageId {
     pub fn to_process_lib(&self) -> kinode_process_lib::PackageId {
         kinode_process_lib::PackageId::new(&self.package_name, &self.publisher_node)
@@ -202,6 +293,7 @@ impl crate::kinode::process::main::PackageId {
         }
     }
 }
+
 // Conversion from wit PackageId to process_lib's PackageId
 impl From<crate::kinode::process::downloads::PackageId> for kinode_process_lib::PackageId {
     fn from(package_id: crate::kinode::process::downloads::PackageId) -> Self {
