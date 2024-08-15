@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FaDownload, FaCheck, FaTimes, FaPlay } from "react-icons/fa";
 import useAppsStore from "../store";
@@ -13,37 +13,37 @@ export default function AppPage() {
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadData = async () => {
-      await Promise.all([fetchListings(), fetchInstalled()]);
+  const loadData = useCallback(async () => {
+    await Promise.all([fetchListings(), fetchInstalled()]);
 
-      const foundApp = listings.find(a => `${a.package_id.package_name}:${a.package_id.publisher_node}` === id) || null;
-      setApp(foundApp);
+    const foundApp = listings.find(a => `${a.package_id.package_name}:${a.package_id.publisher_node}` === id) || null;
+    setApp(foundApp);
 
-      if (foundApp) {
-        const foundInstalledApp = installed.find(i =>
-          i.package_id.package_name === foundApp.package_id.package_name &&
-          i.package_id.publisher_node === foundApp.package_id.publisher_node
-        ) || null;
-        setInstalledApp(foundInstalledApp);
+    if (foundApp) {
+      const foundInstalledApp = installed.find(i =>
+        i.package_id.package_name === foundApp.package_id.package_name &&
+        i.package_id.publisher_node === foundApp.package_id.publisher_node
+      ) || null;
+      setInstalledApp(foundInstalledApp);
 
-        if (foundApp.metadata?.properties?.code_hashes) {
-          const versions = foundApp.metadata.properties.code_hashes;
-          if (versions.length > 0) {
-            setLatestVersion(versions[versions.length - 1][0]);
-            if (foundInstalledApp) {
-              const installedVersion = versions.find(([_, hash]) => hash === foundInstalledApp.our_version_hash);
-              if (installedVersion) {
-                setCurrentVersion(installedVersion[0]);
-              }
+      if (foundApp.metadata?.properties?.code_hashes) {
+        const versions = foundApp.metadata.properties.code_hashes;
+        if (versions.length > 0) {
+          setLatestVersion(versions[versions.length - 1][0]);
+          if (foundInstalledApp) {
+            const installedVersion = versions.find(([_, hash]) => hash === foundInstalledApp.our_version_hash);
+            if (installedVersion) {
+              setCurrentVersion(installedVersion[0]);
             }
           }
         }
       }
-    };
+    }
+  }, [id, fetchListings, fetchInstalled]);
 
+  useEffect(() => {
     loadData();
-  }, [id, fetchListings, fetchInstalled, listings, installed]);
+  }, [loadData]);
 
   if (!app) {
     return <div className="app-page"><h4>App details not found for {id}</h4></div>;

@@ -6,7 +6,7 @@ import { AppListing, DownloadItem, MirrorCheckFile, PackageManifest } from "../t
 
 export default function DownloadPage() {
     const { id } = useParams();
-    const { listings, fetchListings, fetchDownloadsForApp, downloadApp, installApp, checkMirror, fetchInstalled, installed, getCaps } = useAppsStore();
+    const { listings, fetchListings, fetchDownloadsForApp, downloadApp, installApp, checkMirror, fetchInstalled, installed, getCaps, approveCaps } = useAppsStore();
     const [downloads, setDownloads] = useState<DownloadItem[]>([]);
     const [selectedMirror, setSelectedMirror] = useState<string | null>(null);
     const [mirrorStatuses, setMirrorStatuses] = useState<{ [mirror: string]: MirrorCheckFile | null }>({});
@@ -17,6 +17,8 @@ export default function DownloadPage() {
     const [showManifest, setShowManifest] = useState(false);
     const [showCaps, setShowCaps] = useState(false);
     const [manifest, setManifest] = useState<PackageManifest | null>(null);
+    const [showCapApproval, setShowCapApproval] = useState(false);
+    const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
 
     const app = listings.find(a => `${a.package_id.package_name}:${a.package_id.publisher_node}` === id);
 
@@ -64,11 +66,26 @@ export default function DownloadPage() {
 
     const handleInstall = async (version: string) => {
         if (!app) return;
+        setSelectedVersion(version);
+        try {
+            const caps = await getCaps(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+            setManifest(caps);
+            setShowCapApproval(true);
+        } catch (error) {
+            console.error('Failed to get capabilities:', error);
+            setError(`Failed to get capabilities: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    };
+
+    const confirmInstall = async () => {
+        if (!app || !selectedVersion) return;
         setIsInstalling(true);
         setError(null);
         try {
-            await installApp(`${app.package_id.package_name}:${app.package_id.publisher_node}`, version);
+            await approveCaps(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+            await installApp(`${app.package_id.package_name}:${app.package_id.publisher_node}`, selectedVersion);
             fetchInstalled();
+            setShowCapApproval(false);
         } catch (error) {
             console.error('Installation failed:', error);
             setError(`Installation failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -123,14 +140,19 @@ export default function DownloadPage() {
                 </thead>
                 <tbody>
                     {app.metadata?.properties?.code_hashes.map(([version, hash]) => {
-                        const download = downloads.find(d => d.name === `${hash}.zip`);
+                        const download = downloads.find(d => {
+                            if (d.File) {
+                                return d.File.name === `${hash}.zip`;
+                            }
+                            return false;
+                        });
                         const isDownloaded = !!download;
                         const isInstalled = installed.some(i => i.package_id.package_name === app.package_id.package_name && i.our_version_hash === version);
 
                         return (
                             <tr key={version}>
                                 <td>{version}</td>
-                                <td>{download?.size ? `${(download.size / 1024 / 1024).toFixed(2)} MB` : 'N/A'}</td>
+                                <td>{download?.File?.size ? `${(download.File.size / 1024 / 1024).toFixed(2)} MB` : 'N/A'}</td>
                                 <td>
                                     {isInstalled ? 'Installed' : isDownloaded ? 'Downloaded' : 'Not downloaded'}
                                 </td>
@@ -207,6 +229,21 @@ export default function DownloadPage() {
                     </div>
                 )}
             </div>
+
+            {showCapApproval && manifest && (
+                <div className="cap-approval-popup">
+                    <h3>Approve Capabilities</h3>
+                    <pre className="json-display">
+                        {JSON.stringify(manifest.request_capabilities, null, 2)}
+                    </pre>
+                    <div className="approval-buttons">
+                        <button onClick={() => setShowCapApproval(false)}>Cancel</button>
+                        <button onClick={confirmInstall} disabled={isInstalling}>
+                            {isInstalling ? <FaSpinner className="fa-spin" /> : 'Approve and Install'}
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

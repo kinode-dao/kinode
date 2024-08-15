@@ -59,6 +59,7 @@ export default function PublishPage() {
 
       try {
         // Check if the package already exists and get its TBA
+        console.log('packageName, publisherId: ', packageName, publisherId)
         let data = await publicClient.readContract({
           abi: kimapAbi,
           address: KIMAP,
@@ -69,7 +70,7 @@ export default function PublishPage() {
         let [tba, owner, _data] = data as [string, string, string];
         let isUpdate = Boolean(tba && tba !== '0x' && owner === address);
         let currentTBA = isUpdate ? tba as `0x${string}` : null;
-
+        console.log('currenttba, isupdate: ', currentTBA, isUpdate)
         // If the package doesn't exist, check for the publisher's TBA
         if (!currentTBA) {
           data = await publicClient.readContract({
@@ -82,6 +83,7 @@ export default function PublishPage() {
           [tba, owner, _data] = data as [string, string, string];
           isUpdate = false; // It's a new package, but we might have a publisher TBA
           currentTBA = (tba && tba !== '0x') ? tba as `0x${string}` : null;
+          console.log('NEWcurrenttba, isupdate: ', currentTBA, isUpdate)
         }
 
         let metadata = metadataHash;

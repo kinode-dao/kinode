@@ -566,19 +566,49 @@ fn serve_paths(
                 ));
             };
 
-            // TODO move to downloads.
+            let downloads = Address::from_str("downloads@downloads:app_store:sys")?;
 
             match method {
                 // start mirroring an app
-                // Method::PUT => {
-                //     state.start_mirroring(&package_id);
-                //     Ok((StatusCode::OK, None, vec![]))
-                // }
-                // // stop mirroring an app
-                // Method::DELETE => {
-                //     state.stop_mirroring(&package_id);
-                //     Ok((StatusCode::OK, None, vec![]))
-                // }
+                Method::PUT => {
+                    let resp = Request::new()
+                        .target(downloads)
+                        .body(serde_json::to_vec(&DownloadRequests::StartMirroring(
+                            crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                        ))?)
+                        .send_and_await_response(5)??;
+                    let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+                    match msg {
+                        DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
+                        DownloadResponses::Error(e) => {
+                            Err(anyhow::anyhow!("Error starting mirroring: {:?}", e))
+                        }
+                        _ => Err(anyhow::anyhow!(
+                            "Invalid response from downloads: {:?}",
+                            msg
+                        )),
+                    }
+                }
+                // stop mirroring an app
+                Method::DELETE => {
+                    let resp = Request::new()
+                        .target(downloads)
+                        .body(serde_json::to_vec(&DownloadRequests::StopMirroring(
+                            crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                        ))?)
+                        .send_and_await_response(5)??;
+                    let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+                    match msg {
+                        DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
+                        DownloadResponses::Error(e) => {
+                            Err(anyhow::anyhow!("Error stopping mirroring: {:?}", e))
+                        }
+                        _ => Err(anyhow::anyhow!(
+                            "Invalid response from downloads: {:?}",
+                            msg
+                        )),
+                    }
+                }
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,

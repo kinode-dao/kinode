@@ -2,7 +2,7 @@ import { parseAbi } from "viem";
 
 export { encodeMulticalls, encodeIntoMintCall } from "./helpers";
 
-export const KIMAP: `0x${string}` = "0xAfA2e57D3cBA08169b416457C14eBA2D6021c4b5";
+export const KIMAP: `0x${string}` = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
 export const KINO_ACCOUNT_IMPL: `0x${string}` = "0x38766C70a4FB2f23137D9251a1aA12b1143fC716";
 

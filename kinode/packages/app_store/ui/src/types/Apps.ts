@@ -12,10 +12,20 @@ export interface AppListing {
     auto_update: boolean
 }
 
-export interface DownloadItem {
-    name: string,
-    is_file: boolean,
-    size?: number
+export type DownloadItem = {
+    Dir?: DirItem;
+    File?: FileItem;
+};
+
+export interface DirItem {
+    name: string;
+    mirroring: boolean;
+}
+
+export interface FileItem {
+    name: string;
+    size: number;
+    manifest: string;
 }
 
 export interface MirrorCheckFile {

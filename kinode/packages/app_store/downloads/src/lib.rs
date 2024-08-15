@@ -3,8 +3,8 @@
 //! manages downloading and sharing of versioned packages.
 //!
 use crate::kinode::process::downloads::{
-    DirEntry, DownloadError, DownloadRequests, DownloadResponses, Entry, FileEntry,
-    LocalDownloadRequest, ProgressUpdate, RemoteDownloadRequest,
+    DirEntry, DownloadRequests, DownloadResponses, Entry, FileEntry, LocalDownloadRequest,
+    ProgressUpdate, RemoteDownloadRequest,
 };
 use std::{collections::HashSet, io::Read, str::FromStr};
 
@@ -15,7 +15,7 @@ use kinode_process_lib::{
         self,
         client::{HttpClientError, HttpClientResponse},
     },
-    print_to_terminal, println,
+    print_to_terminal, println, set_state,
     vfs::{self, Directory, File},
     Address, Message, PackageId, ProcessId, Request, Response,
 };
@@ -214,9 +214,9 @@ fn handle_message(
                     }
                 };
 
-                Response::new()
-                    .body(serde_json::to_string(&files)?)
-                    .send()?;
+                let resp = DownloadResponses::GetFiles(files);
+
+                Response::new().body(serde_json::to_string(&resp)?).send()?;
             }
             DownloadRequests::AddDownload(add_req) => {
                 if !message.is_local(our) {
@@ -230,7 +230,7 @@ fn handle_message(
                 let package_dir = format!(
                     "{}/{}",
                     downloads.path,
-                    add_req.package_id.to_process_lib().to_string()
+                    add_req.package_id.clone().to_process_lib().to_string()
                 );
                 let _ = vfs::open_dir(&package_dir, true, None);
 
@@ -244,6 +244,12 @@ fn handle_message(
                 let manifest_path = format!("{}/{}.json", package_dir, add_req.version_hash);
                 extract_and_write_manifest(&bytes, &manifest_path)?;
 
+                // add mirrors if applicable and save:
+                if add_req.mirror {
+                    state.mirroring.insert(add_req.package_id.to_process_lib());
+                    set_state(&serde_json::to_vec(&state)?);
+                }
+
                 Response::new()
                     .body(serde_json::to_vec(&Resp::Download(
                         DownloadResponses::Success,
@@ -253,6 +259,7 @@ fn handle_message(
             DownloadRequests::StartMirroring(package_id) => {
                 let package_id = package_id.to_process_lib();
                 state.mirroring.insert(package_id);
+                set_state(&serde_json::to_vec(&state)?);
                 Response::new()
                     .body(serde_json::to_vec(&Resp::Download(
                         DownloadResponses::Success,
@@ -262,6 +269,7 @@ fn handle_message(
             DownloadRequests::StopMirroring(package_id) => {
                 let package_id = package_id.to_process_lib();
                 state.mirroring.remove(&package_id);
+                set_state(&serde_json::to_vec(&state)?);
                 Response::new()
                     .body(serde_json::to_vec(&Resp::Download(
                         DownloadResponses::Success,
@@ -337,41 +345,31 @@ fn format_entries(entries: Vec<vfs::DirEntry>, state: &State) -> Vec<Entry> {
     entries
         .into_iter()
         .filter_map(|entry| {
-            let name = entry
-                .path
-                .rsplit('/')
-                .next()
-                .unwrap_or_default()
-                .to_string();
+            let name = entry.path.split('/').last()?.to_string();
             let is_file = entry.file_type == vfs::FileType::File;
 
-            if is_file {
-                if name.ends_with(".zip") {
-                    let size = vfs::metadata(&entry.path, None)
-                        .ok()
-                        .map(|meta| meta.len)
-                        .unwrap_or(0);
-                    let json_path = entry.path.replace(".zip", ".json");
-                    let manifest = if let Ok(file) = vfs::open_file(&json_path, false, None) {
-                        file.read_to_string().ok()
-                    } else {
-                        None
-                    };
+            if is_file && name.ends_with(".zip") {
+                let size = vfs::metadata(&entry.path, None)
+                    .map(|meta| meta.len)
+                    .unwrap_or(0);
+                let json_path = entry.path.replace(".zip", ".json");
+                let manifest = vfs::open_file(&json_path, false, None)
+                    .and_then(|file| file.read_to_string())
+                    .unwrap_or_default();
 
-                    Some(Entry::File(FileEntry {
-                        name,
-                        size,
-                        manifest: manifest.unwrap_or_default(),
-                    }))
-                } else {
-                    None // ignore non-zip files
-                }
-            } else {
-                let mirroring = PackageId::from_str(&name)
-                    .map(|package_id| state.mirroring.contains(&package_id))
-                    .unwrap_or(false);
-
+                Some(Entry::File(FileEntry {
+                    name,
+                    size,
+                    manifest,
+                }))
+            } else if !is_file {
+                let mirroring = state.mirroring.iter().any(|pid| {
+                    pid.package_name == name
+                        || format!("{}:{}", pid.package_name, pid.publisher_node) == name
+                });
                 Some(Entry::Dir(DirEntry { name, mirroring }))
+            } else {
+                None // Skip non-zip files
             }
         })
         .collect()
@@ -397,14 +395,6 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
 
     Ok(())
 }
-
-// note this, might be tricky:
-// when ready, extract + write the damn manifest to a file location baby!
-
-// let wit_version = match metadata {
-//     Some(metadata) => metadata.properties.wit_version,
-//     None => Some(0),
-// };
 
 /// helper function for vfs files, open if exists, if not create
 fn open_or_create_file(path: &str) -> anyhow::Result<File> {

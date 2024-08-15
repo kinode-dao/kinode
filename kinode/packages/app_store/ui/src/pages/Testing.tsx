@@ -24,6 +24,7 @@ const Testing: React.FC = () => {
     }, [])
 
     const handleAction = async (action: () => Promise<void>, key: string) => {
+        console.log('in handleAction')
         try {
             await action()
             setResult(JSON.stringify(useAppsStore.getState()[key], null, 2))

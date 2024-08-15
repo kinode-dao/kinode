@@ -28,7 +28,8 @@ interface AppsStore {
   downloadApp: (id: string, version_hash: string, downloadFrom: string) => Promise<void>
   getCaps: (id: string) => Promise<PackageManifest>
   approveCaps: (id: string) => Promise<void>
-  setMirroring: (id: string, version_hash: string, mirroring: boolean) => Promise<void>
+  startMirroring: (id: string) => Promise<void>
+  stopMirroring: (id: string) => Promise<void>
   setAutoUpdate: (id: string, version_hash: string, autoUpdate: boolean) => Promise<void>
 }
 
@@ -77,7 +78,7 @@ const useAppsStore = create<AppsStore>()(
         const res = await fetch(`${BASE_URL}/apps`)
         if (res.status === HTTP_STATUS.OK) {
           const data = await res.json()
-          set({ listings: data.apps || [] })
+          set({ listings: data || [] })
         }
       },
 
@@ -104,7 +105,7 @@ const useAppsStore = create<AppsStore>()(
       fetchDownloads: async () => {
         const res = await fetch(`${BASE_URL}/downloads`)
         if (res.status === HTTP_STATUS.OK) {
-          const downloads = await res.json()
+          const downloads: DownloadItem[] = await res.json()
           set({ downloads: { root: downloads } })
           return downloads
         }
@@ -116,7 +117,7 @@ const useAppsStore = create<AppsStore>()(
 
         if (res.status === HTTP_STATUS.OK) {
           const data = await res.json()
-          set({ ourApps: data.apps || [] })
+          set({ ourApps: data || [] })
         }
       },
 
@@ -185,16 +186,24 @@ const useAppsStore = create<AppsStore>()(
         await get().fetchListing(id)
       },
 
-      setMirroring: async (id: string, version_hash: string, mirroring: boolean) => {
-        const method = mirroring ? 'PUT' : 'DELETE'
-        const res = await fetch(`${BASE_URL}/apps/${id}/mirror`, {
-          method,
-          body: JSON.stringify({ version_hash })
+      startMirroring: async (id: string) => {
+        const res = await fetch(`${BASE_URL}/downloads/${id}/mirror`, {
+          method: 'PUT'
         })
         if (res.status !== HTTP_STATUS.OK) {
-          throw new Error(`Failed to ${mirroring ? 'start' : 'stop'} mirroring: ${id}`)
+          throw new Error(`Failed to start mirroring: ${id}`)
         }
-        await get().fetchListing(id)
+        await get().fetchDownloadsForApp(id.split(':').slice(0, -1).join(':'))
+      },
+
+      stopMirroring: async (id: string) => {
+        const res = await fetch(`${BASE_URL}/downloads/${id}/mirror`, {
+          method: 'DELETE'
+        })
+        if (res.status !== HTTP_STATUS.OK) {
+          throw new Error(`Failed to stop mirroring: ${id}`)
+        }
+        await get().fetchDownloadsForApp(id.split(':').slice(0, -1).join(':'))
       },
 
       setAutoUpdate: async (id: string, version_hash: string, autoUpdate: boolean) => {
