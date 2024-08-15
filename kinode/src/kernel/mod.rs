@@ -282,8 +282,6 @@ async fn handle_kernel_request(
             target,
             capabilities,
         } => {
-            println!("caps:(");
-
             caps_oracle
                 .send(t::CapMessage::Add {
                     on: target,
