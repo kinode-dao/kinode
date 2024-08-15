@@ -5,28 +5,47 @@ interface downloads {
 
     use standard.{package-id};
 
-    variant downloads {
-        // local and remote
-        download(download-request),
+    variant download-requests {
+        // remote only
+        remote-download(remote-download-request),
         chunk(chunk-request),
         progress(progress-update),
         size(size-update),
         // local only
+        local-download(local-download-request),
         get-files(option<package-id>),
         add-download(add-download-request),
     }
 
-    record download-request {
+    variant download-responses {
+        success,
+        error(download-error),
+        get-files(list<entry>),   
+    }
+
+    record local-download-request {
         package-id: package-id,
-        download-from: option<string>, // note, might be too much implicit complexity,
-                                       // but: download-from received locally, is an instruction where to download-from
-                                       // and if received from remote, is an instruction where to send, where the "download-from" came from.
+        download-from: string,
         desired-version-hash: string,
     }
 
-    record download-response {
-        success: bool,
-        error: option<string>,
+    record remote-download-request {
+        package-id: package-id,
+        worker-address: string,
+        desired-version-hash: string,
+    }
+
+    record download-error {
+        kind: download-error-types,
+        reason: option<string>,
+    }
+
+    enum download-error-types {
+        no-package,
+        not-mirroring,
+        hash-mismatch,
+        file-not-found,
+        worker-spawn-failed,
     }
 
     record chunk-request {
@@ -36,16 +55,11 @@ interface downloads {
         length: u64,
     }
 
-
     record entry {
         name: string,
         is-file: bool,
-        size: option<u64>,            
-    }
-
-    // not part of remote protocol, mainly for UI viewing.
-    record available-files {
-        files: list<entry>,
+        size: option<u64>,
+        manifest: option<string>,
     }
 
     // part of new-package-request local-only flow. 
@@ -75,33 +89,51 @@ interface chain {
 
     use standard.{package-id};
 
-    variant chains {
+    variant chain-requests {
         get-app(package-id),
         get-apps,
         get-our-apps,
         start-auto-update(package-id),
         stop-auto-update(package-id),
     }
+
+    variant chain-responses {
+        get-app(get-app-response),
+        get-apps(get-apps-response),
+        get-our-apps(get-our-apps-response),
+        auto-update-started,
+        auto-update-stopped,
+        error(chain-error),
+    }
+
+    record chain-error {
+        kind: chain-error-types,
+        reason: option<string>,
+    }
+
+    enum chain-error-types {
+        no-package,
+    }
     
-    record on-chain-app {
+    record onchain-app {
         package-id: package-id,
         tba: string,
         metadata-uri: string,
         metadata-hash: string,
-        metadata: option<on-chain-metadata>,
+        metadata: option<onchain-metadata>,
         auto-update: bool,
     }
 
-    record on-chain-metadata {
+    record onchain-metadata {
         name: option<string>,
         description: option<string>,
         image: option<string>,
         external-url: option<string>,
         animation-url: option<string>,
-        properties: on-chain-properties,
+        properties: onchain-properties,
     }
 
-    record on-chain-properties {
+    record onchain-properties {
         package-name: string,
         publisher: string,
         current-version: string,
@@ -114,15 +146,15 @@ interface chain {
     }
 
     record get-apps-response {
-        apps: list<on-chain-app>,
+        apps: list<onchain-app>,
     }
 
     record get-app-response {
-        app: option<on-chain-app>,
+        app: option<onchain-app>,
     }
 
     record get-our-apps-response {
-        apps: list<on-chain-app>,
+        apps: list<onchain-app>,
     }
 }
 
@@ -132,15 +164,8 @@ interface main {
     //
 
     use standard.{package-id};
-    use chain.{on-chain-metadata};
-
-
-    // general error type used by both chain: and downloads: 
-    // todo: add variant for types to match on
-
-    record error {
-        reason: string,
-    }
+    use chain.{onchain-metadata, chain-error};
+    use downloads.{download-error};
 
     variant request {
         local(local-request),
@@ -148,20 +173,13 @@ interface main {
 
     variant response {
         local(local-response),
+        error(error-types),
     }
 
-    // variant reason {
-    //     no-package,
-    //     not-mirroring,
-    //     hash-mismatch(hash-mismatch),
-    //     file-not-found,
-    //     worker-spawn-failed
-    // }
-
-    // record hash-mismatch {
-    //     requested: string,
-    //     have: string,
-    // }
+    variant error-types {
+        chain(chain-error),
+        download(download-error),
+    }
 
     variant local-request {
         new-package(new-package-request),
@@ -171,6 +189,15 @@ interface main {
         get-api(package-id),
     }
 
+    variant local-response {
+        new-package-response(new-package-response),
+        install-response(install-response),
+        uninstall-response(uninstall-response),
+        apis-response(apis-response),
+        get-api-response(get-api-response),
+    }
+
+
     record new-package-request {
         package-id: package-id,
         mirror: bool,
@@ -178,16 +205,8 @@ interface main {
     
     record install-package-request {
         package-id: package-id,
-        metadata: option<on-chain-metadata>, // if None == local sideload package.
+        metadata: option<onchain-metadata>, // if None == local sideload package.
         version-hash: string,
-    }
-
-    variant local-response {
-        new-package-response(new-package-response),
-        install-response(install-response),
-        uninstall-response(uninstall-response),
-        apis-response(apis-response),
-        get-api-response(get-api-response),
     }
 
     enum new-package-response {
@@ -199,12 +218,12 @@ interface main {
 
     enum install-response {
         success,
-        failure, // TODO
+        failure,
     }
 
     enum uninstall-response {
         success,
-        failure, // TODO
+        failure,
     }
 
     record apis-response {
@@ -214,7 +233,7 @@ interface main {
     // the API itself will be in response blob if success!
     enum get-api-response {
         success,
-        failure, // TODO
+        failure,
     }
 }
 
