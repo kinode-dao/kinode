@@ -6,7 +6,7 @@ import { DownloadItem, PackageManifest, AppListing } from "../types/Apps";
 
 export default function DownloadPage() {
     const { id } = useParams();
-    const { listings, fetchListings, fetchDownloadsForApp, downloadApp, installApp, checkMirror, fetchInstalled, installed, getCaps, approveCaps } = useAppsStore();
+    const { listings, fetchListings, fetchDownloadsForApp, downloadApp, installApp, checkMirror, fetchInstalled, installed, activeDownloads } = useAppsStore();
     const [downloads, setDownloads] = useState<DownloadItem[]>([]);
     const [selectedMirror, setSelectedMirror] = useState<string | null>(null);
     const [mirrorStatuses, setMirrorStatuses] = useState<{ [mirror: string]: { status: 'unchecked' | 'checking' | 'online' | 'offline' } }>({});
@@ -60,12 +60,12 @@ export default function DownloadPage() {
         }
     };
 
-    const handleDownload = async (version: string) => {
+    const handleDownload = async (version: string, hash: string) => {
         if (!app || !selectedMirror) return;
         setIsDownloading(true);
         setError(null);
         try {
-            await downloadApp(`${app.package_id.package_name}:${app.package_id.publisher_node}`, selectedMirror, version);
+            await downloadApp(`${app.package_id.package_name}:${app.package_id.publisher_node}`, hash, selectedMirror);
             const updatedDownloads = await fetchDownloadsForApp(id!);
             setDownloads(updatedDownloads);
         } catch (error) {
@@ -76,16 +76,21 @@ export default function DownloadPage() {
         }
     };
 
-    const handleInstall = async (version: string) => {
+    const handleInstall = async (version: string, hash: string) => {
         if (!app) return;
-        setSelectedVersion(version);
-        try {
-            const caps = await getCaps(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
-            setManifest(caps);
-            setShowCapApproval(true);
-        } catch (error) {
-            console.error('Failed to get capabilities:', error);
-            setError(`Failed to get capabilities: ${error instanceof Error ? error.message : String(error)}`);
+        setSelectedVersion(hash);  // Store the hash instead of the version
+        const download = downloads.find(d => d.File && d.File.name === `${hash}.zip`);
+        if (download && download.File) {
+            try {
+                const manifestData = JSON.parse(download.File.manifest);
+                setManifest(manifestData);
+                setShowCapApproval(true);
+            } catch (error) {
+                console.error('Failed to parse manifest:', error);
+                setError(`Failed to parse manifest: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        } else {
+            setError('Download not found or manifest missing');
         }
     };
 
@@ -94,7 +99,6 @@ export default function DownloadPage() {
         setIsInstalling(true);
         setError(null);
         try {
-            await approveCaps(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
             await installApp(`${app.package_id.package_name}:${app.package_id.publisher_node}`, selectedVersion);
             fetchInstalled();
             setShowCapApproval(false);
@@ -104,6 +108,22 @@ export default function DownloadPage() {
         } finally {
             setIsInstalling(false);
         }
+    };
+
+    const renderDownloadProgress = (version: string, hash: string) => {
+        const downloadKey = `${app.package_id.package_name}:${app.package_id.publisher_node}:${hash}`;
+        const progress = activeDownloads[downloadKey];
+
+        if (progress) {
+            const percentage = Math.round((progress.downloaded / progress.total) * 100);
+            return (
+                <div className="download-progress">
+                    <div className="progress-bar" style={{ width: `${percentage}%` }}></div>
+                    <span>{percentage}%</span>
+                </div>
+            );
+        }
+        return null;
     };
 
     if (!app) {
@@ -199,26 +219,28 @@ export default function DownloadPage() {
                         });
                         const isDownloaded = !!download;
                         const isInstalled = installed[id as string]?.our_version_hash === hash;
+                        const isDownloading = !!activeDownloads[`${app.package_id.package_name}:${app.package_id.publisher_node}:${hash}`];
 
                         return (
                             <tr key={version}>
                                 <td>{version}</td>
                                 <td>
-                                    {isInstalled ? 'Installed' : isDownloaded ? 'Downloaded' : 'Not downloaded'}
+                                    {isInstalled ? 'Installed' : isDownloaded ? 'Downloaded' : isDownloading ? 'Downloading' : 'Not downloaded'}
                                 </td>
                                 <td>
-                                    {!isDownloaded && (
+                                    {!isDownloaded && !isDownloading && (
                                         <button
-                                            onClick={() => handleDownload(version)}
-                                            disabled={!selectedMirror || isDownloading || selectedMirror === 'manual'}
+                                            onClick={() => handleDownload(version, hash)}
+                                            disabled={!selectedMirror || selectedMirror === 'manual'}
                                             className="download-button"
                                         >
-                                            {isDownloading ? <FaSpinner className="fa-spin" /> : <FaDownload />} Download
+                                            <FaDownload /> Download
                                         </button>
                                     )}
+                                    {isDownloading && renderDownloadProgress(version, hash)}
                                     {isDownloaded && !isInstalled && (
                                         <button
-                                            onClick={() => handleInstall(version)}
+                                            onClick={() => handleInstall(version, hash)}
                                             disabled={isInstalling}
                                             className="install-button"
                                         >
@@ -282,15 +304,17 @@ export default function DownloadPage() {
 
             {showCapApproval && manifest && (
                 <div className="cap-approval-popup">
-                    <h3>Approve Capabilities</h3>
-                    <pre className="json-display">
-                        {JSON.stringify(manifest.request_capabilities, null, 2)}
-                    </pre>
-                    <div className="approval-buttons">
-                        <button onClick={() => setShowCapApproval(false)}>Cancel</button>
-                        <button onClick={confirmInstall} disabled={isInstalling}>
-                            {isInstalling ? <FaSpinner className="fa-spin" /> : 'Approve and Install'}
-                        </button>
+                    <div className="cap-approval-content">
+                        <h3>Approve Capabilities</h3>
+                        <pre className="json-display">
+                            {JSON.stringify(manifest[0]?.request_capabilities || [], null, 2)}
+                        </pre>
+                        <div className="approval-buttons">
+                            <button onClick={() => setShowCapApproval(false)}>Cancel</button>
+                            <button onClick={confirmInstall} disabled={isInstalling}>
+                                {isInstalling ? <FaSpinner className="fa-spin" /> : 'Approve and Install'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

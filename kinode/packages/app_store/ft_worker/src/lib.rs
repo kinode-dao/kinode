@@ -59,10 +59,10 @@ fn init(our: Address) {
                 &desired_version_hash,
             ) {
                 Ok(_) => println!(
-                    "ft_worker: downloaded package in {}s",
-                    start.elapsed().as_secs()
+                    "ft_worker: receive downloaded package in {}ms",
+                    start.elapsed().as_millis()
                 ),
-                Err(e) => println!("ft_worker: error: {}", e),
+                Err(e) => println!("ft_worker: receive error: {}", e),
             }
         }
         DownloadRequests::RemoteDownload(remote_request) => {
@@ -78,11 +78,11 @@ fn init(our: Address) {
                 &desired_version_hash,
             ) {
                 Ok(_) => println!(
-                    "ft_worker: sent package to {} in {}s",
+                    "ft_worker: sent package to {} in {}ms",
                     worker_address,
-                    start.elapsed().as_secs()
+                    start.elapsed().as_millis()
                 ),
-                Err(e) => println!("ft_worker: error: {}", e),
+                Err(e) => println!("ft_worker: send error: {}", e),
             }
         }
         _ => println!("ft_worker: got unexpected message"),
@@ -102,10 +102,10 @@ fn handle_sender(worker: &str, package_id: &PackageId, version_hash: &str) -> an
     let num_chunks = (size as f64 / CHUNK_SIZE as f64).ceil() as u64;
 
     Request::new()
-        .body(serde_json::to_vec(&SizeUpdate {
+        .body(serde_json::to_vec(&DownloadRequests::Size(SizeUpdate {
             package_id: package_id.clone().into(),
             size,
-        })?)
+        }))?)
         .target(target_worker.clone())
         .send()?;
     file.seek(SeekFrom::Start(0))?;
@@ -123,15 +123,19 @@ fn handle_receiver(
     version_hash: &str,
 ) -> anyhow::Result<()> {
     // TODO: write to a temporary location first, then check hash as we go, then rename to final location.
+
+    println!("trying to open dir");
     let package_dir = open_or_create_dir(&format!(
         "/app_store:sys/downloads/{}:{}/",
         package_id.package_name,
         package_id.publisher(),
     ))?;
+    println!("opened dir");
+    println!("package_dir: {:?}", package_dir.path);
 
     let timer_address = Address::from_str("our@timer:distro:sys")?;
 
-    let mut file = open_or_create_file(&format!("{}/{}.zip", &package_dir.path, version_hash))?;
+    let mut file = open_or_create_file(&format!("{}{}.zip", &package_dir.path, version_hash))?;
     let mut size: Option<u64> = None;
     let mut hasher = Sha256::new();
 
@@ -193,12 +197,14 @@ fn send_chunk(
     file.read_at(&mut buffer)?;
 
     Request::new()
-        .body(serde_json::to_vec(&ChunkRequest {
-            package_id: package_id.clone().into(),
-            version_hash: version_hash.to_string(),
-            offset,
-            length,
-        })?)
+        .body(serde_json::to_vec(&DownloadRequests::Chunk(
+            ChunkRequest {
+                package_id: package_id.clone().into(),
+                version_hash: version_hash.to_string(),
+                offset,
+                length,
+            },
+        ))?)
         .target(target.clone())
         .blob_bytes(buffer)
         .send()?;
@@ -225,12 +231,14 @@ fn handle_chunk(
         // let progress = ((chunk.offset + chunk.length) as f64 / *total_size as f64 * 100.0) as u64;
 
         Request::new()
-            .body(serde_json::to_vec(&ProgressUpdate {
-                package_id: chunk.package_id.clone(),
-                downloaded: chunk.offset + chunk.length,
-                total: *total_size,
-                version_hash: chunk.version_hash.clone(),
-            })?)
+            .body(serde_json::to_vec(&DownloadRequests::Progress(
+                ProgressUpdate {
+                    package_id: chunk.package_id.clone(),
+                    downloaded: chunk.offset + chunk.length,
+                    total: *total_size,
+                    version_hash: chunk.version_hash.clone(),
+                },
+            ))?)
             .target(parent.clone())
             .send()?;
     }
@@ -272,11 +280,11 @@ fn open_or_create_file(path: &str) -> anyhow::Result<File> {
 
 /// helper function for vfs directories, open if exists, if not create
 fn open_or_create_dir(path: &str) -> anyhow::Result<Directory> {
-    match open_dir(path, false, None) {
+    match open_dir(path, true, None) {
         Ok(dir) => Ok(dir),
-        Err(_) => match open_dir(path, true, None) {
+        Err(_) => match open_dir(path, false, None) {
             Ok(dir) => Ok(dir),
-            Err(_) => Err(anyhow::anyhow!("could not create file")),
+            Err(_) => Err(anyhow::anyhow!("could not create dir")),
         },
     }
 }

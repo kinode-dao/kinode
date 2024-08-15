@@ -14,6 +14,7 @@ interface downloads {
         // local only
         local-download(local-download-request),
         get-files(option<package-id>),
+        remove-file(remove-file-request),
         add-download(add-download-request),
         start-mirroring(package-id),
         stop-mirroring(package-id),
@@ -71,6 +72,11 @@ interface downloads {
     record dir-entry {
         name: string,
         mirroring: bool,
+    }
+
+    record remove-file-request {
+        package-id: package-id,
+        version-hash: string,
     }
 
     // part of new-package-request local-only flow. 

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { FaFolder, FaFile, FaChevronLeft, FaSync, FaRocket, FaSpinner, FaCheck } from "react-icons/fa";
+import { FaFolder, FaFile, FaChevronLeft, FaSync, FaRocket, FaSpinner, FaCheck, FaTrash } from "react-icons/fa";
 import useAppsStore from "../store";
 import { DownloadItem, PackageManifest, PackageState } from "../types/Apps";
 
 export default function MyDownloadsPage() {
-    const { fetchDownloads, fetchDownloadsForApp, startMirroring, stopMirroring, installApp, getCaps, approveCaps, fetchInstalled, installed } = useAppsStore();
+    const { fetchDownloads, fetchDownloadsForApp, startMirroring, stopMirroring, installApp, removeDownload, fetchInstalled, installed } = useAppsStore();
     const [currentPath, setCurrentPath] = useState<string[]>([]);
     const [items, setItems] = useState<DownloadItem[]>([]);
     const [isInstalling, setIsInstalling] = useState(false);
@@ -64,13 +64,12 @@ export default function MyDownloadsPage() {
         if (item.File) {
             setSelectedItem(item);
             try {
-                const packageId = [...currentPath, item.File.name.replace('.zip', '')].join(':');
-                const caps = await getCaps(packageId);
-                setManifest(caps);
+                const manifestData = JSON.parse(item.File.manifest);
+                setManifest(manifestData);
                 setShowCapApproval(true);
             } catch (error) {
-                console.error('Failed to get capabilities:', error);
-                setError(`Failed to get capabilities: ${error instanceof Error ? error.message : String(error)}`);
+                console.error('Failed to parse manifest:', error);
+                setError(`Failed to parse manifest: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
     };
@@ -81,8 +80,8 @@ export default function MyDownloadsPage() {
         setError(null);
         try {
             const packageId = [...currentPath, selectedItem.File.name.replace('.zip', '')].join(':');
-            await approveCaps(packageId);
-            await installApp(packageId, selectedItem.File.manifest);
+            const versionHash = selectedItem.File.name.replace('.zip', '');
+            await installApp(packageId, versionHash);
             await fetchInstalled();
             setShowCapApproval(false);
             await loadItems();
@@ -91,6 +90,20 @@ export default function MyDownloadsPage() {
             setError(`Installation failed: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             setIsInstalling(false);
+        }
+    };
+
+    const handleRemoveDownload = async (item: DownloadItem) => {
+        if (item.File) {
+            try {
+                const packageId = currentPath.join(':');
+                const versionHash = item.File.name.replace('.zip', '');
+                await removeDownload(packageId, versionHash);
+                await loadItems();
+            } catch (error) {
+                console.error('Failed to remove download:', error);
+                setError(`Failed to remove download: ${error instanceof Error ? error.message : String(error)}`);
+            }
         }
     };
 
@@ -141,14 +154,18 @@ export default function MyDownloadsPage() {
                                             </button>
                                         )}
                                         {isFile && !isInstalled && (
-                                            <button onClick={(e) => { e.stopPropagation(); handleInstall(item); }}>
-                                                <FaRocket /> Install
-                                            </button>
+                                            <>
+                                                <button onClick={(e) => { e.stopPropagation(); handleInstall(item); }}>
+                                                    <FaRocket /> Install
+                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); handleRemoveDownload(item); }}>
+                                                    <FaTrash /> Delete
+                                                </button>
+                                            </>
                                         )}
                                         {isFile && isInstalled && (
                                             <FaCheck className="installed" />
-                                        )}
-                                    </td>
+                                        )}                                    </td>
                                 </tr>
                             );
                         })}
@@ -164,15 +181,17 @@ export default function MyDownloadsPage() {
 
             {showCapApproval && manifest && (
                 <div className="cap-approval-popup">
-                    <h3>Approve Capabilities</h3>
-                    <pre className="json-display">
-                        {JSON.stringify(manifest.request_capabilities, null, 2)}
-                    </pre>
-                    <div className="approval-buttons">
-                        <button onClick={() => setShowCapApproval(false)}>Cancel</button>
-                        <button onClick={confirmInstall} disabled={isInstalling}>
-                            {isInstalling ? <FaSpinner className="fa-spin" /> : 'Approve and Install'}
-                        </button>
+                    <div className="cap-approval-content">
+                        <h3>Approve Capabilities</h3>
+                        <pre className="json-display">
+                            {JSON.stringify(manifest[0]?.request_capabilities || [], null, 2)}
+                        </pre>
+                        <div className="approval-buttons">
+                            <button onClick={() => setShowCapApproval(false)}>Cancel</button>
+                            <button onClick={confirmInstall} disabled={isInstalling}>
+                                {isInstalling ? <FaSpinner className="fa-spin" /> : 'Approve and Install'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

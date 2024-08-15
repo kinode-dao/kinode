@@ -198,7 +198,7 @@ fn handle_local_request(
             None,
         ),
         LocalRequest::Uninstall(package_id) => (
-            match state.uninstall(&package_id.to_process_lib()) {
+            match utils::uninstall(state, &package_id.to_process_lib()) {
                 Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
                 Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
             },

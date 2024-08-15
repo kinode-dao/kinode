@@ -4,7 +4,7 @@
 //!
 use crate::kinode::process::downloads::{
     DirEntry, DownloadRequests, DownloadResponses, Entry, FileEntry, LocalDownloadRequest,
-    ProgressUpdate, RemoteDownloadRequest,
+    ProgressUpdate, RemoteDownloadRequest, RemoveFileRequest,
 };
 use std::{collections::HashSet, io::Read, str::FromStr};
 
@@ -109,10 +109,11 @@ fn handle_message(
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("not local"));
                 }
+
                 let LocalDownloadRequest {
                     package_id,
-                    desired_version_hash,
                     download_from,
+                    desired_version_hash,
                 } = download_request;
 
                 if download_from.starts_with("http") {
@@ -134,13 +135,13 @@ fn handle_message(
                     APP_SHARE_TIMEOUT,
                 )?;
 
-                let target_node = Address::new(
-                    download_from,
+                let target = Address::new(
+                    &download_from,
                     ProcessId::new(Some("downloads"), "app_store", "sys"),
                 );
 
                 Request::new()
-                    .target(target_node)
+                    .target(target)
                     .body(serde_json::to_vec(&DownloadRequests::RemoteDownload(
                         RemoteDownloadRequest {
                             package_id,
@@ -171,27 +172,13 @@ fn handle_message(
                     &target_worker,
                 )?;
             }
-            DownloadRequests::Progress(ProgressUpdate {
-                package_id,
-                version_hash,
-                downloaded,
-                total,
-            }) => {
+            DownloadRequests::Progress(progress) => {
                 // forward progress to main:app_store:sys,
                 // which then pushes to the frontend.
-                let target =
-                    Address::new(&our.node, ProcessId::new(Some("main"), "app_store", "sys"));
+                let target = Address::from_str("our@main:app_store:sys")?;
                 let _ = Request::new()
                     .target(target)
-                    .body(
-                        serde_json::to_vec(&DownloadRequests::Progress(ProgressUpdate {
-                            package_id,
-                            version_hash,
-                            downloaded,
-                            total,
-                        }))
-                        .unwrap(),
-                    )
+                    .body(serde_json::to_vec(&progress)?)
                     .send();
             }
             DownloadRequests::GetFiles(maybe_id) => {
@@ -217,6 +204,29 @@ fn handle_message(
                 let resp = DownloadResponses::GetFiles(files);
 
                 Response::new().body(serde_json::to_string(&resp)?).send()?;
+            }
+            DownloadRequests::RemoveFile(remove_req) => {
+                if !message.is_local(our) {
+                    return Err(anyhow::anyhow!("not local"));
+                }
+                let RemoveFileRequest {
+                    package_id,
+                    version_hash,
+                } = remove_req;
+                let package_dir = format!(
+                    "{}/{}",
+                    downloads.path,
+                    package_id.to_process_lib().to_string()
+                );
+                let zip_path = format!("{}/{}.zip", package_dir, version_hash);
+                let _ = vfs::remove_file(&zip_path, None);
+                let manifest_path = format!("{}/{}.json", package_dir, version_hash);
+                let _ = vfs::remove_file(&manifest_path, None);
+                Response::new()
+                    .body(serde_json::to_vec(&Resp::Download(
+                        DownloadResponses::Success,
+                    ))?)
+                    .send()?;
             }
             DownloadRequests::AddDownload(add_req) => {
                 if !message.is_local(our) {

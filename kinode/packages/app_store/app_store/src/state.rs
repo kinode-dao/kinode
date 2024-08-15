@@ -135,14 +135,4 @@ impl State {
         }
         Ok(())
     }
-
-    // TODO: re-evaluate
-    pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
-        utils::uninstall(package_id)?;
-        let Some(state) = self.packages.get_mut(package_id) else {
-            return Err(anyhow::anyhow!("package not found"));
-        };
-        println!("uninstalled {package_id}");
-        Ok(())
-    }
 }

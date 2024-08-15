@@ -40,15 +40,6 @@ pub fn keccak_256_hash(bytes: &[u8]) -> String {
     format!("0x{:x}", hasher.finalize())
 }
 
-// /// generate a Keccak-256 hash of the package name and publisher (match onchain)
-// pub fn generate_package_hash(name: &str, publisher_dnswire: &[u8]) -> String {
-//     use sha3::{Digest, Keccak256};
-//     let mut hasher = Keccak256::new();
-//     hasher.update([name.as_bytes(), publisher_dnswire].concat());
-//     let hash = hasher.finalize();
-//     format!("0x{:x}", hash)
-// }
-
 /// generate a SHA-256 hash of the zip bytes to act as a version hash
 pub fn sha_256_hash(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
@@ -57,6 +48,8 @@ pub fn sha_256_hash(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// note: this can only be called in the install process,
+/// manifest.json for an arbitrary download can be found with GetFiles
 pub fn fetch_package_manifest(
     package_id: &PackageId,
 ) -> anyhow::Result<Vec<kt::PackageManifestEntry>> {
@@ -273,8 +266,6 @@ pub fn install(
             format!("/{}", entry.process_wasm_path)
         };
         let wasm_path = format!("{}{}", drive_path, wasm_path);
-        println!("wasm path: {wasm_path}");
-        println!("drive path: {drive_path}");
 
         let process_id = format!("{}:{}", entry.process_name, process_package_id);
         let Ok(process_id) = process_id.parse::<ProcessId>() else {
@@ -420,7 +411,11 @@ pub fn install(
 
 /// given a `PackageId`, read its manifest, kill all processes declared in it,
 /// then remove its drive in the virtual filesystem.
-pub fn uninstall(package_id: &PackageId) -> anyhow::Result<()> {
+pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
+    let Some(_) = state.packages.get_mut(package_id) else {
+        return Err(anyhow::anyhow!("package not found"));
+    };
+
     // the drive corresponding to the package we will be removing
     let drive_path = format!("/{package_id}/pkg");
 

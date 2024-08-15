@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { FaDownload, FaCheck, FaTimes, FaPlay } from "react-icons/fa";
+import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash } from "react-icons/fa";
 import useAppsStore from "../store";
 import { AppListing, PackageState } from "../types/Apps";
 import { compareVersions } from "../utils/compareVersions";
@@ -8,13 +8,15 @@ import { compareVersions } from "../utils/compareVersions";
 export default function AppPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { fetchListing, fetchInstalledApp, installApp } = useAppsStore();
+  const { fetchListing, fetchInstalledApp, uninstallApp } = useAppsStore();
   const [app, setApp] = useState<AppListing | null>(null);
   const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isUninstalling, setIsUninstalling] = useState(false);
+
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -53,6 +55,20 @@ export default function AppPage() {
       setIsLoading(false);
     }
   }, [id, fetchListing, fetchInstalledApp]);
+
+  const handleUninstall = async () => {
+    if (!app) return;
+    setIsUninstalling(true);
+    try {
+      await uninstallApp(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+      await loadData();
+    } catch (error) {
+      console.error('Uninstallation failed:', error);
+      setError(`Uninstallation failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsUninstalling(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -111,14 +127,19 @@ export default function AppPage() {
       </div>
 
       <div className="app-actions">
+        {installedApp && (
+          <>
+            <button onClick={handleLaunch} className="primary">
+              <FaPlay /> Launch
+            </button>
+            <button onClick={handleUninstall} className="secondary" disabled={isUninstalling}>
+              {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />} Uninstall
+            </button>
+          </>
+        )}
         <button onClick={handleDownload} className="primary">
           <FaDownload /> Download
         </button>
-        {installedApp && (
-          <button onClick={handleLaunch} className="primary">
-            <FaPlay /> Launch
-          </button>
-        )}
       </div>
 
       {app.metadata?.properties?.screenshots && (

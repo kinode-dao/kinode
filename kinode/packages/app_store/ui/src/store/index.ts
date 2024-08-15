@@ -13,7 +13,7 @@ interface AppsStore {
   downloads: Record<string, DownloadItem[]>
   ourApps: AppListing[]
   ws: KinodeClientApi
-  activeDownloads: Record<string, [number, number]>
+  activeDownloads: Record<string, { downloaded: number, total: number }>
 
   fetchListings: () => Promise<void>
   fetchListing: (id: string) => Promise<AppListing>
@@ -27,18 +27,13 @@ interface AppsStore {
   installApp: (id: string, version_hash: string) => Promise<void>
   uninstallApp: (id: string) => Promise<void>
   downloadApp: (id: string, version_hash: string, downloadFrom: string) => Promise<void>
+  removeDownload: (packageId: string, versionHash: string) => Promise<void>
   getCaps: (id: string) => Promise<PackageManifest>
   approveCaps: (id: string) => Promise<void>
   startMirroring: (id: string) => Promise<void>
   stopMirroring: (id: string) => Promise<void>
   setAutoUpdate: (id: string, version_hash: string, autoUpdate: boolean) => Promise<void>
 }
-
-const appId = (id: string): PackageId => {
-  const [package_name, publisher_node] = id.split(":");
-  return { package_name, publisher_node };
-}
-
 
 const useAppsStore = create<AppsStore>()(
   persist(
@@ -54,17 +49,20 @@ const useAppsStore = create<AppsStore>()(
         nodeId: (window as any).our?.node,
         processId: "main:app_store:sys",
         onMessage: (message) => {
+          console.log('message gotten from kinode')
           const data = JSON.parse(message);
+          console.log('WebSocket message received', data)
           if (data.kind === 'progress') {
-            const appId = data.data.file_name.slice(1).replace('.zip', '');
+            const { package_id, version_hash, downloaded, total } = data.data;
+            const appId = `${package_id.package_name}:${package_id.publisher_node}:${version_hash}`;
             set((state) => ({
               activeDownloads: {
                 ...state.activeDownloads,
-                [appId]: [data.data.chunks_received, data.data.total_chunks]
+                [appId]: { downloaded, total }
               }
             }));
 
-            if (data.data.chunks_received === data.data.total_chunks) {
+            if (downloaded === total) {
               get().fetchDownloads();
             }
           }
@@ -180,10 +178,33 @@ const useAppsStore = create<AppsStore>()(
         await get().fetchInstalled()
       },
 
+      removeDownload: async (packageId: string, versionHash: string) => {
+        try {
+          const response = await fetch(`${BASE_URL}/downloads/${packageId}/remove`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ version_hash: versionHash }),
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+        } catch (error) {
+          console.error('Failed to remove download:', error);
+          throw error;
+        }
+      },
+
       downloadApp: async (id: string, version_hash: string, downloadFrom: string) => {
+        const [package_name, publisher_node] = id.split(':');
         const res = await fetch(`${BASE_URL}/apps/${id}/download`, {
           method: 'POST',
-          body: JSON.stringify({ download_from: downloadFrom, version_hash }),
+          body: JSON.stringify({
+            package_id: { package_name, publisher_node },
+            version_hash,
+            download_from: downloadFrom,
+          }),
         })
         if (res.status !== HTTP_STATUS.CREATED) {
           throw new Error(`Failed to download app: ${id}`)

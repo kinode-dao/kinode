@@ -1,6 +1,8 @@
 use crate::{
     kinode::process::chain::{ChainRequests, ChainResponses},
-    kinode::process::downloads::{DownloadRequests, DownloadResponses, LocalDownloadRequest},
+    kinode::process::downloads::{
+        DownloadRequests, DownloadResponses, LocalDownloadRequest, RemoveFileRequest,
+    },
     state::{MirrorCheck, PackageState, State},
     Resp,
 };
@@ -30,11 +32,10 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/downloads/:id", // local downloads for an app
         "/installed/:id", // detail about an installed app
         // actions
-        "/apps/:id/download", // download a listed app
-        "/apps/:id/install",  // install a downloaded app
-        // doublecheck initialization here.
-        "/apps/:id/caps",        // get/approve capabilities for a downloaded app
+        "/apps/:id/download",    // download a listed app
+        "/apps/:id/install",     // install a downloaded app
         "/downloads/:id/mirror", // start mirroring a version of a downloaded app
+        "/downloads/:id/remove", // remove a downloaded app
         "/apps/:id/auto-update", // set auto-updating a version of a downloaded app
         "/mirrorcheck/:node",    // check if a node/mirror is online/offline
     ] {
@@ -46,15 +47,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         .serve_ui(
             &our,
             "ui",
-            vec![
-                "/",
-                "/app/:id",
-                "/publish",
-                "/download/:id",
-                "my-downloads",
-                "my-apps",
-                "/testing",
-            ],
+            vec!["/", "/app/:id", "/publish", "/download/:id", "my-downloads"],
             config.clone(),
         )
         .expect("failed to serve static UI");
@@ -191,14 +184,12 @@ fn make_widget() -> String {
 /// - get all apps we've published: GET /ourapps
 /// - get detail about a specific app: GET /apps/:id
 /// - get detail about a specific apps downloads: GET /downloads/:id
-/// - get capabilities for a specific app: GET /apps/:id/caps
-///
+/// - remove a downloaded app: POST /downloads/:id/remove
+
 /// - get online/offline mirrors for a listed app: GET /mirrorcheck/:node
 /// - download a listed app: POST /apps/:id/download
 /// - install a downloaded app: POST /apps/:id/install
 /// - uninstall/delete a downloaded app: DELETE /apps/:id
-/// - update a downloaded app: POST /apps/:id/update
-/// - approve capabilities for a downloaded app: POST /apps/:id/caps
 /// - start mirroring a downloaded app: PUT /apps/:id/mirror
 /// - stop mirroring a downloaded app: DELETE /apps/:id/mirror
 /// - start auto-updating a downloaded app: PUT /apps/:id/auto-update
@@ -316,7 +307,7 @@ fn serve_paths(
                 }
                 Method::DELETE => {
                     // uninstall an app
-                    state.uninstall(&package_id)?;
+                    crate::utils::uninstall(state, &package_id)?;
                     Ok((
                         StatusCode::NO_CONTENT,
                         None,
@@ -458,15 +449,13 @@ fn serve_paths(
                 .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
 
             // TODO: handle HTTP urls here I think, with different context...
-
-            let download_request = LocalDownloadRequest {
+            let download_request = DownloadRequests::LocalDownload(LocalDownloadRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 download_from: download_from,
                 desired_version_hash: version_hash,
-            };
+            });
             // TODO make these constants somewhere or something. this is so bad
-            let downloads_process =
-                Address::from_str(&format!("{:?}@downloads:app_store:sys", our.node)).unwrap();
+            let downloads_process = Address::from_str("our@downloads:app_store:sys").unwrap();
 
             // send and await response to downloads process
             let response = Request::new()
@@ -489,13 +478,16 @@ fn serve_paths(
                 ));
             };
 
-            let Ok(version_hash) = get_version_hash(url_params) else {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    format!("Missing version_hash").into_bytes(),
-                ));
-            };
+            let body = crate::get_blob()
+                .ok_or(anyhow::anyhow!("missing blob"))?
+                .bytes;
+            let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+
+            let version_hash = body_json
+                .get("version_hash")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
 
             let process_package_id =
                 crate::kinode::process::main::PackageId::from_process_lib(package_id);
@@ -505,53 +497,13 @@ fn serve_paths(
                 None,
                 &version_hash,
                 state,
-                &our.to_string(),
+                &our.node().to_string(),
             ) {
                 Ok(_) => Ok((StatusCode::CREATED, None, vec![])),
                 Err(e) => Ok((
                     StatusCode::SERVICE_UNAVAILABLE,
                     None,
                     e.to_string().into_bytes(),
-                )),
-            }
-        }
-        // GET caps for a specific downloaded app
-        // approve capabilities for a downloaded app: POST
-        "/apps/:id/caps" => {
-            let Ok(package_id) = get_package_id(url_params) else {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    format!("Missing id").into_bytes(),
-                ));
-            };
-            match method {
-                // return the capabilities for that app
-                Method::GET => Ok(match crate::utils::fetch_package_manifest(&package_id) {
-                    Ok(manifest) => (StatusCode::OK, None, serde_json::to_vec(&manifest)?),
-                    Err(_) => (
-                        StatusCode::NOT_FOUND,
-                        None,
-                        format!("App manifest not found: {package_id}").into_bytes(),
-                    ),
-                }),
-                // approve the capabilities for that app
-                // Method::POST => Ok(
-                //     match state.update_downloaded_package(&package_id, |pkg| {
-                //         pkg.caps_approved = true;
-                //     }) {
-                //         true => (StatusCode::OK, None, vec![]),
-                //         false => (
-                //             StatusCode::NOT_FOUND,
-                //             None,
-                //             format!("App not found: {package_id}").into_bytes(),
-                //         ),
-                //     },
-                // ),
-                _ => Ok((
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    None,
-                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
         }
@@ -613,6 +565,43 @@ fn serve_paths(
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
+                )),
+            }
+        }
+        // remove a downloaded app: POST
+        "/downloads/:id/remove" => {
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+            let body = crate::get_blob()
+                .ok_or(anyhow::anyhow!("missing blob"))?
+                .bytes;
+            let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let version_hash = body_json
+                .get("version_hash")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
+            let downloads = Address::from_str("our@downloads:app_store:sys")?;
+            let download_request = DownloadRequests::RemoveFile(RemoveFileRequest {
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                version_hash: version_hash,
+            });
+            let resp = Request::new()
+                .target(downloads)
+                .body(serde_json::to_vec(&download_request)?)
+                .send_and_await_response(5)??;
+            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            match msg {
+                DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
+                DownloadResponses::Error(e) => Err(anyhow::anyhow!("Error removing file: {:?}", e)),
+                _ => Err(anyhow::anyhow!(
+                    "Invalid response from downloads: {:?}",
+                    msg
                 )),
             }
         }
