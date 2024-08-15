@@ -35,17 +35,17 @@ interface downloads {
         desired-version-hash: string,
     }
 
-    record download-error {
-        kind: download-error-types,
-        reason: option<string>,
-    }
-
-    enum download-error-types {
+    variant download-error {
         no-package,
         not-mirroring,
-        hash-mismatch,
+        hash-mismatch(hash-mismatch),
         file-not-found,
         worker-spawn-failed,
+    }
+
+    record hash-mismatch {
+        desired: string,
+        actual: string,
     }
 
     record chunk-request {
@@ -98,20 +98,15 @@ interface chain {
     }
 
     variant chain-responses {
-        get-app(get-app-response),
-        get-apps(get-apps-response),
-        get-our-apps(get-our-apps-response),
+        get-app(option<onchain-app>),
+        get-apps(list<onchain-app>),
+        get-our-apps(list<onchain-app>),
         auto-update-started,
         auto-update-stopped,
         error(chain-error),
     }
 
-    record chain-error {
-        kind: chain-error-types,
-        reason: option<string>,
-    }
-
-    enum chain-error-types {
+    variant chain-error {
         no-package,
     }
     
@@ -144,18 +139,6 @@ interface chain {
         wit-version: option<u32>,
         dependencies: option<list<string>>,
     }
-
-    record get-apps-response {
-        apps: list<onchain-app>,
-    }
-
-    record get-app-response {
-        app: option<onchain-app>,
-    }
-
-    record get-our-apps-response {
-        apps: list<onchain-app>,
-    }
 }
 
 interface main {
@@ -173,12 +156,8 @@ interface main {
 
     variant response {
         local(local-response),
-        error(error-types),
-    }
-
-    variant error-types {
-        chain(chain-error),
-        download(download-error),
+        chain-error(chain-error),
+        download-error(download-error),
     }
 
     variant local-request {
