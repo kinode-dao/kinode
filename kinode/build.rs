@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs::{self, File},
     io::{BufReader, Cursor, Read, Write},
     path::{Path, PathBuf},
@@ -9,6 +8,13 @@ use flate2::read::GzDecoder;
 use tar::Archive;
 use zip::write::FileOptions;
 
+macro_rules! p {
+    ($($tokens: tt)*) => {
+        println!("cargo:warning={}", format!($($tokens)*))
+    }
+}
+
+/// get cargo features to compile packages with
 fn get_features() -> String {
     let mut features = "".to_string();
     for (key, _) in std::env::vars() {
@@ -23,25 +29,30 @@ fn get_features() -> String {
     features
 }
 
-fn output_reruns(dir: &Path, rerun_files: &HashSet<String>) {
+/// print `cargo:rerun-if-changed=PATH` for each path of interest
+fn output_reruns(dir: &Path) {
     // Check files individually
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
-            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                // Check if the current file is in our list of interesting files
-                if filename == "ui" {
-                    continue;
-                }
-                if rerun_files.contains(filename) {
-                    // If so, print a `cargo:rerun-if-changed=PATH` line for it
-                    println!("cargo::rerun-if-changed={}", path.display());
-                    continue;
-                }
-            }
             if path.is_dir() {
-                // If the entry is a directory not in rerun_files, recursively walk it
-                output_reruns(&path, rerun_files);
+                if let Some(dirname) = path.file_name().and_then(|n| n.to_str()) {
+                    if dirname == "ui" || dirname == "target" {
+                        // do not prompt a rerun if only UI/build files have changed
+                        continue;
+                    }
+                    // If the entry is a directory not in rerun_files, recursively walk it
+                    output_reruns(&path);
+                }
+            } else {
+                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    if filename.ends_with(".zip") || filename.ends_with(".wasm") {
+                        // do not prompt a rerun for compiled outputs
+                        continue;
+                    }
+                    // any other changed file within a package subdir prompts a rerun
+                    println!("cargo::rerun-if-changed={}", path.display());
+                }
             }
         }
     }
@@ -64,7 +75,9 @@ fn untar_gz_file(path: &Path, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// fetch .tar.gz of kinode book for docs app
 fn get_kinode_book(packages_dir: &Path) -> anyhow::Result<()> {
+    p!("fetching kinode book .tar.gz");
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         let releases = kit::boot_fake_node::fetch_releases("kinode-dao", "kinode-book")
@@ -153,7 +166,7 @@ fn build_and_zip_package(
 
 fn main() -> anyhow::Result<()> {
     if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {
-        println!("Skipping build script");
+        p!("skipping build script");
         return Ok(());
     }
 
@@ -162,7 +175,7 @@ fn main() -> anyhow::Result<()> {
     let packages_dir = pwd.join("packages");
 
     if std::env::var("SKIP_BUILD_FRONTEND").is_ok() {
-        println!("Skipping build frontend");
+        p!("skipping frontend builds");
     } else {
         // build core frontends
         let core_frontends = vec![
@@ -186,12 +199,7 @@ fn main() -> anyhow::Result<()> {
 
     get_kinode_book(&packages_dir)?;
 
-    let rerun_files: HashSet<String> = HashSet::from([
-        "Cargo.lock".to_string(),
-        "Cargo.toml".to_string(),
-        "src".to_string(),
-    ]);
-    output_reruns(&parent_dir, &rerun_files);
+    output_reruns(&packages_dir);
 
     let features = get_features();
 
@@ -201,14 +209,14 @@ fn main() -> anyhow::Result<()> {
                 Ok(e) => e.path(),
                 Err(_) => return None,
             };
-            let parent_pkg_path = entry_path.join("pkg");
-            if !parent_pkg_path.exists() {
+            let child_pkg_path = entry_path.join("pkg");
+            if !child_pkg_path.exists() {
                 // don't run on, e.g., `.DS_Store`
                 return None;
             }
             Some(build_and_zip_package(
                 entry_path.clone(),
-                parent_pkg_path.to_str().unwrap(),
+                child_pkg_path.to_str().unwrap(),
                 &features,
             ))
         })
