@@ -174,11 +174,20 @@ fn handle_message(
             }
             DownloadRequests::Progress(progress) => {
                 // forward progress to main:app_store:sys,
-                // which then pushes to the frontend.
+                // pushed to UI via websockets
                 let target = Address::from_str("our@main:app_store:sys")?;
                 let _ = Request::new()
                     .target(target)
                     .body(serde_json::to_vec(&progress)?)
+                    .send();
+            }
+            DownloadRequests::DownloadComplete(req) => {
+                // forward to main:app_store:sys
+                // pushed to UI via websockets
+                let target = Address::from_str("our@main:app_store:sys")?;
+                let _ = Request::new()
+                    .target(target)
+                    .body(serde_json::to_vec(&req)?)
                     .send();
             }
             DownloadRequests::GetFiles(maybe_id) => {

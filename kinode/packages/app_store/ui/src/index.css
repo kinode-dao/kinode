@@ -391,59 +391,26 @@ td {
 }
 
 .download-progress {
-    width: 100%;
-    background-color: #f0f0f0;
-    border-radius: 4px;
-    overflow: hidden;
-    position: relative;
-    height: 20px;
-    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 .progress-bar {
+    width: 100px;
+    height: 10px;
+    background-color: #e0e0e0;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
     height: 100%;
-    background-color: #4CAF50;
-    transition: width 0.3s ease;
-    position: relative;
-    overflow: hidden;
+    background-color: #4caf50;
+    transition: width 0.3s ease-in-out;
 }
 
-.progress-bar::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-image: linear-gradient(-45deg,
-            rgba(255, 255, 255, 0.2) 25%,
-            transparent 25%,
-            transparent 50%,
-            rgba(255, 255, 255, 0.2) 50%,
-            rgba(255, 255, 255, 0.2) 75%,
-            transparent 75%,
-            transparent);
-    background-size: 50px 50px;
-    animation: move 2s linear infinite;
-    overflow: hidden;
-}
-
-@keyframes move {
-    0% {
-        background-position: 0 0;
-    }
-
-    100% {
-        background-position: 50px 50px;
-    }
-}
-
-.download-progress span {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #000;
-    font-weight: bold;
-    z-index: 1;
+.progress-text {
+    min-width: 50px;
+    text-align: right;
 }

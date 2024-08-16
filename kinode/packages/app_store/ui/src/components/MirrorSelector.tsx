@@ -22,6 +22,7 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({
             if (!packageId) return;
 
             const appData = await fetchListing(packageId);
+            if (!appData) return;
             const mirrors = [appData.package_id.publisher_node, ...(appData.metadata?.properties?.mirrors || [])];
             setAvailableMirrors(mirrors);
             setSelectedMirror(appData.package_id.publisher_node);
@@ -29,7 +30,7 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({
             mirrors.forEach(mirror => {
                 setMirrorStatuses(prev => ({ ...prev, [mirror]: null }));
                 checkMirror(mirror)
-                    .then(status => setMirrorStatuses(prev => ({ ...prev, [mirror]: status.is_online })))
+                    .then(status => setMirrorStatuses(prev => ({ ...prev, [mirror]: status?.is_online ?? false })))
                     .catch(() => setMirrorStatuses(prev => ({ ...prev, [mirror]: false })));
             });
         };
@@ -58,7 +59,13 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({
             setIsCustomMirrorSelected(false);
             setAvailableMirrors(prev => [...prev, customMirror]); // Add custom mirror to available mirrors
             checkMirror(customMirror)
-                .then(status => setMirrorStatuses(prev => ({ ...prev, [customMirror]: status.is_online })))
+                .then(status => {
+                    if (status) {
+                        setMirrorStatuses(prev => ({ ...prev, [customMirror]: status.is_online }));
+                    } else {
+                        setMirrorStatuses(prev => ({ ...prev, [customMirror]: null }));
+                    }
+                })
                 .catch(() => setMirrorStatuses(prev => ({ ...prev, [customMirror]: false })));
         }
     };

@@ -16,7 +16,9 @@
 //! - given permissions (necessary to complete install)
 //! - uninstalled + deleted
 //! - set to automatically update if a new version is available
-use crate::kinode::process::downloads::{DownloadResponses, ProgressUpdate};
+use crate::kinode::process::downloads::{
+    DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
+};
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
     LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
@@ -48,6 +50,7 @@ const VFS_TIMEOUT: u64 = 10;
 pub enum Req {
     LocalRequest(LocalRequest),
     Progress(ProgressUpdate),
+    DownloadComplete(DownloadCompleteRequest),
     Http(http::server::HttpServerRequest),
 }
 
@@ -135,6 +138,30 @@ fn handle_message(
                                 "version_hash": progress.version_hash,
                                 "downloaded": progress.downloaded,
                                 "total": progress.total,
+                            }
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
+                    },
+                );
+            }
+            Req::DownloadComplete(req) => {
+                if !message.is_local(&our) {
+                    return Err(anyhow::anyhow!("download complete from non-local node"));
+                }
+                println!("download complete: {:?}", req);
+                http_server.ws_push_all_channels(
+                    "/",
+                    http::server::WsMessageType::Text,
+                    LazyLoadBlob {
+                        mime: Some("application/json".to_string()),
+                        bytes: serde_json::json!({
+                            "kind": "complete",
+                            "data": {
+                                "package_id": req.package_id,
+                                "version_hash": req.version_hash,
+                                "error": req.error,
                             }
                         })
                         .to_string()

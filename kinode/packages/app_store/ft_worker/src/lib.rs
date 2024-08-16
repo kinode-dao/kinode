@@ -1,6 +1,6 @@
 use crate::kinode::process::downloads::{
-    ChunkRequest, DownloadRequests, LocalDownloadRequest, ProgressUpdate, RemoteDownloadRequest,
-    SizeUpdate,
+    ChunkRequest, DownloadCompleteRequest, DownloadError, DownloadRequests, HashMismatch,
+    LocalDownloadRequest, ProgressUpdate, RemoteDownloadRequest, SizeUpdate,
 };
 use kinode_process_lib::*;
 use kinode_process_lib::{
@@ -40,7 +40,6 @@ fn init(our: Address) {
     // killswitch timer, 2 minutes. sender or receiver gets killed/cleaned up.
     timer::set_timer(120000, None);
 
-    // measure how long it took for println!("ft_worker: got init message");
     let start = std::time::Instant::now();
 
     let req: DownloadRequests =
@@ -158,7 +157,20 @@ fn handle_receiver(
                         let recieved_hash = format!("{:x}", hasher.finalize());
 
                         if recieved_hash != version_hash {
-                            println!("big diff baby; {} != {}", recieved_hash, version_hash);
+                            let req = DownloadCompleteRequest {
+                                package_id: package_id.clone().into(),
+                                version_hash: version_hash.to_string(),
+                                error: Some(DownloadError::HashMismatch(HashMismatch {
+                                    desired: version_hash.to_string(),
+                                    actual: recieved_hash,
+                                })),
+                            };
+                            Request::new()
+                                .body(serde_json::to_vec(&DownloadRequests::DownloadComplete(
+                                    req,
+                                ))?)
+                                .target(parent_process.clone())
+                                .send()?;
                         }
 
                         let manifest_filename =
@@ -167,6 +179,16 @@ fn handle_receiver(
                         let contents = file.read()?;
                         extract_and_write_manifest(&contents, &manifest_filename)?;
 
+                        Request::new()
+                            .body(serde_json::to_vec(&DownloadRequests::DownloadComplete(
+                                DownloadCompleteRequest {
+                                    package_id: package_id.clone().into(),
+                                    version_hash: version_hash.to_string(),
+                                    error: None,
+                                },
+                            ))?)
+                            .target(parent_process.clone())
+                            .send()?;
                         return Ok(());
                     }
                 }

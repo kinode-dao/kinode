@@ -13,6 +13,7 @@ interface downloads {
         size(size-update),
         // local only
         local-download(local-download-request),
+        download-complete(download-complete-request),
         get-files(option<package-id>),
         remove-file(remove-file-request),
         add-download(add-download-request),
@@ -44,6 +45,12 @@ interface downloads {
         hash-mismatch(hash-mismatch),
         file-not-found,
         worker-spawn-failed,
+    }
+
+    record download-complete-request {
+        package-id: package-id,
+        version-hash: string,
+        error: option<download-error>,
     }
 
     record hash-mismatch {

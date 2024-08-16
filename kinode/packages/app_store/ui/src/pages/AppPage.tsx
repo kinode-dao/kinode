@@ -32,7 +32,7 @@ export default function AppPage() {
       setApp(appData);
       setInstalledApp(installedAppData);
 
-      if (appData.metadata?.properties?.code_hashes) {
+      if (appData?.metadata?.properties?.code_hashes) {
         const versions = appData.metadata.properties.code_hashes;
         if (versions.length > 0) {
           const latestVer = versions.reduce((latest, current) =>
