@@ -79,8 +79,7 @@ export default function AppPage() {
   };
 
   const handleLaunch = () => {
-    // Implement launch functionality
-    console.log("Launching app:", app?.package_id.package_name);
+    navigate(`/${app?.package_id.package_name}:${app?.package_id.package_name}:${app?.package_id.publisher_node}/`);
   };
 
   if (isLoading) {

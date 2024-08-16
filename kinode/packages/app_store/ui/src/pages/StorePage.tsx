@@ -11,10 +11,16 @@ export default function StorePage() {
     fetchListings();
   }, [fetchListings]);
 
-  const filteredApps = Object.values(listings).filter((app) =>
-    app.package_id.package_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.metadata?.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // extensive temp null handling due to weird prod bug
+  const filteredApps = React.useMemo(() => {
+    if (!listings) return [];
+    return Object.values(listings).filter((app) => {
+      if (!app || !app.package_id) return false;
+      const nameMatch = app.package_id.package_name.toLowerCase().includes(searchQuery.toLowerCase());
+      const descMatch = app.metadata?.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+      return nameMatch || descMatch;
+    });
+  }, [listings, searchQuery]);
 
   return (
     <div className="store-page">
@@ -27,7 +33,7 @@ export default function StorePage() {
         />
       </div>
       <div className="app-list">
-        {Object.keys(listings).length === 0 ? (
+        {!listings ? (
           <p>Loading...</p>
         ) : filteredApps.length === 0 ? (
           <p>No apps available.</p>
@@ -43,7 +49,7 @@ export default function StorePage() {
             </thead>
             <tbody>
               {filteredApps.map((app) => (
-                <AppRow key={`${app.package_id.package_name}:${app.package_id.publisher_node}`} app={app} />
+                <AppRow key={`${app.package_id?.package_name}:${app.package_id?.publisher_node}`} app={app} />
               ))}
             </tbody>
           </table>
@@ -53,11 +59,9 @@ export default function StorePage() {
   );
 }
 
-interface AppRowProps {
-  app: AppListing;
-}
+const AppRow: React.FC<{ app: AppListing }> = ({ app }) => {
+  if (!app || !app.package_id) return null;
 
-const AppRow: React.FC<AppRowProps> = ({ app }) => {
   return (
     <tr className="app-row">
       <td>
