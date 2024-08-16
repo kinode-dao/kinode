@@ -459,18 +459,22 @@ async fn ws_handler(
 
     drop(ws_path_bindings);
 
+    // stripping ProcessId from path
+    let formatted_path = format!(
+        "/{}",
+        original_path
+            .trim_start_matches('/')
+            .strip_prefix(&app.to_string())
+            .unwrap_or("")
+            .trim_start_matches('/')
+    );
+
     Ok(ws_connection.on_upgrade(move |ws: WebSocket| async move {
         maintain_websocket(
             ws,
             our.clone(),
             app,
-            // remove process id from beginning of path by splitting into segments
-            // separated by "/" and taking all but the first
-            original_path
-                .split('/')
-                .skip(1)
-                .collect::<Vec<&str>>()
-                .join("/"),
+            formatted_path,
             jwt_secret_bytes.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
