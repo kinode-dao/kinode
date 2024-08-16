@@ -49,26 +49,31 @@ const useAppsStore = create<AppsStore>()(
         nodeId: (window as any).our?.node,
         processId: "main:app_store:sys",
         onMessage: (message) => {
-          console.log('message gotten from kinode')
-          const data = JSON.parse(message);
-          console.log('WebSocket message received', data)
-          if (data.kind === 'progress') {
-            const { package_id, version_hash, downloaded, total } = data.data;
-            const appId = `${package_id.package_name}:${package_id.publisher_node}:${version_hash}`;
-            set((state) => ({
-              activeDownloads: {
-                ...state.activeDownloads,
-                [appId]: { downloaded, total }
-              }
-            }));
-
-            if (downloaded === total) {
-              get().fetchDownloads();
+          console.log('WebSocket message received', message);
+          try {
+            const data = JSON.parse(message);
+            if (data.kind === 'progress') {
+              const { package_id, version_hash, downloaded, total } = data.data;
+              const appId = `${package_id['package-name']}:${package_id['publisher-node']}:${version_hash}`;
+              set((state) => ({
+                activeDownloads: {
+                  ...state.activeDownloads,
+                  [appId]: { downloaded, total }
+                }
+              }));
             }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
           }
         },
         onOpen: (_e) => {
-          console.log('WebSocket connection opened')
+          console.log('WebSocket connection opened');
+        },
+        onClose: (_e) => {
+          console.log('WebSocket connection closed');
+        },
+        onError: (error) => {
+          console.error('WebSocket error:', error);
         },
       }),
 
@@ -206,7 +211,7 @@ const useAppsStore = create<AppsStore>()(
             download_from: downloadFrom,
           }),
         })
-        if (res.status !== HTTP_STATUS.CREATED) {
+        if (res.status !== HTTP_STATUS.OK) {
           throw new Error(`Failed to download app: ${id}`)
         }
       },

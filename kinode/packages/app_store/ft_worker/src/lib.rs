@@ -140,14 +140,13 @@ fn handle_receiver(
     let mut hasher = Sha256::new();
 
     loop {
-        let Ok(Message::Request { body, source, .. }) = await_message() else {
-            return Err(anyhow::anyhow!("ft_worker: got bad message"));
-        };
-
-        // if source == killswitch timer, it's over.
-        if source == timer_address {
+        let message = await_message()?;
+        if *message.source() == timer_address {
             return Ok(());
         }
+        let Message::Request { body, .. } = message else {
+            return Err(anyhow::anyhow!("ft_worker: got bad message"));
+        };
 
         let req: DownloadRequests = serde_json::from_slice(&body)?;
 
