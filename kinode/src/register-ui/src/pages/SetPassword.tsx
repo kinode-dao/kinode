@@ -132,7 +132,7 @@ function SetPassword({
         <form className="form" onSubmit={handleSubmit}>
           <div className="form-group">
             <Tooltip text="This password will be used to log in when you restart your node or switch browsers.">
-              <label className="form-label" htmlFor="password">Set Password</label>
+              <label className="form-label" htmlFor="password">Set password for {knsName}</label>
             </Tooltip>
             <input
               type="password"
