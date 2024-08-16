@@ -1,9 +1,147 @@
-interface main {
+interface downloads {
     //
-    // app store API as presented by main:app_store:sys-v0
+    // download API as presented by download:app_store:sys-v0
     //
 
     use standard.{package-id};
+
+    variant download-requests {
+        // remote only
+        remote-download(remote-download-request),
+        chunk(chunk-request),
+        progress(progress-update),
+        size(size-update),
+        // local only
+        local-download(local-download-request),
+        download-complete(download-complete-request),
+        get-files(option<package-id>),
+        remove-file(remove-file-request),
+        add-download(add-download-request),
+        start-mirroring(package-id),
+        stop-mirroring(package-id),
+    }
+
+    variant download-responses {
+        success,
+        error(download-error),
+        get-files(list<entry>),   
+    }
+
+    record local-download-request {
+        package-id: package-id,
+        download-from: string,
+        desired-version-hash: string,
+    }
+
+    record remote-download-request {
+        package-id: package-id,
+        worker-address: string,
+        desired-version-hash: string,
+    }
+
+    variant download-error {
+        no-package,
+        not-mirroring,
+        hash-mismatch(hash-mismatch),
+        file-not-found,
+        worker-spawn-failed,
+    }
+
+    record download-complete-request {
+        package-id: package-id,
+        version-hash: string,
+        error: option<download-error>,
+    }
+
+    record hash-mismatch {
+        desired: string,
+        actual: string,
+    }
+
+    record chunk-request {
+        package-id: package-id,
+        version-hash: string,
+        offset: u64,
+        length: u64,
+    }
+
+    variant entry {
+        file(file-entry),
+        dir(dir-entry),
+    }
+
+    record file-entry {
+        name: string,
+        size: u64,
+        manifest: string,
+    }
+
+    record dir-entry {
+        name: string,
+        mirroring: bool,
+    }
+
+    record remove-file-request {
+        package-id: package-id,
+        version-hash: string,
+    }
+
+    // part of new-package-request local-only flow. 
+    record add-download-request {
+        package-id: package-id,
+        version-hash: string,
+        mirror: bool,
+    }
+
+    record progress-update {
+        package-id: package-id,
+        version-hash: string,
+        downloaded: u64,
+        total: u64,
+    }
+
+    record size-update {
+        package-id: package-id,
+        size: u64,
+    }
+}
+
+interface chain {
+    //
+    // on-chain API as presented by chain:app_store:sys-v0
+    //
+
+    use standard.{package-id};
+
+    variant chain-requests {
+        get-app(package-id),
+        get-apps,
+        get-our-apps,
+        start-auto-update(package-id),
+        stop-auto-update(package-id),
+    }
+
+    variant chain-responses {
+        get-app(option<onchain-app>),
+        get-apps(list<onchain-app>),
+        get-our-apps(list<onchain-app>),
+        auto-update-started,
+        auto-update-stopped,
+        error(chain-error),
+    }
+
+    variant chain-error {
+        no-package,
+    }
+    
+    record onchain-app {
+        package-id: package-id,
+        tba: string,
+        metadata-uri: string,
+        metadata-hash: string,
+        metadata: option<onchain-metadata>,
+        auto-update: bool,
+    }
 
     record onchain-metadata {
         name: option<string>,
@@ -25,82 +163,53 @@ interface main {
         wit-version: option<u32>,
         dependencies: option<list<string>>,
     }
+}
+
+interface main {
+    //
+    // app store API as presented by main:app_store:sys-v0
+    //
+
+    use standard.{package-id};
+    use chain.{onchain-metadata, chain-error};
+    use downloads.{download-error};
 
     variant request {
-        remote(remote-request),
         local(local-request),
     }
 
     variant response {
-        remote(remote-response),
         local(local-response),
-    }
-
-    variant remote-request {
-        download(remote-download-request),
-    }
-
-    record remote-download-request {
-        package-id: package-id,
-        desired-version-hash: option<string>,
-    }
-
-    variant remote-response {
-        download-approved,
-        download-denied(reason),
-    }
-
-    variant reason {
-        no-package,
-        not-mirroring,
-        hash-mismatch(hash-mismatch),
-        file-not-found,
-        worker-spawn-failed
-    }
-
-    record hash-mismatch {
-        requested: string,
-        have: string,
+        chain-error(chain-error),
+        download-error(download-error),
     }
 
     variant local-request {
         new-package(new-package-request),
-        download(download-request),
-        install(package-id),
+        install(install-package-request),
         uninstall(package-id),
-        start-mirroring(package-id),
-        stop-mirroring(package-id),
-        start-auto-update(package-id),
-        stop-auto-update(package-id),
-        rebuild-index,
         apis,
         get-api(package-id),
     }
 
-    record new-package-request {
-        package-id: package-id,
-        metadata: onchain-metadata,
-        mirror: bool,
-    }
-
-    record download-request {
-        package-id: package-id,
-        download-from: string,
-        mirror: bool,
-        auto-update: bool,
-        desired-version-hash: option<string>,
-    }
-
     variant local-response {
         new-package-response(new-package-response),
-        download-response(download-response),
         install-response(install-response),
         uninstall-response(uninstall-response),
-        mirror-response(mirror-response),
-        auto-update-response(auto-update-response),
-        rebuild-index-response(rebuild-index-response),
         apis-response(apis-response),
         get-api-response(get-api-response),
+    }
+
+
+    record new-package-request {
+        package-id: package-id,
+        mirror: bool,
+    }
+    
+    record install-package-request {
+        package-id: package-id,
+        metadata: option<onchain-metadata>, // if None == local sideload package.
+        version-hash: string,
     }
 
     enum new-package-response {
@@ -110,37 +219,14 @@ interface main {
         already-exists,
     }
 
-    variant download-response {
-        started,
-        bad-response,
-        denied(reason),
-        already-exists,
-        already-downloading,
-    }
-
     enum install-response {
         success,
-        failure, // TODO
+        failure,
     }
 
     enum uninstall-response {
         success,
-        failure, // TODO
-    }
-
-    enum mirror-response {
-        success,
-        failure, // TODO
-    }
-
-    enum auto-update-response {
-        success,
-        failure, // TODO
-    }
-
-    enum rebuild-index-response {
-        success,
-        failure, // TODO
+        failure,
     }
 
     record apis-response {
@@ -150,11 +236,13 @@ interface main {
     // the API itself will be in response blob if success!
     enum get-api-response {
         success,
-        failure, // TODO
+        failure,
     }
 }
 
 world app-store-sys-v0 {
     import main;
+    import downloads;
+    import chain;
     include process-v0;
 }

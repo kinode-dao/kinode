@@ -56,6 +56,7 @@ impl<'a> Deserialize<'a> for ProcessId {
     where
         D: serde::Deserializer<'a>,
     {
+        // TODO make this never crash!
         let s = String::deserialize(deserializer)?;
         s.parse().map_err(serde::de::Error::custom)
     }
@@ -387,6 +388,7 @@ impl<'a> Deserialize<'a> for Address {
     where
         D: serde::de::Deserializer<'a>,
     {
+        // TODO make this never crash!
         let s = String::deserialize(deserializer)?;
         s.parse().map_err(serde::de::Error::custom)
     }
@@ -523,7 +525,8 @@ impl std::fmt::Display for Capability {
             f,
             "{}({})",
             self.issuer,
-            serde_json::from_str::<serde_json::Value>(&self.params).unwrap_or_default()
+            serde_json::from_str::<serde_json::Value>(&self.params)
+                .unwrap_or(serde_json::json!("invalid JSON in capability"))
         )
     }
 }

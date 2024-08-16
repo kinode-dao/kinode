@@ -1,17 +1,15 @@
 import React, { useState, useCallback, FormEvent, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
 import { keccak256, toBytes } from 'viem';
 import { mechAbi, KIMAP, encodeIntoMintCall, encodeMulticalls, kimapAbi, MULTICALL } from "../abis";
 import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
-import { AppInfo } from "../types/Apps";
 
 export default function PublishPage() {
-  const { state } = useLocation();
   const { openConnectModal } = useConnectModal();
-  const { apps } = useAppsStore();
+  const { ourApps, fetchOurApps } = useAppsStore();
   const publicClient = usePublicClient();
 
   const { address, isConnected, isConnecting } = useAccount();
@@ -25,21 +23,11 @@ export default function PublishPage() {
   const [publisherId, setPublisherId] = useState<string>(window.our?.node || "");
   const [metadataUrl, setMetadataUrl] = useState<string>("");
   const [metadataHash, setMetadataHash] = useState<string>("");
-  const [myPublishedApps, setMyPublishedApps] = useState<AppInfo[]>([]);
 
   useEffect(() => {
-    const app: AppInfo | undefined = state?.app;
-    if (app) {
-      setPackageName(app.package);
-      setPublisherId(app.publisher);
-    }
-  }, [state])
+    fetchOurApps();
+  }, [fetchOurApps]);
 
-  useEffect(() => {
-    setMyPublishedApps(
-      apps.filter((app) => app.publisher?.toLowerCase() === window.our.node?.toLowerCase())
-    );
-  }, [apps, address])
 
   const calculateMetadataHash = useCallback(async () => {
     if (!metadataUrl) {
@@ -70,6 +58,7 @@ export default function PublishPage() {
 
       try {
         // Check if the package already exists and get its TBA
+        console.log('packageName, publisherId: ', packageName, publisherId)
         let data = await publicClient.readContract({
           abi: kimapAbi,
           address: KIMAP,
@@ -80,7 +69,7 @@ export default function PublishPage() {
         let [tba, owner, _data] = data as [string, string, string];
         let isUpdate = Boolean(tba && tba !== '0x' && owner === address);
         let currentTBA = isUpdate ? tba as `0x${string}` : null;
-
+        console.log('currenttba, isupdate: ', currentTBA, isUpdate)
         // If the package doesn't exist, check for the publisher's TBA
         if (!currentTBA) {
           data = await publicClient.readContract({
@@ -261,12 +250,15 @@ export default function PublishPage() {
 
       <div className="my-packages">
         <h2>Packages You Own</h2>
-        {myPublishedApps.length > 0 ? (
+        {Object.keys(ourApps).length > 0 ? (
           <ul>
-            {myPublishedApps.map((app) => (
-              <li key={`${app.package}${app.publisher}`}>
-                <span>{app.package}</span>
-                <button onClick={() => unpublishPackage(app.package, app.publisher)}>
+            {Object.values(ourApps).map((app) => (
+              <li key={`${app.package_id.package_name}:${app.package_id.publisher_node}`}>
+                <Link to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`} className="app-name">
+                  {app.metadata?.name || app.package_id.package_name}
+                </Link>
+
+                <button onClick={() => unpublishPackage(app.package_id.package_name, app.package_id.publisher_node)}>
                   Unpublish
                 </button>
               </li>

@@ -1,16 +1,17 @@
 use {
     crate::{
-        kinode::process::main::OnchainMetadata,
-        state::{AppStoreLogError, PackageState, SerializedState, State},
-        KIMAP_ADDRESS, VFS_TIMEOUT,
+        kinode::process::{
+            chain::{ChainRequests, ChainResponses, OnchainMetadata},
+            downloads::{AddDownloadRequest, DownloadRequests, DownloadResponses},
+        },
+        state::{PackageState, State},
+        VFS_TIMEOUT,
     },
-    alloy_primitives::keccak256,
-    alloy_sol_types::SolEvent,
     kinode_process_lib::{
-        eth, get_blob, get_state, http, kernel_types as kt, kimap, print_to_terminal, println, vfs,
-        Address, LazyLoadBlob, PackageId, ProcessId, Request,
+        get_blob, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId, ProcessId,
+        Request,
     },
-    std::collections::HashSet,
+    std::{collections::HashSet, str::FromStr},
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId
@@ -31,137 +32,12 @@ impl crate::kinode::process::main::PackageId {
     }
 }
 
-// less annoying but still bad
-impl OnchainMetadata {
-    pub fn to_erc721_metadata(self) -> kt::Erc721Metadata {
-        use kt::Erc721Properties;
-        kt::Erc721Metadata {
-            name: self.name,
-            description: self.description,
-            image: self.image,
-            external_url: self.external_url,
-            animation_url: self.animation_url,
-            properties: Erc721Properties {
-                package_name: self.properties.package_name,
-                publisher: self.properties.publisher,
-                current_version: self.properties.current_version,
-                mirrors: self.properties.mirrors,
-                code_hashes: self.properties.code_hashes.into_iter().collect(),
-                license: self.properties.license,
-                screenshots: self.properties.screenshots,
-                wit_version: self.properties.wit_version,
-                dependencies: self.properties.dependencies,
-            },
-        }
-    }
-}
-
-/// fetch state from disk or create a new one if that fails
-pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
-    if let Some(state_bytes) = get_state() {
-        match serde_json::from_slice::<SerializedState>(&state_bytes) {
-            Ok(state) => {
-                if state.kimap.address().to_string() == KIMAP_ADDRESS {
-                    return State::from_serialized(our, state);
-                } else {
-                    println!(
-                        "state contract address mismatch. rebuilding state! expected {}, got {}",
-                        KIMAP_ADDRESS,
-                        state.kimap.address().to_string()
-                    );
-                }
-            }
-            Err(e) => println!("failed to deserialize saved state, rebuilding: {e}"),
-        }
-    }
-    State::new(our, provider).expect("state creation failed")
-}
-
-/// create the filter used for app store getLogs and subscription.
-/// the app store exclusively looks for ~metadata-uri postings: if one is
-/// observed, we then *query* for ~metadata-hash to verify the content
-/// at the URI.
-///
-/// this means that ~metadata-hash should be *posted before or at the same time* as ~metadata-uri!
-pub fn app_store_filter(state: &State) -> eth::Filter {
-    let notes = vec![keccak256("~metadata-uri")];
-
-    eth::Filter::new()
-        .address(*state.kimap.address())
-        .events([kimap::contract::Note::SIGNATURE])
-        .topic3(notes)
-}
-
-/// create a filter to fetch app store event logs from chain and subscribe to new events
-pub fn fetch_and_subscribe_logs(state: &mut State) {
-    let filter = app_store_filter(state);
-    // get past logs, subscribe to new ones.
-    // subscribe first so we don't miss any logs
-    state.kimap.provider.subscribe_loop(1, filter.clone());
-    for log in fetch_logs(
-        &state.kimap.provider,
-        &filter.from_block(state.last_saved_block),
-    ) {
-        if let Err(e) = state.ingest_contract_event(log, false) {
-            print_to_terminal(1, &format!("error ingesting log: {e}"));
-        };
-    }
-    state.update_listings();
-}
-
-/// fetch logs from the chain with a given filter
-fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
-    loop {
-        match eth_provider.get_logs(filter) {
-            Ok(res) => return res,
-            Err(_) => {
-                println!("failed to fetch logs! trying again in 5s...");
-                std::thread::sleep(std::time::Duration::from_secs(5));
-                continue;
-            }
-        }
-    }
-}
-
-/// fetch metadata from url and verify it matches metadata_hash
-pub fn fetch_metadata_from_url(
-    metadata_url: &str,
-    metadata_hash: &str,
-    timeout: u64,
-) -> Result<kt::Erc721Metadata, AppStoreLogError> {
-    if let Ok(url) = url::Url::parse(metadata_url) {
-        if let Ok(_) =
-            http::client::send_request_await_response(http::Method::GET, url, None, timeout, vec![])
-        {
-            if let Some(body) = get_blob() {
-                let hash = keccak_256_hash(&body.bytes);
-                if &hash == metadata_hash {
-                    return Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)
-                        .map_err(|_| AppStoreLogError::MetadataNotFound)?);
-                } else {
-                    return Err(AppStoreLogError::MetadataHashMismatch);
-                }
-            }
-        }
-    }
-    Err(AppStoreLogError::MetadataNotFound)
-}
-
 /// generate a Keccak-256 hash string (with 0x prefix) of the metadata bytes
 pub fn keccak_256_hash(bytes: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
     hasher.update(bytes);
     format!("0x{:x}", hasher.finalize())
-}
-
-/// generate a Keccak-256 hash of the package name and publisher (match onchain)
-pub fn generate_package_hash(name: &str, publisher_dnswire: &[u8]) -> String {
-    use sha3::{Digest, Keccak256};
-    let mut hasher = Keccak256::new();
-    hasher.update([name.as_bytes(), publisher_dnswire].concat());
-    let hash = hasher.finalize();
-    format!("0x{:x}", hash)
 }
 
 /// generate a SHA-256 hash of the zip bytes to act as a version hash
@@ -172,6 +48,8 @@ pub fn sha_256_hash(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// note: this can only be called in the install process,
+/// manifest.json for an arbitrary download can be found with GetFiles
 pub fn fetch_package_manifest(
     package_id: &PackageId,
 ) -> anyhow::Result<Vec<kt::PackageManifestEntry>> {
@@ -188,30 +66,66 @@ pub fn fetch_package_manifest(
     )?)
 }
 
+pub fn fetch_package_metadata(
+    package_id: &crate::kinode::process::main::PackageId,
+) -> anyhow::Result<OnchainMetadata> {
+    let chain = Address::from_str("our@chain:app_store:sys")?;
+    let resp = Request::new()
+        .target(chain)
+        .body(serde_json::to_vec(&ChainRequests::GetApp(package_id.clone())).unwrap())
+        .send_and_await_response(5)??;
+
+    let resp = serde_json::from_slice::<ChainResponses>(&resp.body())?;
+    let app = match resp {
+        ChainResponses::GetApp(Some(app)) => app,
+        _ => {
+            return Err(anyhow::anyhow!(
+                "No app data found in response from chain:app_store:sys"
+            ))
+        }
+    };
+    let metadata = match app.metadata {
+        Some(metadata) => metadata,
+        None => {
+            return Err(anyhow::anyhow!(
+                "No metadata found in response from chain:app_store:sys"
+            ))
+        }
+    };
+    Ok(metadata)
+}
+
 pub fn new_package(
-    package_id: &PackageId,
-    state: &mut State,
-    metadata: kt::Erc721Metadata,
+    package_id: crate::kinode::process::main::PackageId,
     mirror: bool,
     bytes: Vec<u8>,
 ) -> anyhow::Result<()> {
-    // add to listings
-    state.add_listing(package_id, metadata);
-
     // set the version hash for this new local package
-    let our_version_hash = sha_256_hash(&bytes);
+    let version_hash = sha_256_hash(&bytes);
 
-    let package_state = PackageState {
-        mirrored_from: Some(state.our.node.clone()),
-        our_version_hash,
-        installed: false,
-        verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
-        caps_approved: true, // TODO see if we want to auto-approve local installs
-        manifest_hash: None, // generated in the add fn
-        mirroring: mirror,
-        auto_update: false, // can't auto-update a local package
-    };
-    state.add_downloaded_package(&package_id, package_state, Some(bytes))
+    let downloads = Address::from_str("our@downloads:app_store:sys")?;
+    let resp = Request::new()
+        .target(downloads)
+        .body(serde_json::to_vec(&DownloadRequests::AddDownload(
+            AddDownloadRequest {
+                package_id: package_id.clone(),
+                version_hash: version_hash.clone(),
+                mirror,
+            },
+        ))?)
+        .blob_bytes(bytes)
+        .send_and_await_response(5)??;
+
+    let download_resp = serde_json::from_slice::<DownloadResponses>(&resp.body())?;
+    println!("got download resp: {:?}", download_resp);
+
+    match download_resp {
+        DownloadResponses::Error(e) => {
+            return Err(anyhow::anyhow!("failed to add download: {:?}", e));
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// create a new package drive in VFS and add the package zip to it.
@@ -251,6 +165,7 @@ pub fn create_package_drive(
         ));
     };
 
+    // be careful, this is technically a duplicate.. but..
     // save the zip file itself in VFS for sharing with other nodes
     // call it <package_id>.zip
     let zip_path = format!("{}/{}.zip", drive_name, package_id);
@@ -287,7 +202,8 @@ pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
     Ok(false)
 }
 
-/// given a `PackageId`, interact with VFS and kernel to get manifest,
+/// given a `PackageId`, interact with VFS and kernel to get {package_hash}.zip,
+/// unzip the manifest and pkg,
 /// grant the capabilities in manifest, then initialize and start
 /// the processes in manifest.
 ///
@@ -296,13 +212,49 @@ pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
 /// note also that each capability will only be granted if we, the process
 /// using this function, own that capability ourselves.
 pub fn install(
-    package_id: &PackageId,
+    package_id: &crate::kinode::process::main::PackageId,
+    metadata: Option<OnchainMetadata>,
+    version_hash: &str,
+    state: &mut State,
     our_node: &str,
-    wit_version: Option<u32>,
 ) -> anyhow::Result<()> {
+    let process_package_id = package_id.clone().to_process_lib();
+    let file = vfs::open_file(
+        &format!("/app_store:sys/downloads/{process_package_id}/{version_hash}.zip"),
+        false,
+        Some(VFS_TIMEOUT),
+    )?;
+    let bytes = file.read()?;
+    let manifest_hash = create_package_drive(&process_package_id, bytes)?;
+
+    let package_state = PackageState {
+        our_version_hash: version_hash.to_string(),
+        verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
+        caps_approved: true, // TODO see if we want to auto-approve local installs
+        manifest_hash: Some(manifest_hash),
+    };
+
+    if let Ok(extracted) = extract_api(&process_package_id) {
+        if extracted {
+            state.installed_apis.insert(process_package_id.clone());
+        }
+    }
+
+    state
+        .packages
+        .insert(process_package_id.clone(), package_state);
+
     // get the package manifest
-    let drive_path = format!("/{package_id}/pkg");
-    let manifest = fetch_package_manifest(package_id)?;
+    let drive_path = format!("/{process_package_id}/pkg");
+    let manifest = fetch_package_manifest(&process_package_id)?;
+    // get wit version from metadata if local or chain if remote.
+    let metadata = if let Some(metadata) = metadata {
+        metadata
+    } else {
+        fetch_package_metadata(&package_id)?
+    };
+
+    let wit_version = metadata.properties.wit_version;
 
     // first, for each process in manifest, initialize it
     // then, once all have been initialized, grant them requested caps
@@ -315,12 +267,10 @@ pub fn install(
         };
         let wasm_path = format!("{}{}", drive_path, wasm_path);
 
-        let process_id = ProcessId::new(
-            Some(&entry.process_name),
-            package_id.package(),
-            package_id.publisher(),
-        );
-
+        let process_id = format!("{}:{}", entry.process_name, process_package_id);
+        let Ok(process_id) = process_id.parse::<ProcessId>() else {
+            return Err(anyhow::anyhow!("invalid process id!"));
+        };
         // kill process if it already exists
         kernel_request(kt::KernelCommand::KillProcess(process_id.clone())).send()?;
 
@@ -351,7 +301,8 @@ pub fn install(
         };
 
         // build initial caps from manifest
-        let mut requested_capabilities = parse_capabilities(our_node, &entry.request_capabilities);
+        let mut requested_capabilities: Vec<kt::Capability> =
+            parse_capabilities(our_node, &entry.request_capabilities);
 
         if entry.request_networking {
             requested_capabilities.push(kt::Capability {
@@ -391,8 +342,8 @@ pub fn install(
     for entry in &manifest {
         let process_id = ProcessId::new(
             Some(&entry.process_name),
-            package_id.package(),
-            package_id.publisher(),
+            process_package_id.package(),
+            process_package_id.publisher(),
         );
 
         for value in &entry.grant_capabilities {
@@ -453,13 +404,18 @@ pub fn install(
         ) else {
             return Err(anyhow::anyhow!("failed to start process"));
         };
+        println!("started the process!");
     }
     Ok(())
 }
 
 /// given a `PackageId`, read its manifest, kill all processes declared in it,
 /// then remove its drive in the virtual filesystem.
-pub fn uninstall(package_id: &PackageId) -> anyhow::Result<()> {
+pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
+    if !state.packages.contains_key(package_id) {
+        return Err(anyhow::anyhow!("package not found"));
+    }
+
     // the drive corresponding to the package we will be removing
     let drive_path = format!("/{package_id}/pkg");
 
@@ -470,7 +426,9 @@ pub fn uninstall(package_id: &PackageId) -> anyhow::Result<()> {
     )
     .send_and_await_response(VFS_TIMEOUT)??;
     let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!("no blob"));
+        return Err(anyhow::anyhow!(
+            "couldn't find manifest.json for uninstall!"
+        ));
     };
     let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(&blob.bytes)?;
 
@@ -487,6 +445,12 @@ pub fn uninstall(package_id: &PackageId) -> anyhow::Result<()> {
     // then, delete the drive
     vfs_request(drive_path, vfs::VfsAction::RemoveDirAll)
         .send_and_await_response(VFS_TIMEOUT)??;
+
+    // Remove the package from the state
+    state.packages.remove(package_id);
+
+    // If this package had an API, remove it from installed_apis
+    state.installed_apis.remove(package_id);
 
     Ok(())
 }
@@ -541,7 +505,7 @@ fn parse_capabilities(our_node: &str, caps: &Vec<serde_json::Value>) -> Vec<kt::
 fn kernel_request(command: kt::KernelCommand) -> Request {
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
-        .body(serde_json::to_vec(&command).expect("failed to serialize VfsRequest"))
+        .body(serde_json::to_vec(&command).expect("failed to serialize KernelCommand"))
 }
 
 pub fn vfs_request<T>(path: T, action: vfs::VfsAction) -> Request
