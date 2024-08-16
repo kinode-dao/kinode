@@ -518,7 +518,7 @@ fn serve_paths(
                     format!("Missing id").into_bytes(),
                 ));
             };
-            
+
             let downloads = Address::from_str("our@downloads:app_store:sys")?;
 
             match method {
