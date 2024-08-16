@@ -412,9 +412,9 @@ pub fn install(
 /// given a `PackageId`, read its manifest, kill all processes declared in it,
 /// then remove its drive in the virtual filesystem.
 pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
-    let Some(_) = state.packages.get_mut(package_id) else {
+    if !state.packages.contains_key(package_id) {
         return Err(anyhow::anyhow!("package not found"));
-    };
+    }
 
     // the drive corresponding to the package we will be removing
     let drive_path = format!("/{package_id}/pkg");
@@ -426,7 +426,9 @@ pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()
     )
     .send_and_await_response(VFS_TIMEOUT)??;
     let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!("no blob"));
+        return Err(anyhow::anyhow!(
+            "couldn't find manifest.json for uninstall!"
+        ));
     };
     let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(&blob.bytes)?;
 
@@ -443,6 +445,12 @@ pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()
     // then, delete the drive
     vfs_request(drive_path, vfs::VfsAction::RemoveDirAll)
         .send_and_await_response(VFS_TIMEOUT)??;
+
+    // Remove the package from the state
+    state.packages.remove(package_id);
+
+    // If this package had an API, remove it from installed_apis
+    state.installed_apis.remove(package_id);
 
     Ok(())
 }

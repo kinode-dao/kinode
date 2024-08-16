@@ -1,4 +1,6 @@
-use crate::kinode::process::main::{InstallResponse, LocalRequest, LocalResponse};
+use crate::kinode::process::main::{
+    InstallPackageRequest, InstallResponse, LocalRequest, LocalResponse,
+};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, Message, PackageId, Request,
 };
@@ -18,29 +20,36 @@ fn init(our: Address) {
     };
 
     let arg = String::from_utf8(body).unwrap_or_default();
+    let args: Vec<&str> = arg.split_whitespace().collect();
 
-    if arg.is_empty() {
-        println!("install: 1 argument required, the package id of the app");
-        println!("example: install app:publisher.os");
+    if args.len() != 2 {
+        println!(
+            "install: 2 arguments required, the package id of the app and desired version_hash"
+        );
+        println!("example: install app:publisher.os f5d374ab50e66888a7c2332b22d0f909f2e3115040725cfab98dcae488916990");
         return;
-    };
+    }
 
-    let Ok(package_id) = arg.parse::<PackageId>() else {
+    let Ok(package_id) = args[0].parse::<PackageId>() else {
         println!("install: invalid package id, make sure to include package name and publisher");
         println!("example: app_name:publisher_name");
         return;
     };
 
+    let version_hash = args[1].to_string();
+
     let Ok(Ok(Message::Response { body, .. })) =
         Request::to((our.node(), ("main", "app_store", "sys")))
             .body(
-                b"temp", // serde_json::to_vec(&LocalRequest::Install(
-                        //     crate::kinode::process::main::PackageId {
-                        //         package_name: package_id.package_name.clone(),
-                        //         publisher_node: package_id.publisher_node.clone(),
-                        //     },
-                        // ))
-                        // .unwrap(),
+                serde_json::to_vec(&LocalRequest::Install(InstallPackageRequest {
+                    package_id: crate::kinode::process::main::PackageId {
+                        package_name: package_id.package_name.clone(),
+                        publisher_node: package_id.publisher_node.clone(),
+                    },
+                    version_hash,
+                    metadata: None,
+                }))
+                .unwrap(),
             )
             .send_and_await_response(5)
     else {

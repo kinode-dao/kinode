@@ -79,7 +79,10 @@ pub enum Req {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("started, indexing on contract address {}", KIMAP_ADDRESS);
+    println!(
+        "chain started, indexing on contract address {}",
+        KIMAP_ADDRESS
+    );
     // create new provider with request-timeout of 60s
     // can change, log requests can take quite a long time.
     let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);

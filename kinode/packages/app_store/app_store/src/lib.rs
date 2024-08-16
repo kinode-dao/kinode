@@ -125,7 +125,6 @@ fn handle_message(
                 if !message.is_local(&our) {
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
-                println!("progress: {:?}", progress);
                 http_server.ws_push_all_channels(
                     "/",
                     http::server::WsMessageType::Text,
@@ -150,7 +149,6 @@ fn handle_message(
                 if !message.is_local(&our) {
                     return Err(anyhow::anyhow!("download complete from non-local node"));
                 }
-                println!("download complete: {:?}", req);
                 http_server.ws_push_all_channels(
                     "/",
                     http::server::WsMessageType::Text,

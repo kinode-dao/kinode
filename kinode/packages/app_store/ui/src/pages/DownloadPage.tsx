@@ -32,7 +32,6 @@ export default function DownloadPage() {
         }
     }, [id, fetchData, clearAllActiveDownloads]);
 
-
     useEffect(() => {
         if (app && !selectedMirror) {
             setSelectedMirror(app.package_id.publisher_node || "");
@@ -55,7 +54,9 @@ export default function DownloadPage() {
     }, [id, removeDownload, fetchData]);
 
     const versionList = useMemo(() => {
-        return app?.metadata?.properties?.code_hashes?.map(([version, hash]) => {
+        if (!app || !app.metadata?.properties?.code_hashes) return [];
+
+        return app.metadata.properties.code_hashes.map(([version, hash]) => {
             const download = appDownloads.find(d => d.File && d.File.name === `${hash}.zip`);
             const downloadKey = `${app.package_id.package_name}:${app.package_id.publisher_node}:${hash}`;
             const activeDownload = activeDownloads[downloadKey];
@@ -63,8 +64,11 @@ export default function DownloadPage() {
             const isInstalled = installedApp?.our_version_hash === hash;
             const isDownloading = !!activeDownload && activeDownload.downloaded < activeDownload.total;
             const progress = isDownloading ? activeDownload : { downloaded: 0, total: 100 };
+
+            console.log(`Version ${version} - isInstalled: ${isInstalled}, installedApp:`, installedApp);
+
             return { version, hash, isDownloaded, isInstalled, isDownloading, progress };
-        }) || [];
+        });
     }, [app, appDownloads, activeDownloads, installedApp]);
 
     if (!app) {

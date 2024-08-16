@@ -4,7 +4,7 @@ use crate::kinode::process::downloads::{
 };
 use kinode_process_lib::*;
 use kinode_process_lib::{
-    println, timer,
+    print_to_terminal, println, timer,
     vfs::{open_dir, open_file, Directory, File, SeekFrom},
 };
 use sha2::{Digest, Sha256};
@@ -57,11 +57,14 @@ fn init(our: Address) {
                 &package_id.to_process_lib(),
                 &desired_version_hash,
             ) {
-                Ok(_) => println!(
-                    "ft_worker: receive downloaded package in {}ms",
-                    start.elapsed().as_millis()
+                Ok(_) => print_to_terminal(
+                    1,
+                    &format!(
+                        "ft_worker: receive downloaded package in {}ms",
+                        start.elapsed().as_millis()
+                    ),
                 ),
-                Err(e) => println!("ft_worker: receive error: {}", e),
+                Err(e) => print_to_terminal(1, &format!("ft_worker: receive error: {}", e)),
             }
         }
         DownloadRequests::RemoteDownload(remote_request) => {
@@ -76,12 +79,15 @@ fn init(our: Address) {
                 &package_id.to_process_lib(),
                 &desired_version_hash,
             ) {
-                Ok(_) => println!(
-                    "ft_worker: sent package to {} in {}ms",
-                    worker_address,
-                    start.elapsed().as_millis()
+                Ok(_) => print_to_terminal(
+                    1,
+                    &format!(
+                        "ft_worker: sent package to {} in {}ms",
+                        worker_address,
+                        start.elapsed().as_millis()
+                    ),
                 ),
-                Err(e) => println!("ft_worker: send error: {}", e),
+                Err(e) => print_to_terminal(1, &format!("ft_worker: send error: {}", e)),
             }
         }
         _ => println!("ft_worker: got unexpected message"),
@@ -123,14 +129,11 @@ fn handle_receiver(
 ) -> anyhow::Result<()> {
     // TODO: write to a temporary location first, then check hash as we go, then rename to final location.
 
-    println!("trying to open dir");
     let package_dir = open_or_create_dir(&format!(
         "/app_store:sys/downloads/{}:{}/",
         package_id.package_name,
         package_id.publisher(),
     ))?;
-    println!("opened dir");
-    println!("package_dir: {:?}", package_dir.path);
 
     let timer_address = Address::from_str("our@timer:distro:sys")?;
 
@@ -157,6 +160,13 @@ fn handle_receiver(
                         let recieved_hash = format!("{:x}", hasher.finalize());
 
                         if recieved_hash != version_hash {
+                            print_to_terminal(
+                                1,
+                                &format!(
+                                    "ft_worker: hash mismatch: {} != {}",
+                                    version_hash, recieved_hash
+                                ),
+                            );
                             let req = DownloadCompleteRequest {
                                 package_id: package_id.clone().into(),
                                 version_hash: version_hash.to_string(),

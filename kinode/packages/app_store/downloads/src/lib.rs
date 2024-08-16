@@ -4,7 +4,7 @@
 //!
 use crate::kinode::process::downloads::{
     DirEntry, DownloadRequests, DownloadResponses, Entry, FileEntry, LocalDownloadRequest,
-    ProgressUpdate, RemoteDownloadRequest, RemoveFileRequest,
+    RemoteDownloadRequest, RemoveFileRequest,
 };
 use std::{collections::HashSet, io::Read, str::FromStr};
 
@@ -63,7 +63,7 @@ impl State {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("started");
+    println!("downloads: started");
 
     // mirroring metadata is separate from vfs downloads state.
     let mut state = State::load();
@@ -407,7 +407,7 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
             let manifest_file = open_or_create_file(&manifest_path)?;
             manifest_file.write(contents.as_bytes())?;
 
-            println!("Extracted and wrote manifest.json");
+            print_to_terminal(1, &format!("Extracted and wrote manifest.json"));
             break;
         }
     }
