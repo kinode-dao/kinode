@@ -7,7 +7,7 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", branch = "develop" }
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.9.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 url = "2.5.0"
