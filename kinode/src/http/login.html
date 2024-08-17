@@ -177,9 +177,10 @@
 
       document.getElementById("login-button").disabled = false;
       isInitialized = true;
+      return [isSecureSubdomain, firstPathItem];
     }
 
-    async function login(password) {
+    async function login(password, isSecureSubdomain, firstPathItem) {
       document.getElementById("login-form").style.display = "none";
       document.getElementById("loading").style.display = "flex";
 
@@ -219,14 +220,14 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
-      initializeLoginForm();
+      const [isSecureSubdomain, firstPathItem] = initializeLoginForm();
       const form = document.getElementById("login-form");
       form.addEventListener("submit", (e) => {
         e.preventDefault();
         e.stopPropagation();
         if (isInitialized) {
           const password = document.getElementById("password").value;
-          login(password);
+          login(password, isSecureSubdomain, firstPathItem);
         }
       });
     });
