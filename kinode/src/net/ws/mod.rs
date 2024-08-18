@@ -263,7 +263,7 @@ async fn recv_connection(
     let their_id = data
         .pki
         .get(&their_handshake.name)
-        .ok_or(anyhow!("unknown KNS name"))?;
+        .ok_or(anyhow!("unknown KNS name '{}'", their_handshake.name))?;
     validate_handshake(
         &their_handshake,
         noise
