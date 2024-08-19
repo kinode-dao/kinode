@@ -149,8 +149,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
         let Message::Request { source, body, .. } = message else {
-            // TODO we could store the subscription ID for eth
-            // in case we want to cancel/reset it
             continue;
         };
 
@@ -468,7 +466,9 @@ fn handle_log(
                     .entry(log.block_number.unwrap())
                     .or_insert(vec![])
                     .push(decoded);
-                return Err(anyhow::anyhow!("parent node for note not found"));
+                return Err(anyhow::anyhow!(
+                    "parent node for note not found, storing in pending_notes"
+                ));
             };
 
             handle_note(state, &decoded)?;
