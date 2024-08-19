@@ -113,7 +113,6 @@ pub fn new_package(
         .send_and_await_response(5)??;
 
     let download_resp = serde_json::from_slice::<DownloadResponses>(&resp.body())?;
-    println!("got download resp: {:?}", download_resp);
 
     match download_resp {
         DownloadResponses::Error(e) => {

@@ -225,9 +225,21 @@ fn handle_local_request(
             None,
         ),
         LocalRequest::Uninstall(package_id) => (
-            match utils::uninstall(state, &package_id.to_process_lib()) {
-                Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
-                Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
+            match utils::uninstall(state, &package_id.clone().to_process_lib()) {
+                Ok(()) => {
+                    println!(
+                        "successfully uninstalled package: {:?}",
+                        &package_id.to_process_lib()
+                    );
+                    LocalResponse::UninstallResponse(UninstallResponse::Success)
+                }
+                Err(e) => {
+                    println!(
+                        "error uninstalling package: {:?}: {e}",
+                        &package_id.to_process_lib()
+                    );
+                    LocalResponse::UninstallResponse(UninstallResponse::Failure)
+                }
             },
             None,
         ),

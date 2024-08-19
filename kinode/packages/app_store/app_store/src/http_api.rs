@@ -588,7 +588,7 @@ fn serve_paths(
         }
         // start auto-updating a downloaded app: PUT
         // stop auto-updating a downloaded app: DELETE
-        "/downloads/:id/auto-update" => {
+        "/apps/:id/auto-update" => {
             let package_id = get_package_id(url_params)?;
 
             let chain_request = match method {
