@@ -3482,12 +3482,12 @@ dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
  "anyhow",
- "bincode",
  "hex",
  "kinode_process_lib 0.9.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.9.0)",
  "rmp-serde",
  "serde",
  "serde_json",
+ "thiserror",
  "wit-bindgen",
 ]
 
