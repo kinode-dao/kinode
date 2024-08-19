@@ -58,6 +58,12 @@ enum IndexerResponses {
     GetState(State),
 }
 
+#[derive(Debug, thiserror::Error)]
+enum KnsError {
+    #[error("Parent node for note not found")]
+    NoParentError,
+}
+
 call_init!(init);
 fn init(our: Address) {
     println!("indexing on contract address {KIMAP_ADDRESS}");
@@ -324,21 +330,34 @@ fn handle_pending_notes(
         return Ok(());
     }
     let mut blocks_to_remove = vec![];
-    let mut notes_to_retry = Vec::new();
 
     for (block, notes) in pending_notes.iter_mut() {
         if *block < state.last_block {
             let mut keep_notes = Vec::new();
             for (note, attempt) in notes.drain(..) {
                 if attempt >= MAX_PENDING_ATTEMPTS {
-                    continue; // skip notes that have exceeded max attempts
-                }
-                if let Err(e) = handle_note(state, &note) {
+                    // skip notes that have exceeded max attempts
                     print_to_terminal(
                         1,
-                        &format!("pending note handling error! {e:?}, attempt {attempt}"),
+                        &format!("dropping note from block {block} after {attempt} attempts"),
                     );
-                    keep_notes.push((note, attempt + 1));
+                    continue;
+                }
+                if let Err(e) = handle_note(state, &note) {
+                    match e.downcast_ref::<KnsError>() {
+                        None => {
+                            print_to_terminal(1, &format!("pending note handling error: {e:?}"))
+                        }
+                        Some(ee) => match ee {
+                            KnsError::NoParentError => {
+                                print_to_terminal(
+                                    1,
+                                    &format!("note still awaiting mint; attempt {attempt}"),
+                                );
+                                keep_notes.push((note, attempt + 1));
+                            }
+                        },
+                    }
                 }
             }
             if keep_notes.is_empty() {
@@ -354,14 +373,6 @@ fn handle_pending_notes(
         pending_notes.remove(&block);
     }
 
-    // re-insert notes that need to be retried
-    for (block, note, attempt) in notes_to_retry {
-        pending_notes
-            .entry(block)
-            .or_default()
-            .push((note, attempt));
-    }
-
     Ok(())
 }
 
@@ -374,7 +385,7 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
     }
 
     let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
-        return Err(anyhow::anyhow!("parent node for note not found"));
+        return Err(KnsError::NoParentError.into());
     };
 
     match note_label.as_str() {
@@ -484,13 +495,19 @@ fn handle_log(
             }
 
             if let Err(e) = handle_note(state, &decoded) {
-                print_to_terminal(1, &format!("note-handling error! {e:?}"));
-                // If handling fails (likely due to parent not found), add to pending_notes
-                if let Some(block_number) = log.block_number {
-                    pending_notes
-                        .entry(block_number)
-                        .or_default()
-                        .push((decoded, 0));
+                match e.downcast_ref::<KnsError>() {
+                    None => print_to_terminal(1, &format!("note handling error: {e:?}")),
+                    Some(ee) => match ee {
+                        KnsError::NoParentError => {
+                            print_to_terminal(1, &format!("note awaiting mint: place in pending"));
+                            if let Some(block_number) = log.block_number {
+                                pending_notes
+                                    .entry(block_number)
+                                    .or_default()
+                                    .push((decoded, 0));
+                            }
+                        }
+                    },
                 }
             }
         }
