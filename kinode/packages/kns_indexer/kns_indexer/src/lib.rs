@@ -346,12 +346,6 @@ fn handle_pending_notes(
             } else {
                 *notes = keep_notes;
             }
-        } else {
-            notes_to_retry.extend(
-                notes
-                    .drain(..)
-                    .map(|(note, attempt)| (*block, note, attempt)),
-            );
         }
     }
 
