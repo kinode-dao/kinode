@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash } from "react-icons/fa";
+import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash, FaSync } from "react-icons/fa";
 import useAppsStore from "../store";
 import { AppListing, PackageState } from "../types/Apps";
 import { compareVersions } from "../utils/compareVersions";
@@ -8,7 +8,7 @@ import { compareVersions } from "../utils/compareVersions";
 export default function AppPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { fetchListing, fetchInstalledApp, uninstallApp } = useAppsStore();
+  const { fetchListing, fetchInstalledApp, uninstallApp, setAutoUpdate } = useAppsStore();
   const [app, setApp] = useState<AppListing | null>(null);
   const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
@@ -16,6 +16,7 @@ export default function AppPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUninstalling, setIsUninstalling] = useState(false);
+  const [isTogglingAutoUpdate, setIsTogglingAutoUpdate] = useState(false);
 
 
   const loadData = useCallback(async () => {
@@ -67,6 +68,21 @@ export default function AppPage() {
       setError(`Uninstallation failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsUninstalling(false);
+    }
+  };
+
+  const handleToggleAutoUpdate = async () => {
+    if (!app || !latestVersion) return;
+    setIsTogglingAutoUpdate(true);
+    try {
+      const newAutoUpdateState = !app.auto_update;
+      await setAutoUpdate(`${app.package_id.package_name}:${app.package_id.publisher_node}`, latestVersion, newAutoUpdateState);
+      await loadData();
+    } catch (error) {
+      console.error('Failed to toggle auto-update:', error);
+      setError(`Failed to toggle auto-update: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsTogglingAutoUpdate(false);
     }
   };
 
@@ -122,6 +138,12 @@ export default function AppPage() {
           )}
           <li><span>Publisher:</span> <span>{app.package_id.publisher_node}</span></li>
           <li><span>License:</span> <span>{app.metadata?.properties?.license || "Not specified"}</span></li>
+          <li>
+            <span>Auto Update:</span>
+            <span className="status-icon">
+              {app.auto_update ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}
+            </span>
+          </li>
         </ul>
       </div>
 
@@ -133,6 +155,10 @@ export default function AppPage() {
             </button>
             <button onClick={handleUninstall} className="secondary" disabled={isUninstalling}>
               {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />} Uninstall
+            </button>
+            <button onClick={handleToggleAutoUpdate} className="secondary" disabled={isTogglingAutoUpdate}>
+              {isTogglingAutoUpdate ? <FaSpinner className="fa-spin" /> : <FaSync />}
+              {app.auto_update ? " Disable" : " Enable"} Auto Update
             </button>
           </>
         )}

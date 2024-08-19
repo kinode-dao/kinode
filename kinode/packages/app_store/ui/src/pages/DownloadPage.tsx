@@ -21,6 +21,10 @@ export default function DownloadPage() {
     const [showMetadata, setShowMetadata] = useState(false);
     const [selectedMirror, setSelectedMirror] = useState<string>("");
 
+    const [showCapApproval, setShowCapApproval] = useState(false);
+    const [selectedVersion, setSelectedVersion] = useState<{ version: string, hash: string } | null>(null);
+    const [manifest, setManifest] = useState<any>(null);
+
     const app = useMemo(() => listings[id || ""], [listings, id]);
     const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
     const installedApp = useMemo(() => installed[id || ""], [installed, id]);
@@ -44,9 +48,30 @@ export default function DownloadPage() {
     }, [id, selectedMirror, app, downloadApp]);
 
     const handleInstall = useCallback((version: string, hash: string) => {
-        if (!id) return;
-        installApp(id, hash).then(() => fetchData(id));
-    }, [id, installApp, fetchData]);
+        if (!id || !app) return;
+        const download = appDownloads.find(d => d.File && d.File.name === `${hash}.zip`);
+        if (download?.File?.manifest) {
+            try {
+                const manifestData = JSON.parse(download.File.manifest);
+                setManifest(manifestData);
+                setSelectedVersion({ version, hash });
+                setShowCapApproval(true);
+            } catch (error) {
+                console.error('Failed to parse manifest:', error);
+            }
+        } else {
+            console.error('Manifest not found for the selected version');
+        }
+    }, [id, app, appDownloads]);
+
+    const confirmInstall = useCallback(() => {
+        if (!id || !selectedVersion) return;
+        installApp(id, selectedVersion.hash).then(() => {
+            fetchData(id);
+            setShowCapApproval(false);
+            setManifest(null);
+        });
+    }, [id, selectedVersion, installApp, fetchData]);
 
     const handleRemoveDownload = useCallback((version: string, hash: string) => {
         if (!id) return;
@@ -152,6 +177,23 @@ export default function DownloadPage() {
                     <pre>{JSON.stringify(app.metadata, null, 2)}</pre>
                 )}
             </div>
+
+            {showCapApproval && manifest && (
+                <div className="cap-approval-popup">
+                    <div className="cap-approval-content">
+                        <h3>Approve Capabilities</h3>
+                        <pre className="json-display">
+                            {JSON.stringify(manifest[0]?.request_capabilities || [], null, 2)}
+                        </pre>
+                        <div className="approval-buttons">
+                            <button onClick={() => setShowCapApproval(false)}>Cancel</button>
+                            <button onClick={confirmInstall}>
+                                Approve and Install
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

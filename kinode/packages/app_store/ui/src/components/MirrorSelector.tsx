@@ -6,15 +6,12 @@ interface MirrorSelectorProps {
     onMirrorSelect: (mirror: string) => void;
 }
 
-const MirrorSelector: React.FC<MirrorSelectorProps> = ({
-    packageId,
-    onMirrorSelect
-}) => {
+const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSelect }) => {
     const { fetchListing, checkMirror } = useAppsStore();
     const [selectedMirror, setSelectedMirror] = useState<string>("");
     const [customMirror, setCustomMirror] = useState<string>("");
     const [isCustomMirrorSelected, setIsCustomMirrorSelected] = useState(false);
-    const [mirrorStatuses, setMirrorStatuses] = useState<{ [mirror: string]: boolean | null }>({});
+    const [mirrorStatuses, setMirrorStatuses] = useState<{ [mirror: string]: boolean | null | 'http' }>({});
     const [availableMirrors, setAvailableMirrors] = useState<string[]>([]);
 
     useEffect(() => {
@@ -28,10 +25,14 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({
             setSelectedMirror(appData.package_id.publisher_node);
 
             mirrors.forEach(mirror => {
-                setMirrorStatuses(prev => ({ ...prev, [mirror]: null }));
-                checkMirror(mirror)
-                    .then(status => setMirrorStatuses(prev => ({ ...prev, [mirror]: status?.is_online ?? false })))
-                    .catch(() => setMirrorStatuses(prev => ({ ...prev, [mirror]: false })));
+                if (mirror.startsWith('http')) {
+                    setMirrorStatuses(prev => ({ ...prev, [mirror]: 'http' }));
+                } else {
+                    setMirrorStatuses(prev => ({ ...prev, [mirror]: null }));
+                    checkMirror(mirror)
+                        .then(status => setMirrorStatuses(prev => ({ ...prev, [mirror]: status?.is_online ?? false })))
+                        .catch(() => setMirrorStatuses(prev => ({ ...prev, [mirror]: false })));
+                }
             });
         };
 
@@ -57,30 +58,31 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({
         if (customMirror) {
             setSelectedMirror(customMirror);
             setIsCustomMirrorSelected(false);
-            setAvailableMirrors(prev => [...prev, customMirror]); // Add custom mirror to available mirrors
-            checkMirror(customMirror)
-                .then(status => {
-                    if (status) {
-                        setMirrorStatuses(prev => ({ ...prev, [customMirror]: status.is_online }));
-                    } else {
-                        setMirrorStatuses(prev => ({ ...prev, [customMirror]: null }));
-                    }
-                })
-                .catch(() => setMirrorStatuses(prev => ({ ...prev, [customMirror]: false })));
+            setAvailableMirrors(prev => [...prev, customMirror]);
+
+            if (customMirror.startsWith('http')) {
+                setMirrorStatuses(prev => ({ ...prev, [customMirror]: 'http' }));
+            } else {
+                checkMirror(customMirror)
+                    .then(status => setMirrorStatuses(prev => ({ ...prev, [customMirror]: status?.is_online ?? false })))
+                    .catch(() => setMirrorStatuses(prev => ({ ...prev, [customMirror]: false })));
+            }
         }
+    };
+
+    const getMirrorStatus = (mirror: string, status: boolean | null | 'http') => {
+        if (status === 'http') return '(HTTP)';
+        if (status === null) return '(checking)';
+        return status ? '(online)' : '(offline)';
     };
 
     return (
         <div className="mirror-selector">
-            <select
-                value={selectedMirror || ""}
-                onChange={handleMirrorChange}
-            >
+            <select value={selectedMirror || ""} onChange={handleMirrorChange}>
                 <option value="">Select a mirror</option>
                 {availableMirrors.map((mirror, index) => (
                     <option key={`${mirror}-${index}`} value={mirror} disabled={mirrorStatuses[mirror] === false}>
-                        {mirror} {mirrorStatuses[mirror] === null ? '(checking)' :
-                            mirrorStatuses[mirror] === false ? '(offline)' : '(online)'}
+                        {mirror} {getMirrorStatus(mirror, mirrorStatuses[mirror])}
                     </option>
                 ))}
                 <option value="custom">Custom mirror</option>

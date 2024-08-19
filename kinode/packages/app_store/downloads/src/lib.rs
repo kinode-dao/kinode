@@ -3,23 +3,21 @@
 //! manages downloading and sharing of versioned packages.
 //!
 use crate::kinode::process::downloads::{
-    DirEntry, DownloadRequests, DownloadResponses, Entry, FileEntry, LocalDownloadRequest,
-    RemoteDownloadRequest, RemoveFileRequest,
+    DirEntry, DownloadCompleteRequest, DownloadError, DownloadRequests, DownloadResponses, Entry,
+    FileEntry, HashMismatch, LocalDownloadRequest, RemoteDownloadRequest, RemoveFileRequest,
 };
 use std::{collections::HashSet, io::Read, str::FromStr};
 
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
 use kinode_process_lib::{
     await_message, call_init, get_blob, get_state,
-    http::{
-        self,
-        client::{HttpClientError, HttpClientResponse},
-    },
+    http::client,
     print_to_terminal, println, set_state,
     vfs::{self, Directory, File},
-    Address, Message, PackageId, ProcessId, Request, Response,
+    Address, Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -37,7 +35,7 @@ pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     Download(DownloadResponses),
-    HttpClient(Result<HttpClientResponse, HttpClientError>),
+    HttpClient(Result<client::HttpClientResponse, client::HttpClientError>),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,15 +112,26 @@ fn handle_message(
                     package_id,
                     download_from,
                     desired_version_hash,
-                } = download_request;
+                } = download_request.clone();
 
                 if download_from.starts_with("http") {
                     // use http_client to GET it
-                    let Ok(url) = url::Url::parse(&download_from) else {
-                        return Err(anyhow::anyhow!("bad url: {download_from}"));
-                    };
-                    // TODO: need context in this to get it back.
-                    http::client::send_request(http::Method::GET, url, None, Some(60), vec![]);
+                    Request::to(("our", "http_client", "distro", "sys"))
+                        .body(
+                            serde_json::to_vec(&client::HttpClientAction::Http(
+                                client::OutgoingHttpRequest {
+                                    method: "GET".to_string(),
+                                    version: None,
+                                    url: download_from.clone(),
+                                    headers: std::collections::HashMap::new(),
+                                },
+                            ))
+                            .unwrap(),
+                        )
+                        .context(serde_json::to_vec(&download_request)?)
+                        .expects_response(60)
+                        .send()?;
+                    return Ok(());
                 }
 
                 // go download from the node or url
@@ -135,13 +144,7 @@ fn handle_message(
                     APP_SHARE_TIMEOUT,
                 )?;
 
-                let target = Address::new(
-                    &download_from,
-                    ProcessId::new(Some("downloads"), "app_store", "sys"),
-                );
-
-                Request::new()
-                    .target(target)
+                Request::to((&download_from, "downloads", "app_store", "sys"))
                     .body(serde_json::to_vec(&DownloadRequests::RemoteDownload(
                         RemoteDownloadRequest {
                             package_id,
@@ -175,18 +178,14 @@ fn handle_message(
             DownloadRequests::Progress(progress) => {
                 // forward progress to main:app_store:sys,
                 // pushed to UI via websockets
-                let target = Address::from_str("our@main:app_store:sys")?;
-                let _ = Request::new()
-                    .target(target)
+                let _ = Request::to(("our", "main", "app_store", "sys"))
                     .body(serde_json::to_vec(&progress)?)
                     .send();
             }
             DownloadRequests::DownloadComplete(req) => {
                 // forward to main:app_store:sys
                 // pushed to UI via websockets
-                let target = Address::from_str("our@main:app_store:sys")?;
-                let _ = Request::new()
-                    .target(target)
+                let _ = Request::to(("our", "main", "app_store", "sys"))
                     .body(serde_json::to_vec(&req)?)
                     .send();
             }
@@ -251,14 +250,13 @@ fn handle_message(
                     downloads.path,
                     add_req.package_id.clone().to_process_lib().to_string()
                 );
-                let _ = vfs::open_dir(&package_dir, true, None);
+                let _ = open_or_create_dir(&package_dir)?;
 
                 // Write the zip file
                 let zip_path = format!("{}/{}.zip", package_dir, add_req.version_hash);
                 let file = vfs::create_file(&zip_path, None)?;
                 file.write(bytes.as_slice())?;
 
-                // Write the manifest file
                 // Extract and write the manifest
                 let manifest_path = format!("{}/{}.json", package_dir, add_req.version_hash);
                 extract_and_write_manifest(&bytes, &manifest_path)?;
@@ -302,20 +300,36 @@ fn handle_message(
             Resp::Download(download_response) => {
                 // TODO handle download response
                 // maybe push to http? need await for that...
-                // send_and_awaits? this might not be needed.
+                print_to_terminal(
+                    1,
+                    &format!("got download response: {:?}", download_response),
+                );
             }
             Resp::HttpClient(resp) => {
-                let name = match message.context() {
-                    Some(context) => std::str::from_utf8(context).unwrap_or_default(),
-                    None => return Err(anyhow::anyhow!("http_client response without context")),
+                let Some(context) = message.context() else {
+                    return Err(anyhow::anyhow!("http_client response without context"));
                 };
-                if let Ok(http::client::HttpClientResponse::Http(http::client::HttpResponse {
-                    status,
-                    ..
+                let download_request = serde_json::from_slice::<LocalDownloadRequest>(context)?;
+                if let Ok(client::HttpClientResponse::Http(client::HttpResponse {
+                    status, ..
                 })) = resp
                 {
                     if status == 200 {
-                        handle_receive_http_download(state, &name)?;
+                        if let Err(e) = handle_receive_http_download(&download_request) {
+                            print_to_terminal(
+                                1,
+                                &format!("error handling http_client response: {:?}", e),
+                            );
+                            Request::to(("our", "main", "app_store", "sys"))
+                                .body(serde_json::to_vec(&DownloadRequests::DownloadComplete(
+                                    DownloadCompleteRequest {
+                                        package_id: download_request.package_id.clone(),
+                                        version_hash: download_request.desired_version_hash.clone(),
+                                        error: Some(e),
+                                    },
+                                ))?)
+                                .send()?;
+                        }
                     }
                 } else {
                     println!("got http_client error: {resp:?}");
@@ -326,36 +340,56 @@ fn handle_message(
     Ok(())
 }
 
-fn handle_receive_http_download(state: &mut State, name: &str) -> anyhow::Result<()> {
-    // use context here instead, verify bytes immediately.
-    println!("Received HTTP download for: {}", name);
+fn handle_receive_http_download(
+    download_request: &LocalDownloadRequest,
+) -> anyhow::Result<(), DownloadError> {
+    let package_id = download_request.package_id.clone().to_process_lib();
+    let version_hash = download_request.desired_version_hash.clone();
 
-    // Parse the name to extract package_id and version_hash
-    let parts: Vec<&str> = name.split('-').collect();
-    if parts.len() != 2 {
-        return Err(anyhow::anyhow!("Invalid download name format"));
-    }
-
-    let package_id = PackageId::from_str(parts[0])?;
-    let version_hash = parts[1].to_string();
-
-    // Move the downloaded file to the correct location
-    let source_path = format!("/tmp/{}", name);
-    let dest_path = format!(
-        "/app_store:sys/downloads/{}:{}-{}.zip",
-        package_id.package_name, package_id.publisher_node, version_hash
+    print_to_terminal(
+        1,
+        &format!(
+            "Received HTTP download for: {}, with version hash: {}",
+            package_id.to_string(),
+            version_hash
+        ),
     );
 
-    // vfs::rename(&source_path, &dest_path)?;
+    let bytes = get_blob().ok_or(DownloadError::BlobNotFound)?.bytes;
 
-    // Update state to reflect that we're now mirroring this package
-    // state.mirroring.insert(package_id);
+    let package_dir = format!("{}/{}", "/app_store:sys/downloads", package_id.to_string());
+    let _ = open_or_create_dir(&package_dir).map_err(|_| DownloadError::VfsError)?;
 
-    // TODO: Verify the integrity of the downloaded file (e.g., checksum)
+    let calculated_hash = format!("{:x}", Sha256::digest(&bytes));
+    if calculated_hash != version_hash {
+        return Err(DownloadError::HashMismatch(HashMismatch {
+            desired: version_hash,
+            actual: calculated_hash,
+        }));
+    }
 
-    // TODO: Notify any waiting processes that the download is complete
+    // Write the zip file
+    let zip_path = format!("{}/{}.zip", package_dir, version_hash);
+    let file = vfs::create_file(&zip_path, None).map_err(|_| DownloadError::VfsError)?;
+    file.write(bytes.as_slice())
+        .map_err(|_| DownloadError::VfsError)?;
 
-    println!("Successfully processed HTTP download for: {}", name);
+    // Write the manifest file
+    // Extract and write the manifest
+    let manifest_path = format!("{}/{}.json", package_dir, version_hash);
+    extract_and_write_manifest(&bytes, &manifest_path).map_err(|_| DownloadError::VfsError)?;
+
+    Request::to(("our", "main", "app_store", "sys"))
+        .body(
+            serde_json::to_vec(&DownloadCompleteRequest {
+                package_id: download_request.package_id.clone(),
+                version_hash,
+                error: None,
+            })
+            .unwrap(),
+        )
+        .send()
+        .unwrap();
 
     Ok(())
 }
