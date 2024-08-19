@@ -45,6 +45,12 @@ struct State {
     // human readable name to most recent on-chain routing information as json
     // TODO: optional params knsUpdate? also include tba.
     nodes: HashMap<String, net::KnsUpdate>,
+    // pending notes
+    //  when a new kimap node is minted, notes can come in before
+    //  the mint; in that case, we store the note and process it in
+    //  the next block, since we then have a guarantee the mint has
+    //  been processed
+    pending_notes: BTreeMap<u64, Vec<eth::Log>>, // TODO: fill in note type
     // last block we have an update from
     last_block: u64,
 }
@@ -71,6 +77,7 @@ fn init(our: Address) {
         contract_address: KIMAP_ADDRESS.parse::<eth::Address>().unwrap(),
         nodes: HashMap::new(),
         names: HashMap::new(),
+        pending_notes: BTreeMap::new(),
         last_block: KIMAP_FIRST_BLOCK,
     };
 
@@ -295,6 +302,8 @@ fn handle_pending_requests(
     for block in blocks_to_remove.iter() {
         pending_requests.remove(block);
     }
+
+    // TODO: handle_log() on each pending_note for blocks older than current block
     Ok(())
 }
 
@@ -339,6 +348,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             }
 
             let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
+                // TODO: put in `pending_note`
                 return Err(anyhow::anyhow!("parent node for note not found"));
             };
 
