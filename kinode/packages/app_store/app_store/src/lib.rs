@@ -172,8 +172,7 @@ fn handle_message(
     } else {
         match serde_json::from_slice::<Resp>(message.body())? {
             Resp::LocalResponse(_) => {
-                // don't need to handle these at the moment?
-                // play with context.
+                // don't need to handle these at the moment
             }
             _ => {}
         }
@@ -212,7 +211,10 @@ fn handle_local_request(
         }) => (
             match utils::install(&package_id, metadata, &version_hash, state, &our.node) {
                 Ok(()) => {
-                    println!("successfully installed package:");
+                    println!(
+                        "successfully installed package: {:?}",
+                        &package_id.to_process_lib()
+                    );
                     LocalResponse::InstallResponse(InstallResponse::Success)
                 }
                 Err(e) => {

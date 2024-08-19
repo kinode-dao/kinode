@@ -4,12 +4,10 @@ use crate::{
         DownloadRequests, DownloadResponses, LocalDownloadRequest, RemoveFileRequest,
     },
     state::{MirrorCheck, PackageState, State},
-    Resp,
 };
 
 use kinode_process_lib::{
-    http::server,
-    http::{self, Method, StatusCode},
+    http::{self, server, Method, StatusCode},
     println, Address, LazyLoadBlob, PackageId, Request,
 };
 use kinode_process_lib::{SendError, SendErrorKind};
@@ -151,7 +149,7 @@ fn make_widget() -> String {
                         if (app.metadata) {
                             const a = document.createElement('a');
                             a.className = 'app';
-                            a.href = `/main:app_store:sys/app/${app.package}:${app.publisher}`
+                            a.href = `/main:app_store:sys/app/${app.package_id.package_name}:${app.package_id.publisher_node}`
                             a.target = '_blank';
                             a.rel = 'noopener noreferrer';
                             const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
@@ -264,9 +262,7 @@ fn serve_paths(
     match bound_path {
         // GET all apps
         "/apps" => {
-            let chain = Address::from_str("our@chain:app_store:sys")?;
-            let resp = Request::new()
-                .target(chain)
+            let resp = Request::to(("our", "chain", "app_store", "sys"))
                 .body(serde_json::to_vec(&ChainRequests::GetApps)?)
                 .send_and_await_response(5)??;
             let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
@@ -292,9 +288,7 @@ fn serve_paths(
                 Method::GET => {
                     let package_id =
                         crate::kinode::process::main::PackageId::from_process_lib(package_id);
-                    let chain = Address::from_str("our@chain:app_store:sys")?;
-                    let resp = Request::new()
-                        .target(chain)
+                    let resp = Request::to(("our", "chain", "app_store", "sys"))
                         .body(serde_json::to_vec(&ChainRequests::GetApp(package_id))?)
                         .send_and_await_response(5)??;
                     let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
@@ -323,9 +317,7 @@ fn serve_paths(
         }
         "/downloads" => {
             // get all local downloads!
-            let downloads = Address::from_str("our@downloads:app_store:sys")?;
-            let resp = Request::new()
-                .target(downloads)
+            let resp = Request::to(("our", "downloads", "app_store", "sys"))
                 .body(serde_json::to_vec(&DownloadRequests::GetFiles(None))?)
                 .send_and_await_response(5)??;
 
@@ -353,9 +345,7 @@ fn serve_paths(
                 ));
             };
             let package_id = crate::kinode::process::main::PackageId::from_process_lib(package_id);
-            let downloads = Address::from_str("our@downloads:app_store:sys")?;
-            let resp = Request::new()
-                .target(downloads)
+            let resp = Request::to(("our", "downloads", "app_store", "sys"))
                 .body(serde_json::to_vec(&DownloadRequests::GetFiles(Some(
                     package_id,
                 )))?)
@@ -408,10 +398,7 @@ fn serve_paths(
             ));
         }
         "/ourapps" => {
-            let chain = Address::from_str("our@chain:app_store:sys")?;
-
-            let resp = Request::new()
-                .target(chain)
+            let resp = Request::to(("our", "chain", "app_store", "sys"))
                 .body(serde_json::to_vec(&ChainRequests::GetOurApps)?)
                 .send_and_await_response(5)??;
             let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
@@ -448,19 +435,14 @@ fn serve_paths(
                 .map(|s| s.to_string())
                 .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
 
-            // TODO: handle HTTP urls here I think, with different context...
             let download_request = DownloadRequests::LocalDownload(LocalDownloadRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
-                download_from: download_from,
+                download_from: download_from.clone(),
                 desired_version_hash: version_hash,
             });
-            // TODO make these constants somewhere or something. this is so bad
-            let downloads_process = Address::from_str("our@downloads:app_store:sys").unwrap();
 
-            // initialize reciever..
-            Request::new()
-                .target(downloads_process)
-                .body(serde_json::to_vec(&download_request).unwrap())
+            Request::to(("our", "downloads", "app_store", "sys"))
+                .body(serde_json::to_vec(&download_request)?)
                 .send()?;
             Ok((
                 StatusCode::OK,
@@ -518,7 +500,6 @@ fn serve_paths(
                     format!("Missing id").into_bytes(),
                 ));
             };
-
             let downloads = Address::from_str("our@downloads:app_store:sys")?;
 
             match method {
@@ -587,13 +568,12 @@ fn serve_paths(
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
-            let downloads = Address::from_str("our@downloads:app_store:sys")?;
             let download_request = DownloadRequests::RemoveFile(RemoveFileRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 version_hash: version_hash,
             });
-            let resp = Request::new()
-                .target(downloads)
+
+            let resp = Request::to(("our", "downloads", "app_store", "sys"))
                 .body(serde_json::to_vec(&download_request)?)
                 .send_and_await_response(5)??;
             let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
@@ -610,7 +590,6 @@ fn serve_paths(
         // stop auto-updating a downloaded app: DELETE
         "/downloads/:id/auto-update" => {
             let package_id = get_package_id(url_params)?;
-            let chain = Address::from_str("our@chain:app_store:sys")?;
 
             let chain_request = match method {
                 Method::PUT => ChainRequests::StartAutoUpdate(
@@ -628,8 +607,7 @@ fn serve_paths(
                 }
             };
 
-            let resp = Request::new()
-                .target(chain)
+            let resp = Request::to(("our", "chain", "app_store", "sys"))
                 .body(serde_json::to_vec(&chain_request)?)
                 .send_and_await_response(5)??;
 

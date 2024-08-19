@@ -45,6 +45,9 @@ interface downloads {
         hash-mismatch(hash-mismatch),
         file-not-found,
         worker-spawn-failed,
+        http-client-error,
+        blob-not-found,
+        vfs-error,
     }
 
     record download-complete-request {

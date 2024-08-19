@@ -69,9 +69,7 @@ pub fn fetch_package_manifest(
 pub fn fetch_package_metadata(
     package_id: &crate::kinode::process::main::PackageId,
 ) -> anyhow::Result<OnchainMetadata> {
-    let chain = Address::from_str("our@chain:app_store:sys")?;
-    let resp = Request::new()
-        .target(chain)
+    let resp = Request::to(("our", "chain", "app_store", "sys"))
         .body(serde_json::to_vec(&ChainRequests::GetApp(package_id.clone())).unwrap())
         .send_and_await_response(5)??;
 
@@ -103,9 +101,7 @@ pub fn new_package(
     // set the version hash for this new local package
     let version_hash = sha_256_hash(&bytes);
 
-    let downloads = Address::from_str("our@downloads:app_store:sys")?;
-    let resp = Request::new()
-        .target(downloads)
+    let resp = Request::to(("our", "downloads", "app_store", "sys"))
         .body(serde_json::to_vec(&DownloadRequests::AddDownload(
             AddDownloadRequest {
                 package_id: package_id.clone(),
@@ -404,7 +400,6 @@ pub fn install(
         ) else {
             return Err(anyhow::anyhow!("failed to start process"));
         };
-        println!("started the process!");
     }
     Ok(())
 }
@@ -503,8 +498,7 @@ fn parse_capabilities(our_node: &str, caps: &Vec<serde_json::Value>) -> Vec<kt::
 }
 
 fn kernel_request(command: kt::KernelCommand) -> Request {
-    Request::new()
-        .target(("our", "kernel", "distro", "sys"))
+    Request::to(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&command).expect("failed to serialize KernelCommand"))
 }
 
@@ -512,7 +506,7 @@ pub fn vfs_request<T>(path: T, action: vfs::VfsAction) -> Request
 where
     T: Into<String>,
 {
-    Request::new().target(("our", "vfs", "distro", "sys")).body(
+    Request::to(("our", "vfs", "distro", "sys")).body(
         serde_json::to_vec(&vfs::VfsRequest {
             path: path.into(),
             action,
