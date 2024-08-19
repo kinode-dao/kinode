@@ -20,6 +20,9 @@ wit_bindgen::generate!({
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
+type PendingNotes = BTreeMap<u64, HashMap<kimap::contract::Note, u8>>;
+const MAX_PENDING_ATTEMPTS: u8 = 3;
+
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
 #[cfg(feature = "simulation-mode")]
@@ -128,7 +131,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // if subscription results come back in the wrong order, we store them here
     // until the right block is reached.
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
-    let mut pending_notes: BTreeMap<u64, Vec<kimap::contract::Note>> = BTreeMap::new();
+    let mut pending_notes: PendingNotes = BTreeMap::new();
 
     fetch_and_process_logs(
         &eth_provider,
@@ -219,7 +222,7 @@ fn handle_eth_message(
     state: &mut State,
     eth_provider: &eth::Provider,
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
-    pending_notes: &mut BTreeMap<u64, Vec<kimap::contract::Note>>,
+    pending_notes: &mut PendingNotes,
     body: &[u8],
     mints_filter: &eth::Filter,
     notes_filter: &eth::Filter,
@@ -314,20 +317,17 @@ fn handle_pending_requests(
     Ok(())
 }
 
-fn handle_pending_notes(
-    state: &mut State,
-    pending_notes: &mut BTreeMap<u64, Vec<kimap::contract::Note>>,
-) -> anyhow::Result<()> {
+fn handle_pending_notes(state: &mut State, pending_notes: &mut PendingNotes) -> anyhow::Result<()> {
     if pending_notes.is_empty() {
         return Ok(());
     }
     let mut blocks_to_remove = vec![];
 
-    for (block, notes) in pending_notes.iter() {
+    for (block, notes) in pending_notes.clone().iter() {
         // make sure we've seen the whole block
         if *block < state.last_block {
-            for note in notes.iter() {
-                handle_note(state, note)?;
+            for (note, _) in notes.iter() {
+                handle_note(state, note, pending_notes)?;
             }
             blocks_to_remove.push(*block);
         } else {
@@ -341,7 +341,11 @@ fn handle_pending_notes(
     Ok(())
 }
 
-fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Result<()> {
+fn handle_note(
+    state: &mut State,
+    note: &kimap::contract::Note,
+    pending_notes: &mut PendingNotes,
+) -> anyhow::Result<()> {
     let note_label = String::from_utf8(note.label.to_vec())?;
     let node_hash = note.parenthash.to_string();
 
@@ -350,7 +354,35 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
     }
 
     let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
-        return Err(anyhow::anyhow!("parent node for note not found"));
+        // give note MAX_PENDING_ATTEMPTS attempts to be loaded into state
+        // 1. a node that is minted and noted in same block may issue us note
+        //    before mint
+        // 2. our ticking block number may be issued before mint
+        // therefore need to allow multiple attempts to get a note in for worst case
+        let Some(pending_notes_for_block) = pending_notes.get_mut(&state.last_block) else {
+            let mut pending_notes_for_block = HashMap::new();
+            pending_notes_for_block.insert(note, 0);
+            return Err(anyhow::anyhow!(
+                "parent node for note not found, storing in pending_notes (attempt 0 of {})",
+                MAX_PENDING_ATTEMPTS,
+            ));
+        };
+        let Some(attempt) = pending_notes_for_block.remove(note) else {
+            pending_notes_for_block.insert(note.clone(), 0);
+            return Err(anyhow::anyhow!(
+                "parent node for note not found, storing in pending_notes (attempt 0 of {})",
+                MAX_PENDING_ATTEMPTS,
+            ));
+        };
+        if attempt >= MAX_PENDING_ATTEMPTS {
+            return Err(anyhow::anyhow!("parent node for note not found"));
+        }
+        pending_notes_for_block.insert(note.clone(), attempt + 1);
+        return Err(anyhow::anyhow!(
+            "parent node for note not found, storing in pending_notes (attempt {} of {})",
+            attempt + 1,
+            MAX_PENDING_ATTEMPTS,
+        ));
     };
 
     match note_label.as_str() {
@@ -421,7 +453,7 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
 
 fn handle_log(
     state: &mut State,
-    pending_notes: &mut BTreeMap<u64, Vec<kimap::contract::Note>>,
+    pending_notes: &mut PendingNotes,
     log: &eth::Log,
 ) -> anyhow::Result<()> {
     match log.topics()[0] {
@@ -461,17 +493,7 @@ fn handle_log(
                 return Err(anyhow::anyhow!("skipping invalid note: {note}"));
             }
 
-            let Some(_node_name) = get_parent_name(&state.names, &node_hash) else {
-                pending_notes
-                    .entry(log.block_number.unwrap())
-                    .or_insert(vec![])
-                    .push(decoded);
-                return Err(anyhow::anyhow!(
-                    "parent node for note not found, storing in pending_notes"
-                ));
-            };
-
-            handle_note(state, &decoded)?;
+            handle_note(state, &decoded, pending_notes)?;
         }
         _log => {
             return Ok(());
@@ -491,7 +513,7 @@ fn fetch_and_process_logs(
     eth_provider: &eth::Provider,
     state: &mut State,
     filter: eth::Filter,
-    pending_notes: &mut BTreeMap<u64, Vec<kimap::contract::Note>>,
+    pending_notes: &mut PendingNotes,
 ) {
     let filter = filter.from_block(KIMAP_FIRST_BLOCK);
     loop {
