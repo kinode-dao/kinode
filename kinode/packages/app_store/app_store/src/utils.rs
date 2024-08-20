@@ -11,7 +11,10 @@ use {
         get_blob, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId, ProcessId,
         Request,
     },
-    std::{collections::HashSet, str::FromStr},
+    std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    },
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId
@@ -69,9 +72,7 @@ pub fn fetch_package_manifest(
 pub fn fetch_package_metadata(
     package_id: &crate::kinode::process::main::PackageId,
 ) -> anyhow::Result<OnchainMetadata> {
-    let chain = Address::from_str("our@chain:app_store:sys")?;
-    let resp = Request::new()
-        .target(chain)
+    let resp = Request::to(("our", "chain", "app_store", "sys"))
         .body(serde_json::to_vec(&ChainRequests::GetApp(package_id.clone())).unwrap())
         .send_and_await_response(5)??;
 
@@ -103,9 +104,7 @@ pub fn new_package(
     // set the version hash for this new local package
     let version_hash = sha_256_hash(&bytes);
 
-    let downloads = Address::from_str("our@downloads:app_store:sys")?;
-    let resp = Request::new()
-        .target(downloads)
+    let resp = Request::to(("our", "downloads", "app_store", "sys"))
         .body(serde_json::to_vec(&DownloadRequests::AddDownload(
             AddDownloadRequest {
                 package_id: package_id.clone(),
@@ -117,7 +116,6 @@ pub fn new_package(
         .send_and_await_response(5)??;
 
     let download_resp = serde_json::from_slice::<DownloadResponses>(&resp.body())?;
-    println!("got download resp: {:?}", download_resp);
 
     match download_resp {
         DownloadResponses::Error(e) => {
@@ -130,8 +128,7 @@ pub fn new_package(
 
 /// create a new package drive in VFS and add the package zip to it.
 /// if an `api.zip` is present, unzip and stow in `/api`.
-/// returns a string representing the manifest hash of the package
-/// and a bool returning whether or not an api was found and unzipped.
+/// returns a string representing the manfifest hash.
 pub fn create_package_drive(
     package_id: &PackageId,
     package_bytes: Vec<u8>,
@@ -178,7 +175,9 @@ pub fn create_package_drive(
         timeout: VFS_TIMEOUT,
     };
     let manifest_bytes = manifest_file.read()?;
-    Ok(keccak_256_hash(&manifest_bytes))
+    let manifest_hash = keccak_256_hash(&manifest_bytes);
+
+    Ok(manifest_hash)
 }
 
 pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
@@ -404,7 +403,6 @@ pub fn install(
         ) else {
             return Err(anyhow::anyhow!("failed to start process"));
         };
-        println!("started the process!");
     }
     Ok(())
 }
@@ -455,6 +453,17 @@ pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()
     Ok(())
 }
 
+pub fn _extract_caps_hashes(manifest_bytes: &[u8]) -> anyhow::Result<HashMap<String, String>> {
+    let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(manifest_bytes)?;
+    let mut caps_hashes = HashMap::new();
+    for process in &manifest {
+        let caps_bytes = serde_json::to_vec(&process.request_capabilities)?;
+        let caps_hash = keccak_256_hash(&caps_bytes);
+        caps_hashes.insert(process.process_name.clone(), caps_hash);
+    }
+    Ok(caps_hashes)
+}
+
 fn parse_capabilities(our_node: &str, caps: &Vec<serde_json::Value>) -> Vec<kt::Capability> {
     let mut requested_capabilities: Vec<kt::Capability> = vec![];
     for value in caps {
@@ -503,8 +512,7 @@ fn parse_capabilities(our_node: &str, caps: &Vec<serde_json::Value>) -> Vec<kt::
 }
 
 fn kernel_request(command: kt::KernelCommand) -> Request {
-    Request::new()
-        .target(("our", "kernel", "distro", "sys"))
+    Request::to(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&command).expect("failed to serialize KernelCommand"))
 }
 
@@ -512,7 +520,7 @@ pub fn vfs_request<T>(path: T, action: vfs::VfsAction) -> Request
 where
     T: Into<String>,
 {
-    Request::new().target(("our", "vfs", "distro", "sys")).body(
+    Request::to(("our", "vfs", "distro", "sys")).body(
         serde_json::to_vec(&vfs::VfsRequest {
             path: path.into(),
             action,

@@ -59,7 +59,6 @@ export interface PackageState {
     our_version_hash: string;
     verified: boolean;
     caps_approved: boolean;
-    manifest_hash?: string;
 }
 
 export interface PackageManifest {

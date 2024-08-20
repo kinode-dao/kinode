@@ -211,9 +211,10 @@ pub fn validate_routing_request(
     pki: &OnchainPKI,
 ) -> anyhow::Result<(Identity, Identity)> {
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
-    let from_id = pki
-        .get(&routing_request.source)
-        .ok_or(anyhow::anyhow!("unknown KNS name"))?;
+    let from_id = pki.get(&routing_request.source).ok_or(anyhow::anyhow!(
+        "unknown KNS name '{}'",
+        routing_request.source
+    ))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
         net_key_string_to_hex(&from_id.networking_key),
@@ -224,9 +225,10 @@ pub fn validate_routing_request(
             &routing_request.signature,
         )
         .map_err(|e| anyhow::anyhow!("their_networking_key.verify failed: {:?}", e))?;
-    let target_id = pki
-        .get(&routing_request.target)
-        .ok_or(anyhow::anyhow!("unknown KNS name"))?;
+    let target_id = pki.get(&routing_request.target).ok_or(anyhow::anyhow!(
+        "unknown KNS name '{}'",
+        routing_request.target
+    ))?;
     if routing_request.target == routing_request.source {
         return Err(anyhow::anyhow!("can't route to self"));
     }

@@ -4,6 +4,7 @@ interface downloads {
     //
 
     use standard.{package-id};
+    use chain.{onchain-metadata};
 
     variant download-requests {
         // remote only
@@ -13,6 +14,7 @@ interface downloads {
         size(size-update),
         // local only
         local-download(local-download-request),
+        auto-update(auto-update-request),
         download-complete(download-complete-request),
         get-files(option<package-id>),
         remove-file(remove-file-request),
@@ -33,6 +35,11 @@ interface downloads {
         desired-version-hash: string,
     }
 
+    record auto-update-request {
+        package-id: package-id,
+        metadata: onchain-metadata,
+    }
+
     record remote-download-request {
         package-id: package-id,
         worker-address: string,
@@ -45,6 +52,9 @@ interface downloads {
         hash-mismatch(hash-mismatch),
         file-not-found,
         worker-spawn-failed,
+        http-client-error,
+        blob-not-found,
+        vfs-error,
     }
 
     record download-complete-request {

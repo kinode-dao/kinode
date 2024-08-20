@@ -24,8 +24,8 @@ use crate::kinode::process::main::{
     LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
 };
 use kinode_process_lib::{
-    await_message, call_init, get_blob, http, println, vfs, Address, LazyLoadBlob, Message,
-    PackageId, Response,
+    await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
+    LazyLoadBlob, Message, PackageId, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::State;
@@ -149,6 +149,7 @@ fn handle_message(
                 if !message.is_local(&our) {
                     return Err(anyhow::anyhow!("download complete from non-local node"));
                 }
+
                 http_server.ws_push_all_channels(
                     "/",
                     http::server::WsMessageType::Text,
@@ -167,13 +168,47 @@ fn handle_message(
                         .to_vec(),
                     },
                 );
+
+                // auto_install case:
+                // the downloads process has given us the new package manifest's
+                // capability hashes, and the old package's capability hashes.
+                // we can use these to determine if the new package has the same
+                // capabilities as the old one, and if so, auto-install it.
+                if let Some(context) = message.context() {
+                    let manifest_hash = String::from_utf8(context.to_vec())?;
+                    if let Some(package) =
+                        state.packages.get(&req.package_id.clone().to_process_lib())
+                    {
+                        if package.manifest_hash == Some(manifest_hash) {
+                            print_to_terminal(1, "auto_install:main, manifest_hash match");
+                            if let Err(e) = utils::install(
+                                &req.package_id,
+                                None,
+                                &req.version_hash,
+                                state,
+                                &our.node,
+                            ) {
+                                print_to_terminal(
+                                    1,
+                                    &format!("error auto_installing package: {e}"),
+                                );
+                            } else {
+                                println!(
+                                    "auto_installed update for package: {:?}",
+                                    &req.package_id.to_process_lib()
+                                );
+                            }
+                        } else {
+                            print_to_terminal(1, "auto_install:main, manifest_hash do not match");
+                        }
+                    }
+                }
             }
         }
     } else {
         match serde_json::from_slice::<Resp>(message.body())? {
             Resp::LocalResponse(_) => {
-                // don't need to handle these at the moment?
-                // play with context.
+                // don't need to handle these at the moment
             }
             _ => {}
         }
@@ -190,7 +225,6 @@ fn handle_local_request(
 ) -> (LocalResponse, Option<LazyLoadBlob>) {
     match request {
         LocalRequest::NewPackage(NewPackageRequest { package_id, mirror }) => {
-            // note, use metadata and mirror?
             let Some(blob) = get_blob() else {
                 return (
                     LocalResponse::NewPackageResponse(NewPackageResponse::NoBlob),
@@ -212,7 +246,10 @@ fn handle_local_request(
         }) => (
             match utils::install(&package_id, metadata, &version_hash, state, &our.node) {
                 Ok(()) => {
-                    println!("successfully installed package:");
+                    println!(
+                        "successfully installed package: {:?}",
+                        &package_id.to_process_lib()
+                    );
                     LocalResponse::InstallResponse(InstallResponse::Success)
                 }
                 Err(e) => {
@@ -223,9 +260,21 @@ fn handle_local_request(
             None,
         ),
         LocalRequest::Uninstall(package_id) => (
-            match utils::uninstall(state, &package_id.to_process_lib()) {
-                Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
-                Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
+            match utils::uninstall(state, &package_id.clone().to_process_lib()) {
+                Ok(()) => {
+                    println!(
+                        "successfully uninstalled package: {:?}",
+                        &package_id.to_process_lib()
+                    );
+                    LocalResponse::UninstallResponse(UninstallResponse::Success)
+                }
+                Err(e) => {
+                    println!(
+                        "error uninstalling package: {:?}: {e}",
+                        &package_id.to_process_lib()
+                    );
+                    LocalResponse::UninstallResponse(UninstallResponse::Failure)
+                }
             },
             None,
         ),
