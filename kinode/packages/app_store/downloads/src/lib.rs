@@ -208,15 +208,15 @@ fn handle_message(
                     req.package_id.clone().to_process_lib(),
                     req.version_hash.clone(),
                 )) {
-                    match get_caps_hashes(
+                    match get_manifest_hash(
                         req.package_id.clone().to_process_lib(),
                         req.version_hash.clone(),
                     ) {
-                        Ok(caps_hashes) => Some(serde_json::to_vec(&caps_hashes)?),
+                        Ok(manifest_hash) => Some(manifest_hash.as_bytes().to_vec()),
                         Err(e) => {
                             print_to_terminal(
                                 1,
-                                &format!("auto_update: error getting caps hashes: {:?}", e),
+                                &format!("auto_update: error getting manifest hash: {:?}", e),
                             );
                             None
                         }
@@ -534,24 +534,14 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
     Ok(())
 }
 
-fn get_caps_hashes(
-    package_id: PackageId,
-    version_hash: String,
-) -> anyhow::Result<HashMap<String, String>> {
+fn get_manifest_hash(package_id: PackageId, version_hash: String) -> anyhow::Result<String> {
     let package_dir = format!("{}/{}", "/app_store:sys/downloads", package_id.to_string());
     let manifest_path = format!("{}/{}.json", package_dir, version_hash);
     let manifest_file = vfs::open_file(&manifest_path, false, None)?;
 
     let manifest_bytes = manifest_file.read()?;
-    let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(&manifest_bytes)?;
-    let mut caps_hashes = HashMap::new();
-
-    for process in &manifest {
-        let caps_bytes = serde_json::to_vec(&process.request_capabilities)?;
-        let caps_hash = keccak_256_hash(&caps_bytes);
-        caps_hashes.insert(process.process_name.clone(), caps_hash);
-    }
-    Ok(caps_hashes)
+    let manifest_hash = keccak_256_hash(&manifest_bytes);
+    Ok(manifest_hash)
 }
 
 /// helper function for vfs files, open if exists, if not create

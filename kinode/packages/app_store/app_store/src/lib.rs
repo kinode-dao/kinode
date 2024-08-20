@@ -29,7 +29,6 @@ use kinode_process_lib::{
 };
 use serde::{Deserialize, Serialize};
 use state::State;
-use std::collections::HashMap;
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -176,19 +175,12 @@ fn handle_message(
                 // we can use these to determine if the new package has the same
                 // capabilities as the old one, and if so, auto-install it.
                 if let Some(context) = message.context() {
-                    let new_caps_hashes: HashMap<String, String> = serde_json::from_slice(context)?;
+                    let manifest_hash = String::from_utf8(context.to_vec())?;
                     if let Some(package) =
                         state.packages.get(&req.package_id.clone().to_process_lib())
                     {
-                        let all_match = new_caps_hashes.iter().all(|(key, new_hash)| {
-                            package
-                                .caps_hashes
-                                .get(key)
-                                .map_or(false, |current_hash| new_hash == current_hash)
-                        });
-
-                        if all_match {
-                            print_to_terminal(1, "auto_install:main, all caps_hashes match");
+                        if package.manifest_hash == Some(manifest_hash) {
+                            print_to_terminal(1, "auto_install:main, manifest_hash match");
                             if let Err(e) = utils::install(
                                 &req.package_id,
                                 None,
@@ -200,9 +192,14 @@ fn handle_message(
                                     1,
                                     &format!("error auto_installing package: {e}"),
                                 );
+                            } else {
+                                println!(
+                                    "auto_installed update for package: {:?}",
+                                    &req.package_id.to_process_lib()
+                                );
                             }
                         } else {
-                            print_to_terminal(1, "auto_install:main, caps_hashes do not match");
+                            print_to_terminal(1, "auto_install:main, manifest_hash do not match");
                         }
                     }
                 }
@@ -228,7 +225,6 @@ fn handle_local_request(
 ) -> (LocalResponse, Option<LazyLoadBlob>) {
     match request {
         LocalRequest::NewPackage(NewPackageRequest { package_id, mirror }) => {
-            // note, use metadata and mirror?
             let Some(blob) = get_blob() else {
                 return (
                     LocalResponse::NewPackageResponse(NewPackageResponse::NoBlob),

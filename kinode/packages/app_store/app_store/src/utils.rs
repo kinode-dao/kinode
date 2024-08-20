@@ -128,11 +128,11 @@ pub fn new_package(
 
 /// create a new package drive in VFS and add the package zip to it.
 /// if an `api.zip` is present, unzip and stow in `/api`.
-/// returns a hashmap representing the requested capabilities hash for each process name.
+/// returns a string representing the manfifest hash.
 pub fn create_package_drive(
     package_id: &PackageId,
     package_bytes: Vec<u8>,
-) -> anyhow::Result<HashMap<String, String>> {
+) -> anyhow::Result<String> {
     let drive_name = format!("/{package_id}/pkg");
     let blob = LazyLoadBlob {
         mime: Some("application/zip".to_string()),
@@ -175,9 +175,9 @@ pub fn create_package_drive(
         timeout: VFS_TIMEOUT,
     };
     let manifest_bytes = manifest_file.read()?;
-    let caps_hashes = extract_caps_hashes(&manifest_bytes)?;
+    let manifest_hash = keccak_256_hash(&manifest_bytes);
 
-    Ok(caps_hashes)
+    Ok(manifest_hash)
 }
 
 pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
@@ -224,13 +224,13 @@ pub fn install(
         Some(VFS_TIMEOUT),
     )?;
     let bytes = file.read()?;
-    let caps_hashes = create_package_drive(&process_package_id, bytes)?;
+    let manifest_hash = create_package_drive(&process_package_id, bytes)?;
 
     let package_state = PackageState {
         our_version_hash: version_hash.to_string(),
         verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
         caps_approved: true, // TODO see if we want to auto-approve local installs
-        caps_hashes,
+        manifest_hash: Some(manifest_hash),
     };
 
     if let Ok(extracted) = extract_api(&process_package_id) {
@@ -453,7 +453,7 @@ pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()
     Ok(())
 }
 
-pub fn extract_caps_hashes(manifest_bytes: &[u8]) -> anyhow::Result<HashMap<String, String>> {
+pub fn _extract_caps_hashes(manifest_bytes: &[u8]) -> anyhow::Result<HashMap<String, String>> {
     let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(manifest_bytes)?;
     let mut caps_hashes = HashMap::new();
     for process in &manifest {
