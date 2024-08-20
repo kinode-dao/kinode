@@ -79,8 +79,15 @@ export default function MyDownloadsPage() {
         setIsInstalling(true);
         setError(null);
         try {
-            const packageId = [...currentPath, selectedItem.File.name.replace('.zip', '')].join(':');
-            const versionHash = selectedItem.File.name.replace('.zip', '');
+            const fileName = selectedItem.File.name;
+            const parts = fileName.split(':');
+            const versionHash = parts.pop()?.replace('.zip', '');
+
+            if (!versionHash) throw new Error('Invalid file name format');
+
+            // Construct packageId by combining currentPath and remaining parts of the filename
+            const packageId = [...currentPath, ...parts].join(':');
+
             await installApp(packageId, versionHash);
             await fetchInstalled();
             setShowCapApproval(false);

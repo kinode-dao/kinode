@@ -4,6 +4,7 @@ interface downloads {
     //
 
     use standard.{package-id};
+    use chain.{onchain-metadata};
 
     variant download-requests {
         // remote only
@@ -13,6 +14,7 @@ interface downloads {
         size(size-update),
         // local only
         local-download(local-download-request),
+        auto-update(auto-update-request),
         download-complete(download-complete-request),
         get-files(option<package-id>),
         remove-file(remove-file-request),
@@ -31,6 +33,11 @@ interface downloads {
         package-id: package-id,
         download-from: string,
         desired-version-hash: string,
+    }
+
+    record auto-update-request {
+        package-id: package-id,
+        metadata: onchain-metadata,
     }
 
     record remote-download-request {

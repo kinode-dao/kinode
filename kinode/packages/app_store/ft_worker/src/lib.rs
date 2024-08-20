@@ -163,8 +163,10 @@ fn handle_receiver(
                             print_to_terminal(
                                 1,
                                 &format!(
-                                    "ft_worker: hash mismatch: {} != {}",
-                                    version_hash, recieved_hash
+                                    "ft_worker: {} hash mismatch: desired: {} != actual: {}",
+                                    package_id.to_string(),
+                                    version_hash,
+                                    recieved_hash
                                 ),
                             );
                             let req = DownloadCompleteRequest {
@@ -290,7 +292,7 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
             let manifest_file = open_or_create_file(&manifest_path)?;
             manifest_file.write(contents.as_bytes())?;
 
-            println!("Extracted and wrote manifest.json");
+            print_to_terminal(1, "Extracted and wrote manifest.json");
             break;
         }
     }

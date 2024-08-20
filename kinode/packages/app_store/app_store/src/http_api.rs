@@ -245,7 +245,6 @@ fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
         "our_version_hash": state.our_version_hash,
         "verified": state.verified,
         "caps_approved": state.caps_approved,
-        "manifest_hash": state.manifest_hash,
     })
 }
 
