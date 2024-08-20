@@ -24,11 +24,12 @@ use crate::kinode::process::main::{
     LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
 };
 use kinode_process_lib::{
-    await_message, call_init, get_blob, http, println, vfs, Address, LazyLoadBlob, Message,
-    PackageId, Response,
+    await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
+    LazyLoadBlob, Message, PackageId, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::State;
+use std::collections::HashMap;
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -149,6 +150,7 @@ fn handle_message(
                 if !message.is_local(&our) {
                     return Err(anyhow::anyhow!("download complete from non-local node"));
                 }
+
                 http_server.ws_push_all_channels(
                     "/",
                     http::server::WsMessageType::Text,
@@ -167,6 +169,43 @@ fn handle_message(
                         .to_vec(),
                     },
                 );
+
+                // auto_install case:
+                // the downloads process has given us the new package manifest's
+                // capability hashes, and the old package's capability hashes.
+                // we can use these to determine if the new package has the same
+                // capabilities as the old one, and if so, auto-install it.
+                if let Some(context) = message.context() {
+                    let new_caps_hashes: HashMap<String, String> = serde_json::from_slice(context)?;
+                    if let Some(package) =
+                        state.packages.get(&req.package_id.clone().to_process_lib())
+                    {
+                        let all_match = new_caps_hashes.iter().all(|(key, new_hash)| {
+                            package
+                                .caps_hashes
+                                .get(key)
+                                .map_or(false, |current_hash| new_hash == current_hash)
+                        });
+
+                        if all_match {
+                            print_to_terminal(1, "auto_install:main, all caps_hashes match");
+                            if let Err(e) = utils::install(
+                                &req.package_id,
+                                None,
+                                &req.version_hash,
+                                state,
+                                &our.node,
+                            ) {
+                                print_to_terminal(
+                                    1,
+                                    &format!("error auto_installing package: {e}"),
+                                );
+                            }
+                        } else {
+                            print_to_terminal(1, "auto_install:main, caps_hashes do not match");
+                        }
+                    }
+                }
             }
         }
     } else {

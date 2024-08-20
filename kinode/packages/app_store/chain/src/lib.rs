@@ -6,12 +6,13 @@
 use crate::kinode::process::chain::{
     ChainError, ChainRequests, OnchainApp, OnchainMetadata, OnchainProperties,
 };
+use crate::kinode::process::downloads::{AutoUpdateRequest, DownloadRequests};
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode::process::chain::ChainResponses;
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, get_state, http, kernel_types as kt, kimap,
-    print_to_terminal, println, Address, Message, PackageId, Response,
+    print_to_terminal, println, Address, Message, PackageId, Request, Response,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -284,24 +285,38 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
             listing.metadata_uri = metadata_uri;
             listing.tba = tba;
             listing.metadata_hash = metadata_hash;
-            listing.metadata = Some(metadata);
+            listing.metadata = Some(metadata.clone());
         }
         std::collections::hash_map::Entry::Vacant(listing) => {
             listing.insert(PackageListing {
                 tba,
                 metadata_uri,
                 metadata_hash,
-                metadata: Some(metadata),
+                metadata: Some(metadata.clone()),
                 auto_update: false,
             });
         }
     }
 
     if is_our_package {
-        state.published.insert(package_id);
+        state.published.insert(package_id.clone());
     }
 
     state.last_saved_block = block_number;
+
+    // if auto_update is enabled, send a message to downloads to kick off the update.
+    if let Some(listing) = state.listings.get(&package_id) {
+        if listing.auto_update {
+            print_to_terminal(1, &format!("kicking off auto-update for: {}", package_id));
+            let request = DownloadRequests::AutoUpdate(AutoUpdateRequest {
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                metadata: metadata.into(),
+            });
+            Request::to(("our", "downloads", "app_store", "sys"))
+                .body(serde_json::to_vec(&request)?)
+                .send()?;
+        }
+    }
 
     Ok(())
 }

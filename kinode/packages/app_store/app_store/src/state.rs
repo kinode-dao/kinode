@@ -50,10 +50,10 @@ pub struct PackageState {
     pub our_version_hash: String,
     pub verified: bool,
     pub caps_approved: bool,
-    /// the hash of the manifest file, which is used to determine whether package
+    /// the hash of the request_capabilites field of every process, which is used to determine whether package
     /// capabilities have changed. if they have changed, auto-install must fail
     /// and the user must approve the new capabilities.
-    pub manifest_hash: Option<String>,
+    pub caps_hashes: HashMap<String, String>,
 }
 
 /// this process's saved state
@@ -62,7 +62,6 @@ pub struct State {
     pub packages: HashMap<PackageId, PackageState>,
     /// the APIs we have
     pub installed_apis: HashSet<PackageId>,
-    // requested maybe too.
 }
 
 impl State {
@@ -115,6 +114,7 @@ impl State {
                 timeout: 5,
             };
             let manifest_bytes = manifest_file.read()?;
+            let caps_hashes = utils::extract_caps_hashes(&manifest_bytes)?;
 
             self.packages.insert(
                 package_id.clone(),
@@ -122,7 +122,7 @@ impl State {
                     our_version_hash,
                     verified: true,       // implicitly verified (TODO re-evaluate)
                     caps_approved: false, // must re-approve if you want to do something ??
-                    manifest_hash: Some(utils::keccak_256_hash(&manifest_bytes)),
+                    caps_hashes,
                 },
             );
 

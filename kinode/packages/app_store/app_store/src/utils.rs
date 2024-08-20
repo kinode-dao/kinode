@@ -11,7 +11,10 @@ use {
         get_blob, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId, ProcessId,
         Request,
     },
-    std::{collections::HashSet, str::FromStr},
+    std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    },
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId
@@ -125,12 +128,11 @@ pub fn new_package(
 
 /// create a new package drive in VFS and add the package zip to it.
 /// if an `api.zip` is present, unzip and stow in `/api`.
-/// returns a string representing the manifest hash of the package
-/// and a bool returning whether or not an api was found and unzipped.
+/// returns a hashmap representing the requested capabilities hash for each process name.
 pub fn create_package_drive(
     package_id: &PackageId,
     package_bytes: Vec<u8>,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<HashMap<String, String>> {
     let drive_name = format!("/{package_id}/pkg");
     let blob = LazyLoadBlob {
         mime: Some("application/zip".to_string()),
@@ -173,7 +175,9 @@ pub fn create_package_drive(
         timeout: VFS_TIMEOUT,
     };
     let manifest_bytes = manifest_file.read()?;
-    Ok(keccak_256_hash(&manifest_bytes))
+    let caps_hashes = extract_caps_hashes(&manifest_bytes)?;
+
+    Ok(caps_hashes)
 }
 
 pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
@@ -220,13 +224,13 @@ pub fn install(
         Some(VFS_TIMEOUT),
     )?;
     let bytes = file.read()?;
-    let manifest_hash = create_package_drive(&process_package_id, bytes)?;
+    let caps_hashes = create_package_drive(&process_package_id, bytes)?;
 
     let package_state = PackageState {
         our_version_hash: version_hash.to_string(),
         verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
         caps_approved: true, // TODO see if we want to auto-approve local installs
-        manifest_hash: Some(manifest_hash),
+        caps_hashes,
     };
 
     if let Ok(extracted) = extract_api(&process_package_id) {
@@ -447,6 +451,17 @@ pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()
     state.installed_apis.remove(package_id);
 
     Ok(())
+}
+
+pub fn extract_caps_hashes(manifest_bytes: &[u8]) -> anyhow::Result<HashMap<String, String>> {
+    let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(manifest_bytes)?;
+    let mut caps_hashes = HashMap::new();
+    for process in &manifest {
+        let caps_bytes = serde_json::to_vec(&process.request_capabilities)?;
+        let caps_hash = keccak_256_hash(&caps_bytes);
+        caps_hashes.insert(process.process_name.clone(), caps_hash);
+    }
+    Ok(caps_hashes)
 }
 
 fn parse_capabilities(our_node: &str, caps: &Vec<serde_json::Value>) -> Vec<kt::Capability> {
