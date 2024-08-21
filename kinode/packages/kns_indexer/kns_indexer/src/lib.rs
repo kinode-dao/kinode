@@ -531,6 +531,12 @@ fn handle_log(
                         }
                     },
                 }
+
+                if !state.listening_newblocks && !pending_notes.is_empty() {
+                    print_to_terminal(0, "subscribing to newHeads...");
+                    listen_to_new_blocks_loop(); // sub_id: 3
+                    state.listening_newblocks = true;
+                }
             }
         }
         _log => {
