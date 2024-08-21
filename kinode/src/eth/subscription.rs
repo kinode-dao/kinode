@@ -100,7 +100,9 @@ pub async fn create_new_subscription(
                                     };
                                     verbose_print(
                                         &print_tx,
-                                        &format!("eth: closed local subscription due to error {e:?}"),
+                                        &format!(
+                                            "eth: closed local subscription due to error {e:?}"
+                                        ),
                                     )
                                     .await;
                                     kernel_message(
