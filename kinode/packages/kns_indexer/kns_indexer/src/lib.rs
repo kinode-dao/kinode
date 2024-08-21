@@ -49,6 +49,8 @@ struct State {
     nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
     last_block: u64,
+    // whether we are listening for new blocks
+    listening_newblocks: bool,
 }
 
 // note: not defined in wit api right now like IndexerRequests.
@@ -80,6 +82,7 @@ fn init(our: Address) {
         nodes: HashMap::new(),
         names: HashMap::new(),
         last_block: KIMAP_FIRST_BLOCK,
+        listening_newblocks: false,
     };
 
     if let Err(e) = main(our, state) {
@@ -220,9 +223,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
             }
 
-            if !pending_requests.is_empty() || !pending_notes.is_empty() {
+            if !state.listening_newblocks
+                && (!pending_requests.is_empty() || !pending_notes.is_empty())
+            {
                 print_to_terminal(0, "subscribing to newHeads...");
                 listen_to_new_blocks_loop(); // sub_id: 3
+                state.listening_newblocks = true;
             }
         }
     }
@@ -275,10 +281,11 @@ fn handle_eth_message(
     handle_pending_notes(state, pending_notes)?;
 
     // if both pending_requests and pending_notes are empty, we kill the newHeads subscription
-    if pending_requests.is_empty() && pending_notes.is_empty() {
+    if state.listening_newblocks && pending_requests.is_empty() && pending_notes.is_empty() {
         if let Err(e) = eth_provider.unsubscribe(3) {
             print_to_terminal(0, &format!("failed to unsubscribe from newHeads: {e:?}"));
         } else {
+            state.listening_newblocks = false;
             print_to_terminal(0, "unsubscribed from newHeads");
         }
     }
