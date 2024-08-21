@@ -1,26 +1,24 @@
 #![feature(let_chains)]
+use crate::kinode::process::chess::{
+    MoveRequest, NewGameRequest, Request as ChessRequest, Response as ChessResponse,
+};
 use kinode_process_lib::{
-    await_message, call_init, get_blob, get_typed_state, http, println, set_state, Address,
-    LazyLoadBlob, Message, NodeId, Request, Response,
+    await_message, call_init, get_blob, get_typed_state, http, http::server, println, set_state,
+    Address, LazyLoadBlob, Message, NodeId, Request, Response,
 };
 use pleco::Board;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-extern crate base64;
-
-use crate::kinode::process::chess::{
-    MoveRequest, NewGameRequest, Request as ChessRequest, Response as ChessResponse,
-};
 
 const ICON: &str = include_str!("icon");
 
-//
-// Our serializable state format.
-//
-
+///
+/// Our serializable state format.
+///
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Game {
-    pub id: String, // the node with whom we are playing
+    /// the node with whom we are playing
+    pub id: String,
     pub turns: u64,
     pub board: String,
     pub white: String,
@@ -30,6 +28,7 @@ struct Game {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ChessState {
+    pub our: Address,
     pub games: HashMap<String, Game>, // game is by opposing player id
     pub clients: HashSet<u32>,        // doesn't get persisted
 }
@@ -43,14 +42,16 @@ fn save_chess_state(state: &ChessState) {
     set_state(&bincode::serialize(&state.games).unwrap());
 }
 
-fn load_chess_state() -> ChessState {
-    match get_typed_state(|bytes| Ok(bincode::deserialize::<HashMap<String, Game>>(bytes)?)) {
+fn load_chess_state(our: Address) -> ChessState {
+    match get_typed_state(|bytes| bincode::deserialize::<HashMap<String, Game>>(bytes)) {
         Some(games) => ChessState {
+            our,
             games,
             clients: HashSet::new(),
         },
         None => {
             let state = ChessState {
+                our,
                 games: HashMap::new(),
                 clients: HashSet::new(),
             };
@@ -60,28 +61,20 @@ fn load_chess_state() -> ChessState {
     }
 }
 
-fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> anyhow::Result<()> {
-    for channel in open_channels {
-        Request::new()
-            .target((&our.node, "http_server", "distro", "sys"))
-            .body(serde_json::to_vec(
-                &http::HttpServerAction::WebSocketPush {
-                    channel_id: *channel,
-                    message_type: http::WsMessageType::Binary,
-                },
-            )?)
-            .blob(LazyLoadBlob {
-                mime: Some("application/json".to_string()),
-                bytes: serde_json::json!({
-                    "kind": "game_update",
-                    "data": game,
-                })
-                .to_string()
-                .into_bytes(),
+fn send_ws_update(http_server: &mut server::HttpServer, game: &Game) {
+    http_server.ws_push_all_channels(
+        "/",
+        server::WsMessageType::Binary,
+        LazyLoadBlob {
+            mime: Some("application/json".to_string()),
+            bytes: serde_json::json!({
+                "kind": "game_update",
+                "data": game,
             })
-            .send()?;
-    }
-    Ok(())
+            .to_string()
+            .into_bytes(),
+        },
+    )
 }
 
 // Boilerplate: generate the wasm bindings for a process
@@ -91,6 +84,7 @@ wit_bindgen::generate!({
     generate_unused_types: true,
     additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
 });
+
 // After generating bindings, use this macro to define the Component struct
 // and its init() function, which the kernel will look for on startup.
 call_init!(initialize);
@@ -99,38 +93,34 @@ fn initialize(our: Address) {
     println!("started");
 
     // add ourselves to the homepage
-    Request::to(("our", "homepage", "homepage", "sys"))
-        .body(
-            serde_json::json!({
-                "Add": {
-                    "label": "Chess",
-                    "icon": ICON,
-                    "path": "/", // just our root
-                }
-            })
-            .to_string()
-            .as_bytes()
-            .to_vec(),
-        )
-        .send()
-        .unwrap();
+    kinode_process_lib::homepage::add_to_homepage("Chess", Some(ICON), Some("/"), None);
+
+    // create an HTTP server struct with which to manipulate `http_server:distro:sys`
+    let mut http_server = server::HttpServer::new(5);
+    let http_config = server::HttpBindingConfig::default();
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
     // authenticated=true, local_only=false
-    http::serve_ui(&our, "ui", true, false, vec!["/"]).unwrap();
+    http_server
+        .serve_ui(&our, "ui", vec!["/"], http_config.clone())
+        .expect("failed to serve ui");
 
     // Allow HTTP requests to be made to /games; they will be handled dynamically.
-    http::bind_http_path("/games", true, false).unwrap();
+    http_server
+        .bind_http_path("/games", http_config.clone())
+        .expect("failed to bind /games");
 
     // Allow websockets to be opened at / (our process ID will be prepended).
-    http::bind_ws_path("/", true, false).unwrap();
+    http_server
+        .bind_ws_path("/", server::WsBindingConfig::default())
+        .expect("failed to bind ws");
 
     // Grab our state, then enter the main event loop.
-    let mut state: ChessState = load_chess_state();
-    main_loop(&our, &mut state);
+    let mut state: ChessState = load_chess_state(our);
+    main_loop(&mut state, &mut http_server);
 }
 
-fn main_loop(our: &Address, state: &mut ChessState) {
+fn main_loop(state: &mut ChessState, http_server: &mut server::HttpServer) {
     loop {
         // Call await_message() to wait for any incoming messages.
         // If we get a network error, make a print and throw it away.
@@ -141,96 +131,71 @@ fn main_loop(our: &Address, state: &mut ChessState) {
                 println!("got network error: {send_error:?}");
                 continue;
             }
-            Ok(message) => match handle_request(&our, &message, state) {
+            Ok(message) => match handle_request(&message, state, http_server) {
                 Ok(()) => continue,
-                Err(e) => println!("error handling request: {:?}", e),
+                Err(e) => println!("error handling request: {e}"),
             },
         }
     }
 }
 
 /// Handle chess protocol messages from ourself *or* other nodes.
-fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> anyhow::Result<()> {
+fn handle_request(
+    message: &Message,
+    state: &mut ChessState,
+    http_server: &mut server::HttpServer,
+) -> anyhow::Result<()> {
     // Throw away responses. We never expect any responses *here*, because for every
     // chess protocol request, we *await* its response in-place. This is appropriate
-    // for direct node<>node comms, less appropriate for other circumstances...
+    // for direct node-to-node comms, less appropriate for other circumstances...
     if !message.is_request() {
         return Ok(());
     }
+
     // If the request is from another node, handle it as an incoming request.
     // Note that we can enforce the ProcessId as well, but it shouldn't be a trusted
     // piece of information, since another node can easily spoof any ProcessId on a request.
     // It can still be useful simply as a protocol-level switch to handle different kinds of
     // requests from the same node, with the knowledge that the remote node can finagle with
     // which ProcessId a given message can be from. It's their code, after all.
-    if message.source().node != our.node {
+    if message.source().node != state.our.node {
         // Deserialize the request IPC to our format, and throw it away if it
         // doesn't fit.
         let Ok(chess_request) = serde_json::from_slice::<ChessRequest>(message.body()) else {
             return Err(anyhow::anyhow!("invalid chess request"));
         };
-        handle_chess_request(our, &message.source().node, state, &chess_request)
+        handle_chess_request(&message.source().node, state, http_server, &chess_request)
+    }
     // ...and if the request is from ourselves, handle it as our own!
     // Note that since this is a local request, we *can* trust the ProcessId.
-    // Here, we'll accept messages from the local terminal so as to make this a "CLI" app.
-    } else if message.source().node == our.node
-        && message.source().process == "terminal:terminal:sys"
-    {
+    else {
+        // Here, we accept messages *from any local process that can message this one*.
+        // Since the manifest specifies that this process is *public*, any local process
+        // can "play chess" for us.
+        //
+        // If you wanted to restrict this privilege, you could check for a specific process,
+        // package, and/or publisher here, *or* change the manifest to only grant messaging
+        // capabilities to specific processes.
+
+        // if the message is from the HTTP server runtime module, we should handle it
+        // as an HTTP request and not a chess request
+        if message.source().process == "http_server:distro:sys" {
+            return handle_http_request(state, http_server, message);
+        }
+
         let Ok(chess_request) = serde_json::from_slice::<ChessRequest>(message.body()) else {
             return Err(anyhow::anyhow!("invalid chess request"));
         };
-        handle_local_request(our, state, &chess_request)
-    } else if message.source().node == our.node
-        && message.source().process == "http_server:distro:sys"
-    {
-        // receive HTTP requests and websocket connection messages from our server
-        match serde_json::from_slice::<http::HttpServerRequest>(message.body())? {
-            http::HttpServerRequest::Http(ref incoming) => {
-                match handle_http_request(our, state, incoming) {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        http::send_response(
-                            http::StatusCode::SERVICE_UNAVAILABLE,
-                            None,
-                            "Service Unavailable".to_string().as_bytes().to_vec(),
-                        );
-                        Err(anyhow::anyhow!("error handling http request: {e:?}"))
-                    }
-                }
-            }
-            http::HttpServerRequest::WebSocketOpen { channel_id, .. } => {
-                // We know this is authenticated and unencrypted because we only
-                // bound one path, the root path. So we know that client
-                // frontend opened a websocket and can send updates
-                state.clients.insert(channel_id);
-                Ok(())
-            }
-            http::HttpServerRequest::WebSocketClose(channel_id) => {
-                // client frontend closed a websocket
-                state.clients.remove(&channel_id);
-                Ok(())
-            }
-            http::HttpServerRequest::WebSocketPush { .. } => {
-                // client frontend sent a websocket message
-                // we don't expect this! we only use websockets to push updates
-                Ok(())
-            }
-        }
-    } else {
-        // If we get a request from ourselves that isn't from the terminal, we'll just
-        // throw it away. This is a good place to put a printout to show that we've
-        // received a request from ourselves that we don't know how to handle.
-        return Err(anyhow::anyhow!(
-            "got request from not-the-terminal, ignoring"
-        ));
+        let _game = handle_local_request(state, &chess_request)?;
+        Ok(())
     }
 }
 
 /// Handle chess protocol messages from other nodes.
 fn handle_chess_request(
-    our: &Address,
     source_node: &NodeId,
     state: &mut ChessState,
+    http_server: &mut server::HttpServer,
     action: &ChessRequest,
 ) -> anyhow::Result<()> {
     println!("handling action from {source_node}: {action:?}");
@@ -258,31 +223,34 @@ fn handle_chess_request(
             // The simplest and most trivial way to keep state. You'll want to
             // use a database or something in a real app, and consider performance
             // when doing intensive data-based operations.
-            send_ws_update(&our, &game, &state.clients)?;
+            send_ws_update(http_server, &game);
             state.games.insert(game_id.to_string(), game);
             save_chess_state(&state);
             // Send a response to tell them we've accepted the game.
             // Remember, the other player is waiting for this.
             Response::new()
                 .body(serde_json::to_vec(&ChessResponse::NewGameAccepted)?)
-                .send()
+                .send()?;
+            Ok(())
         }
         ChessRequest::Move(MoveRequest { ref move_str, .. }) => {
             // Get the associated game, and respond with an error if
             // we don't have it in our state.
             let Some(game) = state.games.get_mut(game_id) else {
                 // If we don't have a game with them, reject the move.
-                return Response::new()
+                Response::new()
                     .body(serde_json::to_vec(&ChessResponse::MoveRejected)?)
-                    .send();
+                    .send()?;
+                return Ok(());
             };
             // Convert the saved board to one we can manipulate.
             let mut board = Board::from_fen(&game.board).unwrap();
             if !board.apply_uci_move(move_str) {
                 // Reject invalid moves!
-                return Response::new()
+                Response::new()
                     .body(serde_json::to_vec(&ChessResponse::MoveRejected)?)
-                    .send();
+                    .send()?;
+                return Ok(());
             }
             game.turns += 1;
             if board.checkmate() || board.stalemate() {
@@ -290,12 +258,13 @@ fn handle_chess_request(
             }
             // Persist state.
             game.board = board.fen();
-            send_ws_update(&our, &game, &state.clients)?;
+            send_ws_update(http_server, &game);
             save_chess_state(&state);
             // Send a response to tell them we've accepted the move.
             Response::new()
                 .body(serde_json::to_vec(&ChessResponse::MoveAccepted)?)
-                .send()
+                .send()?;
+            Ok(())
         }
         ChessRequest::Resign(_) => {
             // They've resigned. The sender isn't waiting for a response to this,
@@ -303,7 +272,7 @@ fn handle_chess_request(
             match state.games.get_mut(game_id) {
                 Some(game) => {
                     game.ended = true;
-                    send_ws_update(&our, &game, &state.clients)?;
+                    send_ws_update(http_server, &game);
                     save_chess_state(&state);
                 }
                 None => {}
@@ -314,18 +283,18 @@ fn handle_chess_request(
 }
 
 /// Handle actions we are performing. Here's where we'll send_and_await various requests.
-fn handle_local_request(
-    our: &Address,
-    state: &mut ChessState,
-    action: &ChessRequest,
-) -> anyhow::Result<()> {
+fn handle_local_request(state: &mut ChessState, action: &ChessRequest) -> anyhow::Result<Game> {
     match action {
         ChessRequest::NewGame(NewGameRequest { white, black }) => {
             // Create a new game. We'll enforce that one of the two players is us.
-            if white != &our.node && black != &our.node {
+            if white != &state.our.node && black != &state.our.node {
                 return Err(anyhow::anyhow!("cannot start a game without us!"));
             }
-            let game_id = if white == &our.node { black } else { white };
+            let game_id = if white == &state.our.node {
+                black
+            } else {
+                white
+            };
             // If we already have a game with this player, throw an error.
             if let Some(game) = state.games.get(game_id)
                 && !game.ended
@@ -334,11 +303,11 @@ fn handle_local_request(
             };
             // Send the other player a NewGame request
             // The request is exactly the same as what we got from terminal.
-            // We'll give them 5 seconds to respond...
+            // We'll give their node 30 seconds to respond...
             let Ok(Message::Response { ref body, .. }) = Request::new()
-                .target((game_id.as_ref(), our.process.clone()))
+                .target((game_id, state.our.process.clone()))
                 .body(serde_json::to_vec(&action)?)
-                .send_and_await_response(5)?
+                .send_and_await_response(30)?
             else {
                 return Err(anyhow::anyhow!(
                     "other player did not respond properly to new game request"
@@ -357,9 +326,9 @@ fn handle_local_request(
                 black: black.to_string(),
                 ended: false,
             };
-            state.games.insert(game_id.to_string(), game);
+            state.games.insert(game_id.to_string(), game.clone());
             save_chess_state(&state);
-            Ok(())
+            Ok(game)
         }
         ChessRequest::Move(MoveRequest { game_id, move_str }) => {
             // Make a move. We'll enforce that it's our turn. The game_id is the
@@ -367,8 +336,8 @@ fn handle_local_request(
             let Some(game) = state.games.get_mut(game_id) else {
                 return Err(anyhow::anyhow!("no game with {game_id}"));
             };
-            if (game.turns % 2 == 0 && game.white != our.node)
-                || (game.turns % 2 == 1 && game.black != our.node)
+            if (game.turns % 2 == 0 && game.white != state.our.node)
+                || (game.turns % 2 == 1 && game.black != state.our.node)
             {
                 return Err(anyhow::anyhow!("not our turn!"));
             } else if game.ended {
@@ -380,11 +349,11 @@ fn handle_local_request(
             }
             // Send the move to the other player, then check if the game is over.
             // The request is exactly the same as what we got from terminal.
-            // We'll give them 5 seconds to respond...
+            // We'll give their node 30 seconds to respond...
             let Ok(Message::Response { ref body, .. }) = Request::new()
-                .target((game_id.as_ref(), our.process.clone()))
+                .target((game_id, state.our.process.clone()))
                 .body(serde_json::to_vec(&action)?)
-                .send_and_await_response(5)?
+                .send_and_await_response(30)?
             else {
                 return Err(anyhow::anyhow!(
                     "other player did not respond properly to our move"
@@ -398,8 +367,9 @@ fn handle_local_request(
                 game.ended = true;
             }
             game.board = board.fen();
+            let game = game.clone();
             save_chess_state(&state);
-            Ok(())
+            Ok(game)
         }
         ChessRequest::Resign(ref with_who) => {
             // Resign from a game with a given player.
@@ -408,250 +378,196 @@ fn handle_local_request(
             };
             // send the other player an end game request -- no response expected
             Request::new()
-                .target((with_who.as_ref(), our.process.clone()))
+                .target((with_who, state.our.process.clone()))
                 .body(serde_json::to_vec(&action)?)
                 .send()?;
             game.ended = true;
+            let game = game.clone();
             save_chess_state(&state);
-            Ok(())
+            Ok(game)
         }
     }
 }
 
 /// Handle HTTP requests from our own frontend.
 fn handle_http_request(
-    our: &Address,
     state: &mut ChessState,
-    http_request: &http::IncomingHttpRequest,
+    http_server: &mut server::HttpServer,
+    message: &Message,
 ) -> anyhow::Result<()> {
-    if http_request.bound_path(Some(&our.process.to_string())) != "/games" {
-        http::send_response(
-            http::StatusCode::NOT_FOUND,
+    let request = http_server.parse_request(message.body())?;
+
+    // the HTTP server helper struct allows us to pass functions that
+    // handle the various types of requests we get from the frontend
+    http_server.handle_request(
+        request,
+        |incoming| {
+            // client frontend sent an HTTP request, process it and
+            // return an HTTP response
+            // these functions can reuse the logic from handle_local_request
+            // after converting the request into the appropriate format!
+            match incoming.method().unwrap_or_default() {
+                http::Method::GET => handle_get(state),
+                http::Method::POST => handle_post(state),
+                http::Method::PUT => handle_put(state),
+                http::Method::DELETE => handle_delete(state, &incoming),
+                _ => (
+                    server::HttpResponse::new(http::StatusCode::METHOD_NOT_ALLOWED),
+                    None,
+                ),
+            }
+        },
+        |_channel_id, _message_type, _message| {
+            // client frontend sent a websocket message
+            // we don't expect this! we only use websockets to push updates
+        },
+    );
+
+    Ok(())
+}
+
+/// On GET: return all active games
+fn handle_get(state: &mut ChessState) -> (server::HttpResponse, Option<LazyLoadBlob>) {
+    (
+        server::HttpResponse::new(http::StatusCode::OK),
+        Some(LazyLoadBlob {
+            mime: Some("application/json".to_string()),
+            bytes: serde_json::to_vec(&state.games).expect("failed to serialize games!"),
+        }),
+    )
+}
+
+/// On POST: create a new game
+fn handle_post(state: &mut ChessState) -> (server::HttpResponse, Option<LazyLoadBlob>) {
+    let Some(blob) = get_blob() else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
             None,
-            "Not Found".to_string().as_bytes().to_vec(),
         );
-        return Ok(());
-    }
-    match http_request.method()?.as_str() {
-        // on GET: give the frontend all of our active games
-        "GET" => Ok(http::send_response(
-            http::StatusCode::OK,
-            Some(HashMap::from([(
-                String::from("Content-Type"),
-                String::from("application/json"),
-            )])),
-            serde_json::to_vec(&state.games)?,
-        )),
-        // on POST: create a new game
-        "POST" => {
-            let Some(blob) = get_blob() else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-            let blob_json = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
-            let Some(game_id) = blob_json["id"].as_str() else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-
-            if let Some(game) = state.games.get(game_id)
-                && !game.ended
-            {
-                return Ok(http::send_response(
-                    http::StatusCode::CONFLICT,
-                    None,
-                    vec![],
-                ));
-            };
-
-            let player_white = blob_json["white"]
-                .as_str()
-                .unwrap_or(our.node.as_str())
-                .to_string();
-            let player_black = blob_json["black"].as_str().unwrap_or(game_id).to_string();
-
-            // send the other player a new game request
-            let Ok(msg) = Request::new()
-                .target((game_id, our.process.clone()))
-                .body(serde_json::to_vec(&ChessRequest::NewGame(
-                    NewGameRequest {
-                        white: player_white.clone(),
-                        black: player_black.clone(),
-                    },
-                ))?)
-                .send_and_await_response(5)?
-            else {
-                return Err(anyhow::anyhow!(
-                    "other player did not respond properly to new game request"
-                ));
-            };
-            // if they accept, create a new game
-            // otherwise, should surface error to FE...
-            if serde_json::from_slice::<ChessResponse>(msg.body())?
-                != ChessResponse::NewGameAccepted
-            {
-                return Err(anyhow::anyhow!("other player rejected new game request"));
-            }
-            // create a new game
-            let game = Game {
-                id: game_id.to_string(),
-                turns: 0,
-                board: Board::start_pos().fen(),
-                white: player_white,
-                black: player_black,
-                ended: false,
-            };
-            let body = serde_json::to_vec(&game)?;
-            state.games.insert(game_id.to_string(), game);
-            save_chess_state(&state);
-            http::send_response(
-                http::StatusCode::OK,
-                Some(HashMap::from([(
-                    String::from("Content-Type"),
-                    String::from("application/json"),
-                )])),
-                body,
-            );
-            Ok(())
-        }
-        // on PUT: make a move
-        "PUT" => {
-            let Some(blob) = get_blob() else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-            let blob_json = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
-            let Some(game_id) = blob_json["id"].as_str() else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-            let Some(game) = state.games.get_mut(game_id) else {
-                return Ok(http::send_response(
-                    http::StatusCode::NOT_FOUND,
-                    None,
-                    vec![],
-                ));
-            };
-            if (game.turns % 2 == 0 && game.white != our.node)
-                || (game.turns % 2 == 1 && game.black != our.node)
-            {
-                return Ok(http::send_response(
-                    http::StatusCode::FORBIDDEN,
-                    None,
-                    vec![],
-                ));
-            } else if game.ended {
-                return Ok(http::send_response(
-                    http::StatusCode::CONFLICT,
-                    None,
-                    vec![],
-                ));
-            }
-            let Some(move_str) = blob_json["move"].as_str() else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-            let mut board = Board::from_fen(&game.board).unwrap();
-            if !board.apply_uci_move(move_str) {
-                // TODO surface illegal move to player or something here
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            }
-            // send the move to the other player
-            // check if the game is over
-            // if so, update the records
-            let Ok(msg) = Request::new()
-                .target((game_id, our.process.clone()))
-                .body(serde_json::to_vec(&ChessRequest::Move(MoveRequest {
-                    game_id: game_id.to_string(),
-                    move_str: move_str.to_string(),
-                }))?)
-                .send_and_await_response(5)?
-            else {
-                return Err(anyhow::anyhow!(
-                    "other player did not respond properly to our move"
-                ));
-            };
-            if serde_json::from_slice::<ChessResponse>(msg.body())? != ChessResponse::MoveAccepted {
-                return Err(anyhow::anyhow!("other player rejected our move"));
-            }
-            // update the game
-            game.turns += 1;
-            if board.checkmate() || board.stalemate() {
-                game.ended = true;
-            }
-            game.board = board.fen();
-            // update state and return to FE
-            let body = serde_json::to_vec(&game)?;
-            save_chess_state(&state);
-            // return the game
-            http::send_response(
-                http::StatusCode::OK,
-                Some(HashMap::from([(
-                    String::from("Content-Type"),
-                    String::from("application/json"),
-                )])),
-                body,
-            );
-            Ok(())
-        }
-        // on DELETE: end the game
-        "DELETE" => {
-            let Some(game_id) = http_request.query_params().get("id") else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-            let Some(game) = state.games.get_mut(game_id) else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-            // send the other player an end game request
-            Request::new()
-                .target((game_id.as_str(), our.process.clone()))
-                .body(serde_json::to_vec(&ChessRequest::Resign(our.node.clone()))?)
-                .send()?;
-            game.ended = true;
-            let body = serde_json::to_vec(&game)?;
-            save_chess_state(&state);
-            http::send_response(
-                http::StatusCode::OK,
-                Some(HashMap::from([(
-                    String::from("Content-Type"),
-                    String::from("application/json"),
-                )])),
-                body,
-            );
-            Ok(())
-        }
-        // Any other method will be rejected.
-        _ => Ok(http::send_response(
-            http::StatusCode::METHOD_NOT_ALLOWED,
+    };
+    let Ok(blob_json) = serde_json::from_slice::<serde_json::Value>(&blob.bytes) else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
             None,
-            vec![],
-        )),
+        );
+    };
+    let Some(game_id) = blob_json["id"].as_str() else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            None,
+        );
+    };
+
+    let player_white = blob_json["white"]
+        .as_str()
+        .unwrap_or(state.our.node.as_str())
+        .to_string();
+    let player_black = blob_json["black"].as_str().unwrap_or(game_id).to_string();
+
+    match handle_local_request(
+        state,
+        &ChessRequest::NewGame(NewGameRequest {
+            white: player_white,
+            black: player_black,
+        }),
+    ) {
+        Ok(game) => (
+            server::HttpResponse::new(http::StatusCode::OK)
+                .header("Content-Type", "application/json"),
+            Some(LazyLoadBlob {
+                mime: Some("application/json".to_string()),
+                bytes: serde_json::to_vec(&game).expect("failed to serialize game!"),
+            }),
+        ),
+        Err(e) => (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            Some(LazyLoadBlob {
+                mime: Some("application/text".to_string()),
+                bytes: e.to_string().into_bytes(),
+            }),
+        ),
+    }
+}
+
+/// On PUT: make a move
+fn handle_put(state: &mut ChessState) -> (server::HttpResponse, Option<LazyLoadBlob>) {
+    let Some(blob) = get_blob() else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            None,
+        );
+    };
+    let Ok(blob_json) = serde_json::from_slice::<serde_json::Value>(&blob.bytes) else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            None,
+        );
+    };
+
+    let Some(game_id) = blob_json["id"].as_str() else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            None,
+        );
+    };
+    let Some(move_str) = blob_json["move"].as_str() else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            None,
+        );
+    };
+
+    match handle_local_request(
+        state,
+        &ChessRequest::Move(MoveRequest {
+            game_id: game_id.to_string(),
+            move_str: move_str.to_string(),
+        }),
+    ) {
+        Ok(game) => (
+            server::HttpResponse::new(http::StatusCode::OK)
+                .header("Content-Type", "application/json"),
+            Some(LazyLoadBlob {
+                mime: Some("application/json".to_string()),
+                bytes: serde_json::to_vec(&game).expect("failed to serialize game!"),
+            }),
+        ),
+        Err(e) => (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            Some(LazyLoadBlob {
+                mime: Some("application/text".to_string()),
+                bytes: e.to_string().into_bytes(),
+            }),
+        ),
+    }
+}
+
+/// On DELETE: end the game
+fn handle_delete(
+    state: &mut ChessState,
+    request: &server::IncomingHttpRequest,
+) -> (server::HttpResponse, Option<LazyLoadBlob>) {
+    let Some(game_id) = request.query_params().get("id") else {
+        return (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            None,
+        );
+    };
+    match handle_local_request(state, &ChessRequest::Resign(game_id.to_string())) {
+        Ok(game) => (
+            server::HttpResponse::new(http::StatusCode::OK)
+                .header("Content-Type", "application/json"),
+            Some(LazyLoadBlob {
+                mime: Some("application/json".to_string()),
+                bytes: serde_json::to_vec(&game).expect("failed to serialize game!"),
+            }),
+        ),
+        Err(e) => (
+            server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+            Some(LazyLoadBlob {
+                mime: Some("application/text".to_string()),
+                bytes: e.to_string().into_bytes(),
+            }),
+        ),
     }
 }

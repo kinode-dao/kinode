@@ -4,56 +4,30 @@
   "private": true,
   "proxy": "http://localhost:8080",
   "dependencies": {
-    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "@ensdomains/eth-ens-namehash": "^2.0.15",
-    "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
-    "@ethersproject/hash": "^5.7.0",
-    "@typechain/ethers-v5": "^11.1.1",
-    "@types/node": "^16.18.50",
-    "@types/react": "^18.2.21",
-    "@types/react-dom": "^18.2.7",
-    "@unocss/vite": "^0.59.4",
-    "@vitejs/plugin-react": "^4.2.1",
-    "@web3-react/coinbase-wallet": "^8.2.3",
-    "@web3-react/core": "^8.2.2",
-    "@web3-react/gnosis-safe": "^8.2.4",
-    "@web3-react/injected-connector": "^6.0.7",
-    "@web3-react/metamask": "^8.2.3",
-    "@web3-react/network": "^8.2.3",
-    "@web3-react/types": "^8.2.2",
-    "@web3-react/walletconnect": "^8.2.3",
-    "@web3-react/walletconnect-connector": "^6.2.13",
-    "@web3-react/walletconnect-v2": "^8.5.1",
-    "buffer": "^6.0.3",
-    "classnames": "^2.5.1",
-    "eslint-config-react-app": "^7.0.1",
-    "ethers": "^5.7.2",
+    "@rainbow-me/rainbowkit": "^2.1.2",
+    "@szhsin/react-menu": "^4.1.0",
+    "@tanstack/react-query": "^5.45.1",
     "idna-uts46-hx": "^6.0.4",
     "is-valid-domain": "^0.1.6",
     "jazzicon": "^1.5.0",
-    "punycode": "^2.3.1",
+    "js-sha3": "^0.9.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.0.1",
     "react-modal": "^3.16.1",
     "react-router-dom": "^6.16.0",
-    "tailwindcss": "^3.4.1",
-    "typechain": "^8.3.1",
-    "typescript": "^5.3.3",
-    "unocss": "^0.59.4",
-    "vite": "^5.2.10",
-    "vite-plugin-svgr": "^4.2.0"
+    "viem": "^2.19.0",
+    "wagmi": "^2.12.5"
   },
   "scripts": {
     "start": "vite",
-    "build": "npm run tc && tsc && vite build && rm -rf build && mv dist build",
+    "dev": "vite --port 3000",
+    "build": "vite build && rm -rf build && mv dist build",
     "build:copy": "npm run build",
     "serve": "vite preview",
-    "inline": "node ./add-inline-tags.js && cd build && inline-source ./index.html > ./inline-index.html && cd ..",
-    "build-inline": "npm run build && npm run inline",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "tc": "typechain --target ethers-v5 --out-dir src/abis/types/ \"./src/abis/**/*.json\""
+    "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [
@@ -74,8 +48,16 @@
     ]
   },
   "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
+    "@types/node": "^20.10.4",
+    "@types/react-dom": "^18.2.17",
     "@types/react-modal": "^3.16.2",
-    "inline-source-cli": "^2.0.0"
+    "@vitejs/plugin-react": "^4.2.1",
+    "eslint-config-react-app": "^7.0.1",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.2.10"
   },
   "type": "module"
 }

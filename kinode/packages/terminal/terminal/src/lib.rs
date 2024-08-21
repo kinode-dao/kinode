@@ -1,9 +1,6 @@
-use anyhow::anyhow;
-use kinode_process_lib::kernel_types as kt;
-use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
-    call_init, get_blob, get_typed_state, our_capabilities, println, set_state, vfs, Address,
-    Capability, ProcessId, Request,
+    await_message, call_init, get_typed_state, kernel_types as kt, our_capabilities, println,
+    set_state, vfs, Address, Capability, Message, ProcessId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -21,108 +18,136 @@ enum TerminalAction {
     },
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+enum ScriptError {
+    UnknownName,
+    FailedToReadWasm,
+    NoScriptsManifest,
+    NoScriptInManifest,
+    InvalidScriptsManifest,
+    KernelUnresponsive,
+}
+
+impl std::fmt::Display for ScriptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ScriptError::UnknownName => "script not found, either as an alias or process ID",
+                ScriptError::FailedToReadWasm => "failed to read script Wasm from VFS",
+                ScriptError::NoScriptsManifest => "no scripts manifest in package",
+                ScriptError::NoScriptInManifest => "script not in scripts.json file",
+                ScriptError::InvalidScriptsManifest => "could not parse scripts.json file",
+                ScriptError::KernelUnresponsive => "kernel unresponsive",
+            }
+        )
+    }
+}
+
+impl std::error::Error for ScriptError {}
+
 #[derive(Serialize, Deserialize)]
 struct TerminalState {
     our: Address,
     aliases: HashMap<String, ProcessId>,
 }
 
-fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
-    if line.is_empty() {
-        return Ok(());
+impl TerminalState {
+    /// Create a new terminal state with the default system aliases
+    fn new(our: Address) -> Self {
+        Self {
+            our,
+            aliases: HashMap::from([
+                (
+                    "alias".to_string(),
+                    ProcessId::new(Some("alias"), "terminal", "sys"),
+                ),
+                (
+                    "cat".to_string(),
+                    ProcessId::new(Some("cat"), "terminal", "sys"),
+                ),
+                (
+                    "echo".to_string(),
+                    ProcessId::new(Some("echo"), "terminal", "sys"),
+                ),
+                (
+                    "help".to_string(),
+                    ProcessId::new(Some("help"), "terminal", "sys"),
+                ),
+                (
+                    "hi".to_string(),
+                    ProcessId::new(Some("hi"), "terminal", "sys"),
+                ),
+                (
+                    "kill".to_string(),
+                    ProcessId::new(Some("kill"), "terminal", "sys"),
+                ),
+                (
+                    "kfetch".to_string(),
+                    ProcessId::new(Some("kfetch"), "terminal", "sys"),
+                ),
+                (
+                    "m".to_string(),
+                    ProcessId::new(Some("m"), "terminal", "sys"),
+                ),
+                (
+                    "net_diagnostics".to_string(),
+                    ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
+                ),
+                (
+                    "peer".to_string(),
+                    ProcessId::new(Some("peer"), "terminal", "sys"),
+                ),
+                (
+                    "peers".to_string(),
+                    ProcessId::new(Some("peers"), "terminal", "sys"),
+                ),
+                (
+                    "top".to_string(),
+                    ProcessId::new(Some("top"), "terminal", "sys"),
+                ),
+            ]),
+        }
     }
-    let (head, args) = line.split_once(" ").unwrap_or((line, ""));
-    let process = match state.aliases.get(head) {
-        Some(pid) => pid.clone(),
-        None => match head.parse::<ProcessId>() {
-            Ok(pid) => pid,
-            Err(_) => {
-                return Err(anyhow!("invalid script name"));
-            }
-        },
-    };
-
-    handle_run(&state.our, &process, args.to_string())
 }
 
 call_init!(init);
 fn init(our: Address) {
-    let mut state: TerminalState = match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
-        Some(s) => s,
-        None => {
-            let state = TerminalState {
-                our,
-                aliases: HashMap::from([
-                    (
-                        "alias".to_string(),
-                        ProcessId::new(Some("alias"), "terminal", "sys"),
-                    ),
-                    (
-                        "cat".to_string(),
-                        ProcessId::new(Some("cat"), "terminal", "sys"),
-                    ),
-                    (
-                        "echo".to_string(),
-                        ProcessId::new(Some("echo"), "terminal", "sys"),
-                    ),
-                    (
-                        "hi".to_string(),
-                        ProcessId::new(Some("hi"), "terminal", "sys"),
-                    ),
-                    (
-                        "kill".to_string(),
-                        ProcessId::new(Some("kill"), "terminal", "sys"),
-                    ),
-                    (
-                        "kfetch".to_string(),
-                        ProcessId::new(Some("kfetch"), "terminal", "sys"),
-                    ),
-                    (
-                        "m".to_string(),
-                        ProcessId::new(Some("m"), "terminal", "sys"),
-                    ),
-                    (
-                        "namehash_to_name".to_string(),
-                        ProcessId::new(Some("namehash_to_name"), "terminal", "sys"),
-                    ),
-                    (
-                        "net_diagnostics".to_string(),
-                        ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
-                    ),
-                    (
-                        "peer".to_string(),
-                        ProcessId::new(Some("peer"), "terminal", "sys"),
-                    ),
-                    (
-                        "peers".to_string(),
-                        ProcessId::new(Some("peers"), "terminal", "sys"),
-                    ),
-                    (
-                        "top".to_string(),
-                        ProcessId::new(Some("top"), "terminal", "sys"),
-                    ),
-                ]),
-            };
-            set_state(&bincode::serialize(&state).unwrap());
-            state
-        }
-    };
-
-    loop {
-        let (source, message) = match wit::receive() {
-            Ok((source, message)) => (source, message),
-            Err((error, _context)) => {
-                println!("net error: {:?}!", error.kind);
-                continue;
+    let mut state: TerminalState =
+        match get_typed_state(|bytes| bincode::deserialize::<TerminalState>(bytes)) {
+            Some(mut s) => {
+                // **add** the pre-installed scripts to the terminal state
+                // in case new ones have been added or if user has deleted aliases
+                let default_state = TerminalState::new(our);
+                for (alias, process) in default_state.aliases {
+                    s.aliases.insert(alias, process);
+                }
+                s
+            }
+            None => {
+                let state = TerminalState::new(our);
+                set_state(&bincode::serialize(&state).unwrap());
+                state
             }
         };
+
+    loop {
+        let message = match await_message() {
+            Err(e) => {
+                println!("net error: {e:?}!");
+                continue;
+            }
+            Ok(message) => message,
+        };
         match message {
-            wit::Message::Request(wit::Request { body, .. }) => {
+            Message::Request { source, body, .. } => {
+                // this is a message from the runtime terminal, parse as a command
                 if state.our == source {
-                    match parse_command(&mut state, std::str::from_utf8(&body).unwrap_or_default())
+                    if let Err(e) =
+                        parse_command(&mut state, String::from_utf8_lossy(&body).to_string())
                     {
-                        Ok(()) => continue,
-                        Err(e) => println!("{e}"),
+                        println!("error calling script: {e}");
                     }
                 // checks for a request from a terminal script (different process, same package)
                 } else if state.our.node == source.node && state.our.package() == source.package() {
@@ -132,18 +157,17 @@ fn init(our: Address) {
                     };
                     match action {
                         TerminalAction::EditAlias { alias, process } => {
-                            match handle_alias_change(&mut state, alias, process) {
-                                Ok(()) => continue,
-                                Err(e) => println!("{e}"),
-                            };
+                            handle_alias_change(&mut state, alias, process);
                         }
                     }
                 } else {
-                    println!("ignoring message from {source}");
-                    continue;
+                    kinode_process_lib::print_to_terminal(
+                        2,
+                        &format!("ignoring message from {source}"),
+                    );
                 }
             }
-            wit::Message::Response((wit::Response { body, .. }, _)) => {
+            Message::Response { body, .. } => {
                 if let Ok(txt) = std::str::from_utf8(&body) {
                     println!("{txt}");
                 } else {
@@ -154,22 +178,46 @@ fn init(our: Address) {
     }
 }
 
-fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Result<()> {
-    let drive_path = format!("/{}:{}/pkg", process.package(), process.publisher());
-    let Ok(entry) = get_entry(process) else {
-        return Err(anyhow::anyhow!("script not in scripts.json file"));
-    };
-    let wasm_path = format!("{drive_path}/{}.wasm", process.process());
+fn parse_command(state: &mut TerminalState, line: String) -> Result<(), ScriptError> {
+    if line.is_empty() {
+        return Ok(());
+    }
+    let (head, args) = line.split_once(" ").unwrap_or((&line, ""));
+    match state.aliases.get(head) {
+        Some(process) => handle_run(&state.our, process, args.to_string()),
+        None => match head.parse::<ProcessId>() {
+            Ok(pid) => handle_run(&state.our, &pid, args.to_string()),
+            Err(_) => Err(ScriptError::UnknownName),
+        },
+    }
+}
+
+/// Run a script by loading it from the VFS
+fn handle_run(our: &Address, process: &ProcessId, args: String) -> Result<(), ScriptError> {
+    let entry = get_entry(process)?;
+    let wasm_path = format!(
+        "/{}:{}/pkg/{}.wasm",
+        process.package(),
+        process.publisher(),
+        process.process()
+    );
 
     // all scripts are given random process IDs
     let process_id = ProcessId::new(None, process.package(), process.publisher());
 
+    // call VFS manually so as not to fetch the blob, instead passing it to kernel request
     Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: wasm_path.clone(),
-            action: vfs::VfsAction::Read,
-        })?)
-        .send_and_await_response(5)??;
+        .body(
+            serde_json::to_vec(&vfs::VfsRequest {
+                path: wasm_path.clone(),
+                action: vfs::VfsAction::Read,
+            })
+            .unwrap(),
+        )
+        .send_and_await_response(5)
+        .unwrap()
+        .map_err(|_| ScriptError::FailedToReadWasm)?;
+
     // process the caps we are going to grant to other processes
     let mut granted_caps: Vec<(ProcessId, Capability)> = vec![];
     if let Some(to_grant) = &entry.grant_capabilities {
@@ -219,32 +267,24 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
     }
     for (process, cap) in granted_caps.into_iter() {
         Request::to(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: process,
-                capabilities: vec![kt::de_wit_capability(cap)],
-            })?)
-            .send()?;
+            .body(
+                serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                    target: process,
+                    capabilities: vec![kt::de_wit_capability(cap)],
+                })
+                .unwrap(),
+            )
+            .send()
+            .unwrap();
     }
-    // inherits the blob from the previous request, `_bytes_response`,
-    // containing the wasm byte code of the process
-    Request::to(("our", "kernel", "distro", "sys"))
-        .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
-            id: process_id.clone(),
-            wasm_bytes_handle: wasm_path.clone(),
-            wit_version: entry.wit_version,
-            on_exit: kt::OnExit::None,
-            initial_capabilities: HashSet::new(),
-            public: entry.public,
-        })?)
-        .inherit(true)
-        .send_and_await_response(5)??;
-    let mut requested_caps: Vec<kt::Capability> = vec![];
+
+    let mut requested_caps: HashSet<kt::Capability> = HashSet::new();
     if let Some(to_request) = &entry.request_capabilities {
         for value in to_request {
             match value {
                 serde_json::Value::String(process_name) => {
                     if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                        requested_caps.push(kt::Capability {
+                        requested_caps.insert(kt::Capability {
                             issuer: Address {
                                 node: our.node.clone(),
                                 process: parsed_process_id.clone(),
@@ -261,7 +301,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
                             .parse::<ProcessId>()
                         {
                             if let Some(params) = map.get("params") {
-                                requested_caps.push(kt::Capability {
+                                requested_caps.insert(kt::Capability {
                                     issuer: Address {
                                         node: our.node.clone(),
                                         process: parsed_process_id.clone(),
@@ -279,43 +319,58 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
         }
     }
     // always give it the cap to message the terminal back
-    requested_caps.push(kt::de_wit_capability(Capability {
+    requested_caps.insert(kt::de_wit_capability(Capability {
         issuer: our.clone(),
         params: "\"messaging\"".to_string(),
     }));
     if entry.request_networking {
-        requested_caps.push(kt::de_wit_capability(Capability {
+        requested_caps.insert(kt::de_wit_capability(Capability {
             issuer: Address::new(&our.node, ("kernel", "distro", "sys")),
             params: "\"network\"".to_string(),
         }));
     }
     if entry.root {
         for cap in our_capabilities() {
-            requested_caps.push(kt::de_wit_capability(cap.clone()));
+            requested_caps.insert(kt::de_wit_capability(cap));
         }
     }
+
+    // inherits the blob from the previous request to VFS
+    // containing the wasm byte code of the process
     Request::to(("our", "kernel", "distro", "sys"))
-        .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-            target: process_id.clone(),
-            capabilities: requested_caps,
-        })?)
-        .send()?;
+        .body(
+            serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+                id: process_id.clone(),
+                wasm_bytes_handle: wasm_path,
+                wit_version: entry.wit_version,
+                on_exit: kt::OnExit::None,
+                initial_capabilities: requested_caps,
+                public: entry.public,
+            })
+            .unwrap(),
+        )
+        .inherit(true)
+        .send_and_await_response(5)
+        .unwrap()
+        .map_err(|_| ScriptError::KernelUnresponsive)?;
+
+    // run the process
     Request::to(("our", "kernel", "distro", "sys"))
-        .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
-            process_id.clone(),
-        ))?)
-        .send_and_await_response(5)??;
+        .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(process_id.clone())).unwrap())
+        .send_and_await_response(5)
+        .unwrap()
+        .map_err(|_| ScriptError::KernelUnresponsive)?;
+
+    // once process is running, send the arguments to it
     Request::to(("our", process_id))
         .body(args.into_bytes())
-        .send()?;
+        .send()
+        .unwrap();
+
     Ok(())
 }
 
-fn handle_alias_change(
-    state: &mut TerminalState,
-    alias: String,
-    process: Option<ProcessId>,
-) -> anyhow::Result<()> {
+fn handle_alias_change(state: &mut TerminalState, alias: String, process: Option<ProcessId>) {
     match process {
         Some(process) => {
             println!("alias {alias} set for {process}");
@@ -330,28 +385,25 @@ fn handle_alias_change(
             }
         }
     }
-    set_state(&bincode::serialize(&state)?);
-    Ok(())
+    set_state(&bincode::serialize(&state).expect("failed to serialize terminal state"));
 }
 
-fn get_entry(process: &ProcessId) -> anyhow::Result<kt::DotScriptsEntry> {
-    let drive_path = format!("/{}:{}/pkg", process.package(), process.publisher());
-    Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: format!("{drive_path}/scripts.json"),
-            action: vfs::VfsAction::Read,
-        })?)
-        .send_and_await_response(5)??;
-    let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!(
-            "couldn't find /{}/pkg/scripts.json",
-            process.package()
-        ));
-    };
-    let dot_scripts = String::from_utf8(blob.bytes)?;
-    let dot_scripts = serde_json::from_str::<HashMap<String, kt::DotScriptsEntry>>(&dot_scripts)?;
+fn get_entry(process: &ProcessId) -> Result<kt::DotScriptsEntry, ScriptError> {
+    let file = vfs::File::new(
+        format!(
+            "/{}:{}/pkg/scripts.json",
+            process.package(),
+            process.publisher()
+        ),
+        5,
+    )
+    .read()
+    .map_err(|_| ScriptError::NoScriptsManifest)?;
+
+    let dot_scripts = serde_json::from_slice::<HashMap<String, kt::DotScriptsEntry>>(&file)
+        .map_err(|_| ScriptError::InvalidScriptsManifest)?;
     let Some(entry) = dot_scripts.get(&format!("{}.wasm", process.process())) else {
-        return Err(anyhow::anyhow!("script not in scripts.json file"));
+        return Err(ScriptError::NoScriptInManifest);
     };
-    Ok(entry.clone())
+    Ok(entry.to_owned())
 }

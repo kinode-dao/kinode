@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:copy": "npm run build && rm -rf ../pkg/ui && cp -r dist ../pkg/ui",
+    "build:copy": "npm run build && rm -rf ../pkg/ui && cp -r dist ../pkg/ui && rm -rf dist",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^16.6.0",
     "classnames": "^2.5.1",
     "react": "^18.2.0",
     "react-beautiful-dnd": "^13.1.1",

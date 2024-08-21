@@ -1,28 +1,32 @@
 #![feature(let_chains)]
+use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 use kinode_process_lib::{
-    await_message, call_init, get_blob,
-    http::{
-        bind_http_path, bind_http_static_path, send_response, serve_ui, HttpServerError,
-        HttpServerRequest, StatusCode,
-    },
-    println, Address, Message,
+    await_message, call_init, get_blob, http, http::server, println, Address, LazyLoadBlob,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
-use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
-
-/// Fetching OS version from main package.. LMK if there's a better way...
+/// Fetching OS version from main package
 const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
+
+const DEFAULT_FAVES: &[&str] = &[
+    "chess:chess:sys",
+    "main:app_store:sys",
+    "settings:settings:sys",
+];
 
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
-    package_name: String,
+    id: String,
+    process: String,
+    package: String,
+    publisher: String,
     path: Option<String>,
     label: String,
     base64_icon: Option<String>,
     widget: Option<String>,
-    order: Option<u16>,
+    order: u32,
+    favorite: bool,
 }
 
 wit_bindgen::generate!({
@@ -32,72 +36,222 @@ wit_bindgen::generate!({
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
-const ICON_0: &str = include_str!("./icons/bird-white.svg");
-const ICON_1: &str = include_str!("./icons/bird-orange.svg");
-const ICON_2: &str = include_str!("./icons/bird-plain.svg");
-const ICON_3: &str = include_str!("./icons/k-orange.svg");
-const ICON_4: &str = include_str!("./icons/k-plain.svg");
-const ICON_5: &str = include_str!("./icons/k-white.svg");
-const ICON_6: &str = include_str!("./icons/kbird-orange.svg");
-const ICON_7: &str = include_str!("./icons/kbird-plain.svg");
-const ICON_8: &str = include_str!("./icons/kbird-white.svg");
-const ICON_9: &str = include_str!("./icons/kbranch-orange.svg");
-const ICON_A: &str = include_str!("./icons/kbranch-plain.svg");
-const ICON_B: &str = include_str!("./icons/kbranch-white.svg");
-const ICON_C: &str = include_str!("./icons/kflower-orange.svg");
-const ICON_D: &str = include_str!("./icons/kflower-plain.svg");
-const ICON_E: &str = include_str!("./icons/kflower-white.svg");
-
 call_init!(init);
 fn init(our: Address) {
     let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 
-    serve_ui(&our, "ui", true, false, vec!["/"]).expect("failed to serve ui");
+    let mut http_server = server::HttpServer::new(5);
+    let http_config = server::HttpBindingConfig::default();
 
-    bind_http_static_path(
-        "/our",
-        false,
-        false,
-        Some("text/html".to_string()),
-        our.node().into(),
-    )
-    .expect("failed to bind to /our");
+    http_server
+        .serve_ui(&our, "ui", vec!["/"], http_config.clone())
+        .expect("failed to serve ui");
 
-    bind_http_static_path(
-        "/amionline",
-        false,
-        false,
-        Some("text/html".to_string()),
-        "yes".into(),
-    )
-    .expect("failed to bind to /amionline");
+    http_server
+        .bind_http_static_path(
+            "/our",
+            false,
+            false,
+            Some("text/html".to_string()),
+            our.node().into(),
+        )
+        .expect("failed to bind to /our");
 
-    bind_http_static_path(
-        "/our.js",
-        false,
-        false,
-        Some("application/javascript".to_string()),
-        format!("window.our = {{}}; window.our.node = '{}';", &our.node).into(),
-    )
-    .expect("failed to bind to /our.js");
+    http_server
+        .bind_http_static_path(
+            "/amionline",
+            false,
+            false,
+            Some("text/html".to_string()),
+            "yes".into(),
+        )
+        .expect("failed to bind to /amionline");
 
-    bind_http_path("/apps", true, false).expect("failed to bind /apps");
-    bind_http_path("/version", true, false).expect("failed to bind /version");
-    bind_http_path("/order", true, false).expect("failed to bind /order");
-    bind_http_path("/icons/:id", true, false).expect("failed to bind /icons/:id");
+    http_server
+        .bind_http_static_path(
+            "/our.js",
+            false,
+            false,
+            Some("application/javascript".to_string()),
+            format!("window.our = {{}}; window.our.node = '{}';", &our.node).into(),
+        )
+        .expect("failed to bind to /our.js");
+
+    // the base version gets written over on-bootstrap, so we look for
+    // the persisted (user-customized) version first.
+    // if it doesn't exist, we use the bootstrapped version and save it here.
+    let stylesheet = kinode_process_lib::vfs::File {
+        path: "/homepage:sys/pkg/persisted-kinode.css".to_string(),
+        timeout: 5,
+    }
+    .read()
+    .unwrap_or_else(|_| {
+        kinode_process_lib::vfs::File {
+            path: "/homepage:sys/pkg/kinode.css".to_string(),
+            timeout: 5,
+        }
+        .read()
+        .expect("failed to get kinode.css")
+    });
+
+    // save the stylesheet to the persisted file
+    kinode_process_lib::vfs::File {
+        path: "/homepage:sys/pkg/persisted-kinode.css".to_string(),
+        timeout: 5,
+    }
+    .write(&stylesheet)
+    .expect("failed to write to /persisted-kinode.css");
+
+    http_server
+        .bind_http_static_path(
+            "/kinode.css",
+            false, // kinode.css is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("text/css".to_string()),
+            stylesheet,
+        )
+        .expect("failed to bind /kinode.css");
+
+    http_server
+        .bind_http_static_path(
+            "/kinode.svg",
+            false, // kinode.svg is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("image/svg+xml".to_string()),
+            include_str!("../../pkg/kinode.svg").into(),
+        )
+        .expect("failed to bind /kinode.svg");
+
+    http_server
+        .bind_http_static_path(
+            "/bird-orange.svg",
+            false, // bird-orange.svg is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("image/svg+xml".to_string()),
+            include_str!("../../pkg/bird-orange.svg").into(),
+        )
+        .expect("failed to bind /bird-orange.svg");
+
+    http_server
+        .bind_http_static_path(
+            "/bird-plain.svg",
+            false, // bird-plain.svg is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("image/svg+xml".to_string()),
+            include_str!("../../pkg/bird-plain.svg").into(),
+        )
+        .expect("failed to bind /bird-plain.svg");
+
+    http_server
+        .bind_http_static_path(
+            "/version",
+            true,
+            false,
+            Some("text/plain".to_string()),
+            version_from_cargo_toml().into(),
+        )
+        .expect("failed to bind /version");
+
+    http_server
+        .bind_http_path("/apps", http_config.clone())
+        .expect("failed to bind /apps");
+    http_server
+        .bind_http_path("/favorite", http_config.clone())
+        .expect("failed to bind /favorite");
+    http_server
+        .bind_http_path("/order", http_config)
+        .expect("failed to bind /order");
 
     loop {
         let Ok(ref message) = await_message() else {
             // we never send requests, so this will never happen
             continue;
         };
-        if let Message::Response { source, body, .. } = message
-            && source.process == "http_server:distro:sys"
-        {
-            match serde_json::from_slice::<Result<(), HttpServerError>>(&body) {
-                Ok(Ok(())) => continue,
-                Ok(Err(e)) => println!("got error from http_server: {e}"),
-                Err(_e) => println!("got malformed message from http_server!"),
+        if message.source().process == "http_server:distro:sys" {
+            if message.is_request() {
+                let Ok(request) = http_server.parse_request(message.body()) else {
+                    continue;
+                };
+                http_server.handle_request(
+                    request,
+                    |incoming| {
+                        let path = incoming.bound_path(None);
+                        match path {
+                            "/apps" => (
+                                server::HttpResponse::new(http::StatusCode::OK),
+                                Some(LazyLoadBlob::new(
+                                    Some("application/json"),
+                                    serde_json::to_vec(
+                                        &app_data.values().collect::<Vec<&HomepageApp>>(),
+                                    )
+                                    .unwrap(),
+                                )),
+                            ),
+                            "/favorite" => {
+                                let Ok(http::Method::POST) = incoming.method() else {
+                                    return (
+                                        server::HttpResponse::new(
+                                            http::StatusCode::METHOD_NOT_ALLOWED,
+                                        ),
+                                        None,
+                                    );
+                                };
+                                let Some(body) = get_blob() else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                let Ok(favorite_toggle) =
+                                    serde_json::from_slice::<(String, bool)>(&body.bytes)
+                                else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
+                                    app.favorite = favorite_toggle.1;
+                                }
+                                (server::HttpResponse::new(http::StatusCode::OK), None)
+                            }
+                            "/order" => {
+                                let Ok(http::Method::POST) = incoming.method() else {
+                                    return (
+                                        server::HttpResponse::new(
+                                            http::StatusCode::METHOD_NOT_ALLOWED,
+                                        ),
+                                        None,
+                                    );
+                                };
+                                let Some(body) = get_blob() else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                let Ok(order_list) =
+                                    serde_json::from_slice::<Vec<(String, u32)>>(&body.bytes)
+                                else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                for (app_id, order) in order_list {
+                                    if let Some(app) = app_data.get_mut(&app_id) {
+                                        app.order = order;
+                                    }
+                                }
+                                (server::HttpResponse::new(http::StatusCode::OK), None)
+                            }
+                            _ => (server::HttpResponse::new(http::StatusCode::NOT_FOUND), None),
+                        }
+                    },
+                    |_channel_id, _message_type, _message| {
+                        // not expecting any websocket messages from FE currently
+                    },
+                );
             }
         } else {
             // handle messages to add or remove an app from the homepage.
@@ -113,126 +267,52 @@ fn init(our: Address) {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {
-                                package_name: message.source().package().to_string(),
+                                id: message.source().process.to_string(),
+                                process: message.source().process().to_string(),
+                                package: message.source().package().to_string(),
+                                publisher: message.source().publisher().to_string(),
                                 path: path.map(|path| {
                                     format!(
-                                        "/{}:{}:{}/{}",
-                                        message.source().process(),
-                                        message.source().package(),
-                                        message.source().publisher(),
+                                        "/{}/{}",
+                                        message.source().process,
                                         path.strip_prefix('/').unwrap_or(&path)
                                     )
                                 }),
                                 label,
                                 base64_icon: icon,
                                 widget,
-                                order: None,
+                                order: app_data.len() as u32,
+                                favorite: DEFAULT_FAVES
+                                    .contains(&message.source().process.to_string().as_str()),
                             },
                         );
                     }
                     HomepageRequest::Remove => {
                         app_data.remove(&message.source().process.to_string());
                     }
-                }
-            } else if let Ok(req) = serde_json::from_slice::<HttpServerRequest>(message.body()) {
-                match req {
-                    HttpServerRequest::Http(incoming) => {
-                        let path = incoming.bound_path(None);
-                        match path {
-                            "/apps" => {
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "application/json".to_string(),
-                                    )])),
-                                    {
-                                        let mut apps: Vec<_> = app_data.values().collect();
-                                        apps.sort_by_key(|app| app.order.unwrap_or(255));
-                                        serde_json::to_vec(&apps).unwrap_or_else(|_| Vec::new())
-                                    },
-                                );
-                            }
-                            "/version" => {
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::new()),
-                                    version_from_cargo_toml().as_bytes().to_vec(),
-                                );
-                            }
-                            "/order" => {
-                                // POST of a list of package names.
-                                // go through the list and update each app in app_data to have the index of its name in the list as its order
-                                if let Some(body) = get_blob() {
-                                    let apps: Vec<String> =
-                                        serde_json::from_slice(&body.bytes).unwrap();
-                                    for (i, app) in apps.iter().enumerate() {
-                                        if let Some(app) = app_data.get_mut(app) {
-                                            app.order = Some(i as u16);
-                                        }
-                                    }
-                                    send_response(
-                                        StatusCode::OK,
-                                        Some(HashMap::from([(
-                                            "Content-Type".to_string(),
-                                            "application/json".to_string(),
-                                        )])),
-                                        vec![],
-                                    );
-                                } else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        Some(HashMap::new()),
-                                        vec![],
-                                    );
-                                }
-                            }
-                            "/icons/:id" => {
-                                let id = incoming
-                                    .url_params()
-                                    .get("id")
-                                    .unwrap_or(&"0".to_string())
-                                    .clone();
-                                let icon = match id.to_uppercase().as_str() {
-                                    "0" => ICON_0,
-                                    "1" => ICON_1,
-                                    "2" => ICON_2,
-                                    "3" => ICON_3,
-                                    "4" => ICON_4,
-                                    "5" => ICON_5,
-                                    "6" => ICON_6,
-                                    "7" => ICON_7,
-                                    "8" => ICON_8,
-                                    "9" => ICON_9,
-                                    "A" => ICON_A,
-                                    "B" => ICON_B,
-                                    "C" => ICON_C,
-                                    "D" => ICON_D,
-                                    "E" => ICON_E,
-                                    _ => ICON_0,
-                                };
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "image/svg+xml".to_string(),
-                                    )])),
-                                    icon.as_bytes().to_vec(),
-                                );
-                            }
-                            _ => {
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "text/plain".to_string(),
-                                    )])),
-                                    "yes hello".as_bytes().to_vec(),
-                                );
-                            }
+                    HomepageRequest::SetStylesheet(new_stylesheet_string) => {
+                        // ONLY settings:settings:sys may call this request
+                        if message.source().process != "settings:settings:sys" {
+                            continue;
                         }
+                        kinode_process_lib::vfs::File {
+                            path: "/homepage:sys/pkg/persisted-kinode.css".to_string(),
+                            timeout: 5,
+                        }
+                        .write(new_stylesheet_string.as_bytes())
+                        .expect("failed to write to /persisted-kinode.css");
+                        // re-bind
+                        http_server
+                            .bind_http_static_path(
+                                "/kinode.css",
+                                false, // kinode.css is not auth'd so that apps on subdomains can use it too!
+                                false,
+                                Some("text/css".to_string()),
+                                new_stylesheet_string.into(),
+                            )
+                            .expect("failed to bind /kinode.css");
+                        println!("updated kinode.css!");
                     }
-                    _ => {}
                 }
             }
         }
