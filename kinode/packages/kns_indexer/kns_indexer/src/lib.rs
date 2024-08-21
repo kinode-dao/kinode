@@ -223,10 +223,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
             }
 
-            if !state.listening_newblocks
-                && (!pending_requests.is_empty() || !pending_notes.is_empty())
-            {
-                print_to_terminal(0, "subscribing to newHeads...");
+            if !state.listening_newblocks && !pending_requests.is_empty() {
+                print_to_terminal(0, "subscribing to newHeads for req...");
                 listen_to_new_blocks_loop(); // sub_id: 3
                 state.listening_newblocks = true;
             }
@@ -269,6 +267,7 @@ fn handle_eth_message(
             } else if e.id == 2 {
                 eth_provider.subscribe_loop(2, notes_filter.clone());
             } else if e.id == 3 {
+                print_to_terminal(0, "subscribing to newHeads for retry...");
                 listen_to_new_blocks_loop();
             }
         }
@@ -527,15 +526,14 @@ fn handle_log(
                                     .entry(block_number)
                                     .or_default()
                                     .push((decoded, 0));
+                                if !state.listening_newblocks {
+                                    print_to_terminal(0, "subscribing to newHeads for note...");
+                                    listen_to_new_blocks_loop(); // sub_id: 3
+                                    state.listening_newblocks = true;
+                                }
                             }
                         }
                     },
-                }
-
-                if !state.listening_newblocks && !pending_notes.is_empty() {
-                    print_to_terminal(0, "subscribing to newHeads...");
-                    listen_to_new_blocks_loop(); // sub_id: 3
-                    state.listening_newblocks = true;
                 }
             }
         }

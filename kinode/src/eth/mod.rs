@@ -507,13 +507,15 @@ async fn handle_eth_action(
     verbose_print(
         &state.print_tx,
         &format!(
-            "eth: handling {} from {}",
+            "eth: handling {} from {}; active_subs len: {:?}",
+            //"eth: handling {} from {}",
             match &eth_action {
                 EthAction::SubscribeLogs { .. } => "subscribe",
                 EthAction::UnsubscribeLogs(_) => "unsubscribe",
                 EthAction::Request { .. } => "request",
             },
-            km.source
+            km.source,
+            state.active_subscriptions.iter().map(|v| v.len()).collect::<Vec<_>>(),
         ),
     )
     .await;

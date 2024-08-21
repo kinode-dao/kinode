@@ -257,6 +257,9 @@ async fn build_subscription(
                     )
                     .await;
                 }
+                let alloy_sub_id = rx.local_id();
+                let alloy_sub_id: alloy::primitives::U256 = alloy_sub_id.clone().into();
+                println!("{target} making sub {:?}", alloy_sub_id);
                 return Ok(Ok((rx, chain_id)));
             }
             Err(rpc_error) => {
@@ -387,22 +390,12 @@ async fn maintain_local_subscription(
     loop {
         tokio::select! {
             _ = close_receiver.recv() => {
-                let alloy_sub_id = rx.local_id();
-                let alloy_sub_id = alloy_sub_id.clone().into();
-                let Some(chain_providers) = providers.get_mut(&chain_id) else {
-                    return Ok(()); //?
-                };
-                for url in chain_providers.urls.iter() {
-                    let Some(pubsub) = url.pubsub.as_ref() else {
-                        continue;
-                    };
-                    let x = pubsub.unsubscribe(alloy_sub_id);
-                    println!("we just tried unsubscribing unsubscribed: {:?}", x);
-                }
+                unsubscribe(rx, &chain_id, providers);
                 return Ok(());
             },
             value = rx.recv() => {
                 let Ok(value) = value else {
+                    println!("sub failed: {:?}\r", value.unwrap_err());
                     break;
                 };
                 let result: SubscriptionResult = match serde_json::from_str(value.get()) {
@@ -433,10 +426,26 @@ async fn maintain_local_subscription(
         .and_modify(|sub_map| {
             sub_map.remove(&sub_id);
         });
+    unsubscribe(rx, &chain_id, providers);
     Err(EthSubError {
         id: sub_id,
-        error: "subscription closed unexpectedly".to_string(),
+        error: format!("subscription ({target}) closed unexpectedly"),
     })
+}
+
+fn unsubscribe(rx: RawSubscription, chain_id: &u64, providers: &Providers) {
+    let alloy_sub_id = rx.local_id();
+    let alloy_sub_id = alloy_sub_id.clone().into();
+    let Some(chain_providers) = providers.get_mut(chain_id) else {
+        return; //?
+    };
+    for url in chain_providers.urls.iter() {
+        let Some(pubsub) = url.pubsub.as_ref() else {
+            continue;
+        };
+        let x = pubsub.unsubscribe(alloy_sub_id);
+        println!("we just tried unsubscribing {:?} unsubscribed: {:?}\r", alloy_sub_id, x);
+    }
 }
 
 /// handle the subscription updates from a remote provider,

@@ -123,6 +123,7 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                     }
                 } else {
                     // attempt to resubscribe
+                    println!("attempting resub");
                     state
                         .kimap
                         .provider
@@ -341,6 +342,7 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State) {
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
     // subscribe first so we don't miss any logs
+    println!("subscribing...");
     state.kimap.provider.subscribe_loop(1, filter.clone());
     for log in fetch_logs(
         &state.kimap.provider,
