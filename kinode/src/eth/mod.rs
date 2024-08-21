@@ -100,7 +100,7 @@ type ResponseChannels = Arc<DashMap<u64, ProcessMessageSender>>;
 
 #[derive(Debug)]
 enum ActiveSub {
-    Local(JoinHandle<()>),
+    Local((tokio::sync::mpsc::Sender<bool>, JoinHandle<()>)),
     Remote {
         provider_node: String,
         handle: JoinHandle<()>,
@@ -111,8 +111,9 @@ enum ActiveSub {
 impl ActiveSub {
     async fn close(&self, sub_id: u64, state: &ModuleState) {
         match self {
-            ActiveSub::Local(handle) => {
-                handle.abort();
+            ActiveSub::Local((close_sender, _handle)) => {
+                close_sender.send(true).await.unwrap();
+                //handle.abort();
             }
             ActiveSub::Remote {
                 provider_node,
