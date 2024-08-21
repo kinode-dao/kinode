@@ -36,6 +36,7 @@ const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // optimism
 const KIMAP_FIRST_BLOCK: u64 = 1; // local
 
 const MAX_PENDING_ATTEMPTS: u8 = 3;
+const SUBSCRIPTION_TIMEOUT: u64 = 60;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -113,7 +114,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
-    let eth_provider: eth::Provider = eth::Provider::new(state.chain_id, 60);
+    let eth_provider: eth::Provider = eth::Provider::new(state.chain_id, SUBSCRIPTION_TIMEOUT);
 
     print_to_terminal(
         1,
@@ -128,7 +129,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     println!("subscribing to new logs...");
     eth_provider.subscribe_loop(1, mints_filter.clone());
     eth_provider.subscribe_loop(2, notes_filter.clone());
-    listen_to_new_blocks(); // sub_id: 3
+    listen_to_new_blocks_loop(); // sub_id: 3
 
     // if block in state is < current_block, get logs from that part.
     println!("syncing old logs...");
@@ -250,7 +251,7 @@ fn handle_eth_message(
         }
         Ok(Err(e)) => {
             print_to_terminal(
-                1,
+                0,
                 &format!("got eth subscription error ({e:?}), resubscribing"),
             );
             if e.id == 1 {
@@ -258,7 +259,7 @@ fn handle_eth_message(
             } else if e.id == 2 {
                 eth_provider.subscribe_loop(2, notes_filter.clone());
             } else if e.id == 3 {
-                listen_to_new_blocks();
+                listen_to_new_blocks_loop();
             }
         }
         Err(e) => {
@@ -644,16 +645,39 @@ pub fn bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
     }
 }
 
-fn listen_to_new_blocks() {
-    let eth_newheads_sub = eth::EthAction::SubscribeLogs {
-        sub_id: 3,
-        chain_id: CHAIN_ID,
-        kind: eth::SubscriptionKind::NewHeads,
-        params: eth::Params::Bool(false),
-    };
+fn listen_to_new_blocks_loop() {
+    loop {
+        let eth_newheads_sub = eth::EthAction::SubscribeLogs {
+            sub_id: 3,
+            chain_id: CHAIN_ID,
+            kind: eth::SubscriptionKind::NewHeads,
+            params: eth::Params::Bool(false),
+        };
 
-    Request::to(("our", "eth", "distro", "sys"))
-        .body(serde_json::to_vec(&eth_newheads_sub).unwrap())
-        .send()
-        .unwrap();
+        match Request::to(("our", "eth", "distro", "sys"))
+            .body(serde_json::to_vec(&eth_newheads_sub).unwrap())
+            .send_and_await_response(SUBSCRIPTION_TIMEOUT)
+        {
+            Ok(Ok(Message::Response { body, .. })) => {
+                match serde_json::from_slice::<eth::EthResponse>(&body) {
+                    Ok(eth::EthResponse::Ok) => {
+                        print_to_terminal(0, "successfully subscribed to newHeads");
+                        break;
+                    }
+                    Ok(eth::EthResponse::Err(e)) => {
+                        print_to_terminal(0, &format!("failed to subscribe to new blocks: {e:?}"));
+                    }
+                    _ => {
+                        print_to_terminal(0, "sailed to subscribe to new blocks, weird response.");
+                    }
+                }
+            }
+            _ => {
+                print_to_terminal(0, "Failed to subscribe to new blocks, no response.");
+            }
+        }
+
+        print_to_terminal(0, "retrying new block subscription in 5 seconds...");
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
 }
