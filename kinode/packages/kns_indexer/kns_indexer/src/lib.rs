@@ -129,7 +129,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     println!("subscribing to new logs...");
     eth_provider.subscribe_loop(1, mints_filter.clone());
     eth_provider.subscribe_loop(2, notes_filter.clone());
-    listen_to_new_blocks_loop(); // sub_id: 3
 
     // if block in state is < current_block, get logs from that part.
     println!("syncing old logs...");
@@ -220,6 +219,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     }
                 }
             }
+
+            if !pending_requests.is_empty() || !pending_notes.is_empty() {
+                print_to_terminal(0, "subscribing to newHeads...");
+                listen_to_new_blocks_loop(); // sub_id: 3
+            }
         }
     }
 }
@@ -269,6 +273,16 @@ fn handle_eth_message(
 
     handle_pending_requests(state, pending_requests)?;
     handle_pending_notes(state, pending_notes)?;
+
+    // if both pending_requests and pending_notes are empty, we kill the newHeads subscription
+    if pending_requests.is_empty() && pending_notes.is_empty() {
+        if let Err(e) = eth_provider.unsubscribe(3) {
+            print_to_terminal(0, &format!("failed to unsubscribe from newHeads: {e:?}"));
+        } else {
+            print_to_terminal(0, "unsubscribed from newHeads");
+        }
+    }
+
     Ok(())
 }
 
