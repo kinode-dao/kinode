@@ -1,5 +1,4 @@
 use crate::eth::*;
-use alloy::primitives::{B256, U256};
 use alloy::pubsub::RawSubscription;
 use alloy::rpc::types::eth::pubsub::SubscriptionResult;
 
@@ -389,18 +388,16 @@ async fn maintain_local_subscription(
         tokio::select! {
             _ = close_receiver.recv() => {
                 let alloy_sub_id = rx.local_id();
-                let alloy_sub_id = alloy_sub_id.into();
-                //let alloy_sub_id = rx.local_id().;
-                //let alloy_sub_id = alloy::primitives::U256::from(alloy_sub_id.clone());
-                //let alloy_sub_id: alloy::primitives::Uint<256, 4> = alloy::primitives::Uint::from(alloy_sub_id);
+                let alloy_sub_id = alloy_sub_id.clone().into();
                 let Some(chain_providers) = providers.get_mut(&chain_id) else {
                     return Ok(()); //?
                 };
-                for url in chain_providers.urls {
-                    let Some(pubsub) = url.pubsub else {
+                for url in chain_providers.urls.iter() {
+                    let Some(pubsub) = url.pubsub.as_ref() else {
                         continue;
                     };
-                    pubsub.unsubscribe(alloy_sub_id);
+                    let x = pubsub.unsubscribe(alloy_sub_id);
+                    println!("we just tried unsubscribing unsubscribed: {:?}", x);
                 }
                 return Ok(());
             },
