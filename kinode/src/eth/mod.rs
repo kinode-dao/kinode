@@ -515,7 +515,11 @@ async fn handle_eth_action(
                 EthAction::Request { .. } => "request",
             },
             km.source,
-            state.active_subscriptions.iter().map(|v| v.len()).collect::<Vec<_>>(),
+            state
+                .active_subscriptions
+                .iter()
+                .map(|v| v.len())
+                .collect::<Vec<_>>(),
         ),
     )
     .await;

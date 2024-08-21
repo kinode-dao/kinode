@@ -444,7 +444,10 @@ fn unsubscribe(rx: RawSubscription, chain_id: &u64, providers: &Providers) {
             continue;
         };
         let x = pubsub.unsubscribe(alloy_sub_id);
-        println!("we just tried unsubscribing {:?} unsubscribed: {:?}\r", alloy_sub_id, x);
+        println!(
+            "we just tried unsubscribing {:?} unsubscribed: {:?}\r",
+            alloy_sub_id, x
+        );
     }
 }
 
