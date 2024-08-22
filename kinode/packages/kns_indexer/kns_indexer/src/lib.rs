@@ -37,7 +37,7 @@ const KIMAP_FIRST_BLOCK: u64 = 1; // local
 
 const MAX_PENDING_ATTEMPTS: u8 = 3;
 const SUBSCRIPTION_TIMEOUT: u64 = 60;
-const NEW_BLOCK_TICK: u64 = 3000; // 3s
+const DELAY_MS: u64 = 1_000; // 1s
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -258,7 +258,7 @@ fn handle_eth_message(
     handle_pending_notes(state, pending_notes)?;
 
     if !pending_notes.is_empty() {
-        timer::set_timer(NEW_BLOCK_TICK, None);
+        timer::set_timer(DELAY_MS, None);
     }
 
     Ok(())

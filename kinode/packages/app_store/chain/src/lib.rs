@@ -45,7 +45,7 @@ const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK;
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1;
 
-const DELAY_MS: u64 = 5_000;
+const DELAY_MS: u64 = 1_000; // 1s
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
