@@ -92,6 +92,7 @@ pub async fn create_new_subscription(
                                         chain_id,
                                         &providers,
                                         close_receiver,
+                                        &print_tx,
                                     )
                                     .await;
                                     let Err(e) = r else {
@@ -383,11 +384,12 @@ async fn maintain_local_subscription(
     chain_id: u64,
     providers: &Providers,
     mut close_receiver: tokio::sync::mpsc::Receiver<bool>,
+    print_tx: &PrintSender,
 ) -> Result<(), EthSubError> {
     loop {
         tokio::select! {
             _ = close_receiver.recv() => {
-                unsubscribe(rx, &chain_id, providers).await;
+                unsubscribe(rx, &chain_id, providers, print_tx).await;
                 return Ok(());
             },
             value = rx.recv() => {
@@ -422,14 +424,19 @@ async fn maintain_local_subscription(
         .and_modify(|sub_map| {
             sub_map.remove(&sub_id);
         });
-    unsubscribe(rx, &chain_id, providers).await;
+    unsubscribe(rx, &chain_id, providers, print_tx).await;
     Err(EthSubError {
         id: sub_id,
         error: format!("subscription ({target}) closed unexpectedly"),
     })
 }
 
-async fn unsubscribe(rx: RawSubscription, chain_id: &u64, providers: &Providers) {
+async fn unsubscribe(
+    rx: RawSubscription,
+    chain_id: &u64,
+    providers: &Providers,
+    print_tx: &PrintSender,
+) {
     let alloy_sub_id = rx.local_id();
     let alloy_sub_id = alloy_sub_id.clone().into();
     let Some(chain_providers) = providers.get_mut(chain_id) else {
@@ -443,7 +450,7 @@ async fn unsubscribe(rx: RawSubscription, chain_id: &u64, providers: &Providers)
             let _ = print_tx
                 .send(Printout {
                     verbosity: 0,
-                    content: "unsubscribe from ETH RPC failed".to_string(),
+                    content: format!("unsubscribe from ETH RPC failed: {err:?}"),
                 })
                 .await;
         }
