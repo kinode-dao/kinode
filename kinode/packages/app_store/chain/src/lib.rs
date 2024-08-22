@@ -253,7 +253,6 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
     // the app store exclusively looks for ~metadata-uri postings: if one is
     // observed, we then *query* for ~metadata-hash to verify the content
     // at the URI.
-    //
 
     let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
     let is_our_package = &package_id.publisher() == &our.node();
@@ -263,7 +262,21 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
         let hash_note = format!("~metadata-hash.{}", note.parent_path);
 
         // owner can change which we don't track (yet?) so don't save, need to get when desired
-        let (tba, _owner, data) = state.kimap.get(&hash_note).map_err(|e| {
+        let (tba, _owner, data) = match state.kimap.get(&hash_note) {
+            Ok(gr) => Ok(gr),
+            Err(e) => match e {
+                eth::EthError::RpcError(_) => {
+                    // retry on RpcError after DELAY_MS sleep
+                    // sleep here rather than with, e.g., a message to
+                    //  `timer:distro:sys` so that events are processed in
+                    //  order of receipt
+                    std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
+                    state.kimap.get(&hash_note)
+                }
+                _ => Err(e),
+            },
+        }
+        .map_err(|e| {
             println!("Couldn't find {hash_note}: {e:?}");
             anyhow::anyhow!("metadata hash mismatch")
         })?;
