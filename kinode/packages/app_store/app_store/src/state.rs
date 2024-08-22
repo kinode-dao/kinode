@@ -1,5 +1,5 @@
 use crate::{utils, VFS_TIMEOUT};
-use kinode_process_lib::{kimap, println, vfs, PackageId};
+use kinode_process_lib::{kimap, vfs, PackageId};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 

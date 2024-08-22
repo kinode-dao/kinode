@@ -62,7 +62,7 @@ fn init(our: Address) {
     };
 
     match response {
-        DownloadResponses::Error(e) => {
+        DownloadResponses::Error(_e) => {
             println!("download: error");
         }
         DownloadResponses::Success => {

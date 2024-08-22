@@ -40,11 +40,6 @@ const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &str = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
 
-#[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK;
-#[cfg(feature = "simulation-mode")]
-const KIMAP_FIRST_BLOCK: u64 = 1;
-
 const DELAY_MS: u64 = 1_000; // 1s
 
 #[derive(Debug, Serialize, Deserialize)]
