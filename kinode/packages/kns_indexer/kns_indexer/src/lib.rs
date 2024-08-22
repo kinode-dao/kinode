@@ -440,21 +440,20 @@ fn handle_log(
             if !kimap::valid_note(&note) {
                 return Err(anyhow::anyhow!("skipping invalid note: {note}"));
             }
+            if let Some(block_number) = log.block_number {
+                print_to_terminal(
+                    0,
+                    &format!("adding note to pending_notes for block {block_number}"),
+                );
+                pending_notes
+                    .entry(block_number)
+                    .or_default()
+                    .push((decoded, 0));
 
-            if let Err(e) = handle_note(state, &decoded) {
-                match e.downcast_ref::<KnsError>() {
-                    None => print_to_terminal(1, &format!("note handling error: {e:?}")),
-                    Some(ee) => match ee {
-                        KnsError::NoParentError => {
-                            print_to_terminal(1, &format!("note awaiting mint: place in pending"));
-                            if let Some(block_number) = log.block_number {
-                                pending_notes
-                                    .entry(block_number)
-                                    .or_default()
-                                    .push((decoded, 0));
-                            }
-                        }
-                    },
+                if !state.listening_newblocks && !pending_notes.is_empty() {
+                    print_to_terminal(0, "subscribing to newHeads...");
+                    listen_to_new_blocks_loop(); // sub_id: 3
+                    state.listening_newblocks = true;
                 }
             }
         }
