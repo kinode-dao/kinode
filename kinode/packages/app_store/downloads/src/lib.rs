@@ -7,17 +7,13 @@ use crate::kinode::process::downloads::{
     DownloadResponses, Entry, FileEntry, HashMismatch, LocalDownloadRequest, RemoteDownloadRequest,
     RemoveFileRequest,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    io::Read,
-    str::FromStr,
-};
+use std::{collections::HashSet, io::Read, str::FromStr};
 
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
 use kinode_process_lib::{
     await_message, call_init, get_blob, get_state,
     http::client,
-    kernel_types as kt, print_to_terminal, println, set_state,
+    print_to_terminal, println, set_state,
     vfs::{self, Directory, File},
     Address, Message, PackageId, ProcessId, Request, Response,
 };
@@ -113,7 +109,7 @@ fn handle_message(
     state: &mut State,
     message: &Message,
     downloads: &mut Directory,
-    tmp: &mut Directory,
+    _tmp: &mut Directory,
     auto_updates: &mut HashSet<(PackageId, String)>,
 ) -> anyhow::Result<()> {
     if message.is_request() {

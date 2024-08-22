@@ -8,7 +8,7 @@ use crate::{
 
 use kinode_process_lib::{
     http::{self, server, Method, StatusCode},
-    println, Address, LazyLoadBlob, PackageId, Request,
+    Address, LazyLoadBlob, PackageId, Request,
 };
 use kinode_process_lib::{SendError, SendErrorKind};
 use serde_json::json;
@@ -224,13 +224,6 @@ fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<Packag
 
     let id = package_id.parse::<PackageId>()?;
     Ok(id)
-}
-
-fn get_version_hash(url_params: &HashMap<String, String>) -> anyhow::Result<String> {
-    let Some(version_hash) = url_params.get("version_hash") else {
-        return Err(anyhow::anyhow!("Missing version_hash"));
-    };
-    Ok(version_hash.to_string())
 }
 
 fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
