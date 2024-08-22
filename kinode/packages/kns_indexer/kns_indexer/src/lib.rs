@@ -4,7 +4,7 @@ use crate::kinode::process::kns_indexer::{
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
-    await_message, call_init, eth, kimap, net, print_to_terminal, println, Address, Message,
+    await_message, call_init, eth, kimap, net, print_to_terminal, println, timer, Address, Message,
     Request, Response,
 };
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,8 @@ const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // optimism
 const KIMAP_FIRST_BLOCK: u64 = 1; // local
 
 const MAX_PENDING_ATTEMPTS: u8 = 3;
+const SUBSCRIPTION_TIMEOUT: u64 = 60;
+const NEW_BLOCK_TICK: u64 = 3000; // 3s
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -113,7 +115,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
-    let eth_provider: eth::Provider = eth::Provider::new(state.chain_id, 60);
+    let eth_provider: eth::Provider = eth::Provider::new(state.chain_id, SUBSCRIPTION_TIMEOUT);
 
     print_to_terminal(
         1,
@@ -128,16 +130,17 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     println!("subscribing to new logs...");
     eth_provider.subscribe_loop(1, mints_filter.clone());
     eth_provider.subscribe_loop(2, notes_filter.clone());
-    listen_to_new_blocks(); // sub_id: 3
-
-    // if block in state is < current_block, get logs from that part.
-    println!("syncing old logs...");
 
     // if subscription results come back in the wrong order, we store them here
     // until the right block is reached.
-    let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
+
+    // pending_requests temporarily on timeout.
+    // very naughty.
+    // let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
     let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
 
+    // if block in state is < current_block, get logs from that part.
+    println!("syncing old logs...");
     fetch_and_process_logs(
         &eth_provider,
         &mut state,
@@ -156,7 +159,20 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         let Ok(message) = await_message() else {
             continue;
         };
+        // if true, time to go check current block number and handle pending notes.
+        let tick = message.is_local(&our) && message.source().process == "timer:distro:sys";
         let Message::Request { source, body, .. } = message else {
+            if tick {
+                handle_eth_message(
+                    &mut state,
+                    &eth_provider,
+                    tick,
+                    &mut pending_notes,
+                    &[],
+                    &mints_filter,
+                    &notes_filter,
+                )?;
+            }
             continue;
         };
 
@@ -164,7 +180,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             handle_eth_message(
                 &mut state,
                 &eth_provider,
-                &mut pending_requests,
+                tick,
                 &mut pending_notes,
                 &body,
                 &mints_filter,
@@ -178,45 +194,24 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     ref hash,
                     ref block,
                 }) => {
-                    // make sure we've seen the whole block
-                    if *block < state.last_block {
-                        Response::new()
-                            .body(serde_json::to_vec(&IndexerResponses::Name(
-                                state.names.get(hash).cloned(),
-                            ))?)
-                            .send()?;
-                    } else {
-                        pending_requests
-                            .entry(*block)
-                            .or_insert(vec![])
-                            .push(request);
-                    }
+                    // TODO: make sure we've seen the whole block, while actually
+                    // sending a response to the proper place.
+                    Response::new()
+                        .body(serde_json::to_vec(&IndexerResponses::Name(
+                            state.names.get(hash).cloned(),
+                        ))?)
+                        .send()?;
                 }
+
                 IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
-                    // make sure we've seen the whole block
-                    if block < state.last_block {
-                        Response::new()
-                            .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
-                                state.nodes.get(name).cloned(),
-                            ))?)
-                            .send()?;
-                    } else {
-                        pending_requests
-                            .entry(block)
-                            .or_insert(vec![])
-                            .push(request);
-                    }
+                    Response::new()
+                        .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
+                            state.nodes.get(name).cloned(),
+                        ))?)
+                        .send()?;
                 }
                 IndexerRequests::GetState(GetStateRequest { block }) => {
-                    // make sure we've seen the whole block
-                    if block < state.last_block {
-                        Response::new().body(serde_json::to_vec(&state)?).send()?;
-                    } else {
-                        pending_requests
-                            .entry(block)
-                            .or_insert(vec![])
-                            .push(request);
-                    }
+                    Response::new().body(serde_json::to_vec(&state)?).send()?;
                 }
             }
         }
@@ -226,7 +221,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 fn handle_eth_message(
     state: &mut State,
     eth_provider: &eth::Provider,
-    pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
+    tick: bool,
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
     body: &[u8],
     mints_filter: &eth::Filter,
@@ -238,85 +233,32 @@ fn handle_eth_message(
                 if let Err(e) = handle_log(state, pending_notes, &log) {
                     print_to_terminal(1, &format!("log-handling error! {e:?}"));
                 }
-            } else if let eth::SubscriptionResult::Header(header) = result {
-                if let Some(block) = header.number {
-                    // risque..
-                    // pending_requests/notes are kicked off with block numbers
-                    // that are ahead of state.last_block. can be risky if event subscriptions and newHeads
-                    // are completely out of sync.
-                    state.last_block = block;
-                }
             }
         }
         Ok(Err(e)) => {
             print_to_terminal(
-                1,
+                0,
                 &format!("got eth subscription error ({e:?}), resubscribing"),
             );
             if e.id == 1 {
                 eth_provider.subscribe_loop(1, mints_filter.clone());
             } else if e.id == 2 {
                 eth_provider.subscribe_loop(2, notes_filter.clone());
-            } else if e.id == 3 {
-                listen_to_new_blocks();
             }
         }
-        Err(e) => {
-            return Err(e.into());
+        _ => {}
+    }
+    if tick {
+        let block_number = eth_provider.get_block_number();
+        if let Ok(block_number) = block_number {
+            print_to_terminal(1, &format!("new block: {}", block_number));
+            state.last_block = block_number;
         }
     }
-
-    handle_pending_requests(state, pending_requests)?;
     handle_pending_notes(state, pending_notes)?;
-    Ok(())
-}
 
-fn handle_pending_requests(
-    state: &mut State,
-    pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
-) -> anyhow::Result<()> {
-    // check the pending_requests btreemap to see if there are any requests that
-    // can be handled now that the state block has been updated
-    if pending_requests.is_empty() {
-        return Ok(());
-    }
-    let mut blocks_to_remove = vec![];
-    for (block, requests) in pending_requests.iter() {
-        // make sure we've seen the whole block
-        if *block < state.last_block {
-            for request in requests.iter() {
-                match request {
-                    IndexerRequests::NamehashToName(NamehashToNameRequest { hash, .. }) => {
-                        Response::new()
-                            .body(serde_json::to_vec(&IndexerResponses::Name(
-                                state.names.get(hash).cloned(),
-                            ))?)
-                            .send()
-                            .unwrap();
-                    }
-                    IndexerRequests::NodeInfo(NodeInfoRequest { name, .. }) => {
-                        Response::new()
-                            .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
-                                state.nodes.get(name).cloned(),
-                            ))?)
-                            .send()
-                            .unwrap();
-                    }
-                    IndexerRequests::GetState(GetStateRequest { .. }) => {
-                        Response::new()
-                            .body(serde_json::to_vec(&state)?)
-                            .send()
-                            .unwrap();
-                    }
-                }
-            }
-            blocks_to_remove.push(*block);
-        } else {
-            break;
-        }
-    }
-    for block in blocks_to_remove.iter() {
-        pending_requests.remove(block);
+    if !pending_notes.is_empty() {
+        timer::set_timer(NEW_BLOCK_TICK, None);
     }
 
     Ok(())
@@ -458,6 +400,10 @@ fn handle_log(
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
     log: &eth::Log,
 ) -> anyhow::Result<()> {
+    if let Some(block) = log.block_number {
+        state.last_block = block;
+    }
+
     match log.topics()[0] {
         kimap::contract::Mint::SIGNATURE_HASH => {
             let decoded = kimap::contract::Mint::decode_log_data(log.data(), true).unwrap();
@@ -493,32 +439,21 @@ fn handle_log(
             if !kimap::valid_note(&note) {
                 return Err(anyhow::anyhow!("skipping invalid note: {note}"));
             }
-
-            if let Err(e) = handle_note(state, &decoded) {
-                match e.downcast_ref::<KnsError>() {
-                    None => print_to_terminal(1, &format!("note handling error: {e:?}")),
-                    Some(ee) => match ee {
-                        KnsError::NoParentError => {
-                            print_to_terminal(1, &format!("note awaiting mint: place in pending"));
-                            if let Some(block_number) = log.block_number {
-                                pending_notes
-                                    .entry(block_number)
-                                    .or_default()
-                                    .push((decoded, 0));
-                            }
-                        }
-                    },
-                }
+            if let Some(block_number) = log.block_number {
+                print_to_terminal(
+                    0,
+                    &format!("adding note to pending_notes for block {block_number}"),
+                );
+                pending_notes
+                    .entry(block_number)
+                    .or_default()
+                    .push((decoded, 0));
             }
         }
         _log => {
             return Ok(());
         }
     };
-
-    if let Some(block) = log.block_number {
-        state.last_block = block;
-    }
 
     Ok(())
 }
@@ -642,18 +577,4 @@ pub fn bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
         2 => Ok(u16::from_be_bytes([bytes[0], bytes[1]])),
         _ => Err(anyhow::anyhow!("Invalid byte length for port")),
     }
-}
-
-fn listen_to_new_blocks() {
-    let eth_newheads_sub = eth::EthAction::SubscribeLogs {
-        sub_id: 3,
-        chain_id: CHAIN_ID,
-        kind: eth::SubscriptionKind::NewHeads,
-        params: eth::Params::Bool(false),
-    };
-
-    Request::to(("our", "eth", "distro", "sys"))
-        .body(serde_json::to_vec(&eth_newheads_sub).unwrap())
-        .send()
-        .unwrap();
 }
