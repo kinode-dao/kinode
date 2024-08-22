@@ -236,10 +236,7 @@ fn handle_eth_message(
             }
         }
         Ok(Err(e)) => {
-            print_to_terminal(
-                0,
-                &format!("got eth subscription error ({e:?}), resubscribing"),
-            );
+            println!("got eth subscription error ({e:?}), resubscribing");
             if e.id == 1 {
                 eth_provider.subscribe_loop(1, mints_filter.clone());
             } else if e.id == 2 {
@@ -251,7 +248,7 @@ fn handle_eth_message(
     if tick {
         let block_number = eth_provider.get_block_number();
         if let Ok(block_number) = block_number {
-            print_to_terminal(1, &format!("new block: {}", block_number));
+            print_to_terminal(2, &format!("new block: {}", block_number));
             state.last_block = block_number;
         }
     }
@@ -279,10 +276,7 @@ fn handle_pending_notes(
             for (note, attempt) in notes.drain(..) {
                 if attempt >= MAX_PENDING_ATTEMPTS {
                     // skip notes that have exceeded max attempts
-                    print_to_terminal(
-                        1,
-                        &format!("dropping note from block {block} after {attempt} attempts"),
-                    );
+                    println!("dropping note from block {block} after {attempt} attempts");
                     continue;
                 }
                 if let Err(e) = handle_note(state, &note) {
@@ -441,7 +435,7 @@ fn handle_log(
             }
             if let Some(block_number) = log.block_number {
                 print_to_terminal(
-                    0,
+                    1,
                     &format!("adding note to pending_notes for block {block_number}"),
                 );
                 pending_notes
