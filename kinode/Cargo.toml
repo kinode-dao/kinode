@@ -26,7 +26,7 @@ simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.3"
-alloy = { git = "https://github.com/bitful-pannul/alloy.git", rev = "bd900b4", features = [
+alloy = { git = "https://github.com/kinode-dao/alloy.git", rev = "e672f3e", features = [
     "consensus",
     "contract",
     "json-rpc",
