@@ -131,9 +131,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     eth_provider.subscribe_loop(1, mints_filter.clone());
     eth_provider.subscribe_loop(2, notes_filter.clone());
 
-    // if block in state is < current_block, get logs from that part.
-    println!("syncing old logs...");
-
     // if subscription results come back in the wrong order, we store them here
     // until the right block is reached.
 
@@ -142,6 +139,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
     let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
 
+    // if block in state is < current_block, get logs from that part.
+    println!("syncing old logs...");
     fetch_and_process_logs(
         &eth_provider,
         &mut state,
@@ -449,12 +448,6 @@ fn handle_log(
                     .entry(block_number)
                     .or_default()
                     .push((decoded, 0));
-
-                if !state.listening_newblocks && !pending_notes.is_empty() {
-                    print_to_terminal(0, "subscribing to newHeads...");
-                    listen_to_new_blocks_loop(); // sub_id: 3
-                    state.listening_newblocks = true;
-                }
             }
         }
         _log => {

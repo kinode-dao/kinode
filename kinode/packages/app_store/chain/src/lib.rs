@@ -138,7 +138,6 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                     }
                 } else {
                     // attempt to resubscribe
-                    println!("attempting resub");
                     state
                         .kimap
                         .provider

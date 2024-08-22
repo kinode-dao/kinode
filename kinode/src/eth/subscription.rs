@@ -259,7 +259,6 @@ async fn build_subscription(
                 }
                 let alloy_sub_id = rx.local_id();
                 let alloy_sub_id: alloy::primitives::U256 = alloy_sub_id.clone().into();
-                println!("{target} making sub {:?}", alloy_sub_id);
                 return Ok(Ok((rx, chain_id)));
             }
             Err(rpc_error) => {
@@ -395,7 +394,6 @@ async fn maintain_local_subscription(
             },
             value = rx.recv() => {
                 let Ok(value) = value else {
-                    println!("sub failed: {:?}\r", value.unwrap_err());
                     break;
                 };
                 let result: SubscriptionResult = match serde_json::from_str(value.get()) {
@@ -444,10 +442,6 @@ fn unsubscribe(rx: RawSubscription, chain_id: &u64, providers: &Providers) {
             continue;
         };
         let x = pubsub.unsubscribe(alloy_sub_id);
-        println!(
-            "we just tried unsubscribing {:?} unsubscribed: {:?}\r",
-            alloy_sub_id, x
-        );
     }
 }
 

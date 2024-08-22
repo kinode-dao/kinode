@@ -111,7 +111,7 @@ dependencies = [
 [[package]]
 name = "alloy"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-consensus 0.2.1",
  "alloy-contract",
@@ -173,7 +173,7 @@ dependencies = [
 [[package]]
 name = "alloy-consensus"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-eips 0.2.1",
  "alloy-primitives",
@@ -186,7 +186,7 @@ dependencies = [
 [[package]]
 name = "alloy-contract"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-json-abi",
@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "alloy-eips"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -298,7 +298,7 @@ dependencies = [
 [[package]]
 name = "alloy-genesis"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-primitives",
  "alloy-serde 0.2.1",
@@ -345,7 +345,7 @@ dependencies = [
 [[package]]
 name = "alloy-json-rpc"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -378,7 +378,7 @@ dependencies = [
 [[package]]
 name = "alloy-network"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-consensus 0.2.1",
  "alloy-eips 0.2.1",
@@ -398,7 +398,7 @@ dependencies = [
 [[package]]
 name = "alloy-network-primitives"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-primitives",
  "alloy-serde 0.2.1",
@@ -462,7 +462,7 @@ dependencies = [
 [[package]]
 name = "alloy-provider"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-chains",
  "alloy-consensus 0.2.1",
@@ -497,7 +497,7 @@ dependencies = [
 [[package]]
 name = "alloy-pubsub"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-json-rpc 0.2.1",
  "alloy-primitives",
@@ -558,7 +558,7 @@ dependencies = [
 [[package]]
 name = "alloy-rpc-client"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-json-rpc 0.2.1",
  "alloy-primitives",
@@ -609,7 +609,7 @@ dependencies = [
 [[package]]
 name = "alloy-rpc-types"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-rpc-types-eth 0.2.1",
  "alloy-serde 0.2.1",
@@ -637,7 +637,7 @@ dependencies = [
 [[package]]
 name = "alloy-rpc-types-eth"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-consensus 0.2.1",
  "alloy-eips 0.2.1",
@@ -676,7 +676,7 @@ dependencies = [
 [[package]]
 name = "alloy-serde"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-primitives",
  "serde",
@@ -700,7 +700,7 @@ dependencies = [
 [[package]]
 name = "alloy-signer"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -713,7 +713,7 @@ dependencies = [
 [[package]]
 name = "alloy-signer-local"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-consensus 0.2.1",
  "alloy-network 0.2.1",
@@ -838,7 +838,7 @@ dependencies = [
 [[package]]
 name = "alloy-transport"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-json-rpc 0.2.1",
  "base64 0.22.1",
@@ -871,7 +871,7 @@ dependencies = [
 [[package]]
 name = "alloy-transport-http"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-json-rpc 0.2.1",
  "alloy-transport 0.2.1",
@@ -885,7 +885,7 @@ dependencies = [
 [[package]]
 name = "alloy-transport-ws"
 version = "0.2.1"
-source = "git+https://github.com/bitful-pannul/alloy.git?rev=c73e70d#c73e70dab6069246bbf20162fbe17c5b11d0c668"
+source = "git+https://github.com/bitful-pannul/alloy.git?rev=bd900b4#bd900b4564410c376c811629afcf8e269a0a0896"
 dependencies = [
  "alloy-pubsub",
  "alloy-transport 0.2.1",
@@ -3755,7 +3755,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "alloy 0.2.1",
  "kit 0.6.8",
