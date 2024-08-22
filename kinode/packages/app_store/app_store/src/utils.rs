@@ -11,10 +11,7 @@ use {
         get_blob, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId, ProcessId,
         Request,
     },
-    std::{
-        collections::{HashMap, HashSet},
-        str::FromStr,
-    },
+    std::collections::{HashMap, HashSet},
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId

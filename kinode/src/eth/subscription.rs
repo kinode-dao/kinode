@@ -70,40 +70,54 @@ pub async fn create_new_subscription(
                 let send_to_loop = send_to_loop.clone();
                 let print_tx = print_tx.clone();
                 let active_subscriptions = active_subscriptions.clone();
+                let providers = providers.clone();
+                let (close_sender, close_receiver) = tokio::sync::mpsc::channel(1);
                 match maybe_raw_sub {
-                    Ok(rx) => {
+                    Ok((rx, chain_id)) => {
                         subs.insert(
                             sub_id,
                             // this is a local sub, as in, we connect to the rpc endpoint
-                            ActiveSub::Local(tokio::spawn(async move {
-                                // await the subscription error and kill it if so
-                                let e = maintain_local_subscription(
-                                    &our,
-                                    sub_id,
-                                    rx,
-                                    &target,
-                                    &rsvp,
-                                    &send_to_loop,
-                                    &active_subscriptions,
-                                )
-                                .await;
-                                verbose_print(
-                                    &print_tx,
-                                    &format!("eth: closed local subscription due to error {e:?}"),
-                                )
-                                .await;
-                                kernel_message(
-                                    &our,
-                                    rand::random(),
-                                    target.clone(),
-                                    rsvp,
-                                    true,
-                                    None,
-                                    EthSubResult::Err(e),
-                                    &send_to_loop,
-                                )
-                                .await;
-                            })),
+                            ActiveSub::Local((
+                                close_sender,
+                                tokio::spawn(async move {
+                                    // await the subscription error and kill it if so
+                                    let r = maintain_local_subscription(
+                                        &our,
+                                        sub_id,
+                                        rx,
+                                        &target,
+                                        &rsvp,
+                                        &send_to_loop,
+                                        &active_subscriptions,
+                                        chain_id,
+                                        &providers,
+                                        close_receiver,
+                                        &print_tx,
+                                    )
+                                    .await;
+                                    let Err(e) = r else {
+                                        return;
+                                    };
+                                    verbose_print(
+                                        &print_tx,
+                                        &format!(
+                                            "eth: closed local subscription due to error {e:?}"
+                                        ),
+                                    )
+                                    .await;
+                                    kernel_message(
+                                        &our,
+                                        rand::random(),
+                                        target.clone(),
+                                        rsvp,
+                                        true,
+                                        None,
+                                        EthSubResult::Err(e),
+                                        &send_to_loop,
+                                    )
+                                    .await;
+                                }),
+                            )),
                         );
                     }
                     Err((provider_node, remote_sub_id)) => {
@@ -169,7 +183,7 @@ async fn build_subscription(
     providers: &Providers,
     response_channels: &ResponseChannels,
     print_tx: &PrintSender,
-) -> Result<Result<RawSubscription, (String, u64)>, EthError> {
+) -> Result<Result<(RawSubscription, u64), (String, u64)>, EthError> {
     let EthAction::SubscribeLogs {
         chain_id,
         kind,
@@ -244,7 +258,7 @@ async fn build_subscription(
                     )
                     .await;
                 }
-                return Ok(Ok(rx));
+                return Ok(Ok((rx, chain_id)));
             }
             Err(rpc_error) => {
                 verbose_print(
@@ -367,37 +381,79 @@ async fn maintain_local_subscription(
     rsvp: &Option<Address>,
     send_to_loop: &MessageSender,
     active_subscriptions: &ActiveSubscriptions,
-) -> EthSubError {
-    while let Ok(value) = rx.recv().await {
-        let result: SubscriptionResult = match serde_json::from_str(value.get()) {
-            Ok(res) => res,
-            Err(e) => {
-                return EthSubError {
-                    id: sub_id,
-                    error: e.to_string(),
-                }
-            }
-        };
-        kernel_message(
-            our,
-            rand::random(),
-            target.clone(),
-            rsvp.clone(),
-            true,
-            None,
-            EthSubResult::Ok(EthSub { id: sub_id, result }),
-            &send_to_loop,
-        )
-        .await;
+    chain_id: u64,
+    providers: &Providers,
+    mut close_receiver: tokio::sync::mpsc::Receiver<bool>,
+    print_tx: &PrintSender,
+) -> Result<(), EthSubError> {
+    loop {
+        tokio::select! {
+            _ = close_receiver.recv() => {
+                unsubscribe(rx, &chain_id, providers, print_tx).await;
+                return Ok(());
+            },
+            value = rx.recv() => {
+                let Ok(value) = value else {
+                    break;
+                };
+                let result: SubscriptionResult = match serde_json::from_str(value.get()) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        return Err(EthSubError {
+                            id: sub_id,
+                            error: e.to_string(),
+                        });
+                    }
+                };
+                kernel_message(
+                    our,
+                    rand::random(),
+                    target.clone(),
+                    rsvp.clone(),
+                    true,
+                    None,
+                    EthSubResult::Ok(EthSub { id: sub_id, result }),
+                    &send_to_loop,
+                )
+                .await;
+            },
+        }
     }
     active_subscriptions
         .entry(target.clone())
         .and_modify(|sub_map| {
             sub_map.remove(&sub_id);
         });
-    EthSubError {
+    unsubscribe(rx, &chain_id, providers, print_tx).await;
+    Err(EthSubError {
         id: sub_id,
-        error: "subscription closed unexpectedly".to_string(),
+        error: format!("subscription ({target}) closed unexpectedly"),
+    })
+}
+
+async fn unsubscribe(
+    rx: RawSubscription,
+    chain_id: &u64,
+    providers: &Providers,
+    print_tx: &PrintSender,
+) {
+    let alloy_sub_id = rx.local_id();
+    let alloy_sub_id = alloy_sub_id.clone().into();
+    let Some(chain_providers) = providers.get_mut(chain_id) else {
+        return; //?
+    };
+    for url in chain_providers.urls.iter() {
+        let Some(pubsub) = url.pubsub.as_ref() else {
+            continue;
+        };
+        if let Err(err) = pubsub.unsubscribe(alloy_sub_id) {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 0,
+                    content: format!("unsubscribe from ETH RPC failed: {err:?}"),
+                })
+                .await;
+        }
     }
 }
 

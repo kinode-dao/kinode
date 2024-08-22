@@ -150,11 +150,12 @@ export default function PublishPage() {
           address: tba as `0x${string}`,
           functionName: 'execute',
           args: [
-            KIMAP,
+            MULTICALL,
             BigInt(0),
             multicall,
             1
-          ]
+          ],
+          gas: BigInt(1000000),
         });
 
       } catch (error) {
