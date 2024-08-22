@@ -15,7 +15,7 @@ kit = { git = "https://github.com/kinode-dao/kit", tag = "v0.6.8" }
 tokio = "1.28"
 
 [dependencies]
-alloy = { git = "https://github.com/bitful-pannul/alloy.git", rev = "bd900b4", features = [
+alloy = { git = "https://github.com/kinode-dao/alloy.git", rev = "e672f3e", features = [
     "json-rpc",
     "rpc-types",
     "rpc-types-eth",
