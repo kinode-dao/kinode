@@ -401,6 +401,10 @@ fn handle_log(
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
     log: &eth::Log,
 ) -> anyhow::Result<()> {
+    if let Some(block) = log.block_number {
+        state.last_block = block;
+    }
+
     match log.topics()[0] {
         kimap::contract::Mint::SIGNATURE_HASH => {
             let decoded = kimap::contract::Mint::decode_log_data(log.data(), true).unwrap();
@@ -458,10 +462,6 @@ fn handle_log(
             return Ok(());
         }
     };
-
-    if let Some(block) = log.block_number {
-        state.last_block = block;
-    }
 
     Ok(())
 }

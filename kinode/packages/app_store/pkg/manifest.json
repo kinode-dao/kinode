@@ -49,7 +49,8 @@
             "kns_indexer:kns_indexer:sys",
             "vfs:distro:sys",
             "http_client:distro:sys",
-            "eth:distro:sys"
+            "eth:distro:sys",
+            "timer:distro:sys"
         ],
         "public": false
     },
