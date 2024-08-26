@@ -37,7 +37,11 @@ rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 
-# Build the runtime, along with a number of "distro" WASM modules.
+# Install NPM so we can build frontends for "distro" packages.
+# https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
+# If you want to skip this step, run cargo build with the environment variable SKIP_BUILD_FRONTEND=true
+
+# Build the runtime, along with a number of "distro" Wasm modules.
 # The compiled binary will be at `kinode/target/debug/kinode`
 # OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
 
@@ -121,22 +125,41 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
-- `m <address> '<json>'`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
-  - Example: `m our@eth:distro:sys "SetPublic" -a 5`
-  - the '-a' flag is used to expect a response with a given timeout
-  - `our` will always be interpolated by the system as your node's name
+### Built-in terminal scripts
+
+The terminal package contains a number of built-in scripts.
+Users may also call scripts from other packages in the terminal by entering the (full) ID of the script process followed by any arguments.
+In order to call a script with shorthand, a user may apply an *alias* using the terminal `alias` script, like so:
+```
+alias <shorthand> <full_name>
+```
+Subsequent use of the shorthand will then be interpolated as the process ID.
+
+A list of the terminal scripts included in this distro:
+
+- `alias <shorthand> <process_id>`: create an alias for a script.
+    - Example: `alias get_block get_block:kns_indexer:sys`
+    - note: all of these listed commands are just default aliases for terminal scripts.
+- `cat <vfs-file-path>`: print the contents of a file in the terminal.
+    - Example: `cat /terminal:sys/pkg/scripts.json`
+- `echo <text>`: print text to the terminal.
+    - Example: `echo foo`
+- `help <command>`: print the help message for a command. Leave the command blank to print the help message for all commands.
 - `hi <name> <string>`: send a text message to another node's command line.
-  - Example: `hi ben.os hello world`
+    - Example: `hi mothu.kino hello world`
+- `kfetch`: print system information a la neofetch. No arguments.
+- `kill <process-id>`: terminate a running process. This will bypass any restart behavior–use judiciously.
+    - Example: `kill chess:chess:sys`
+- `m <address> '<json>'`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
+    - Example: `m our@eth:distro:sys "SetPublic" -a 5`
+    - the '-a' flag is used to expect a response with a given timeout
+    - `our` will always be interpolated by the system as your node's name
+- `net_diagnostics`: print some useful networking diagnostic data.
+- `peer <name>`: print the peer's PKI info, if it exists.
+- `peers`: print the peers the node currently hold connections with.
 - `top <process_id>`: display kernel debugging info about a process. Leave the process ID blank to display info about all processes and get the total number of running processes.
-  - Example: `top net:distro:sys`
-  - Example: `top`
-- `cat <vfs-file-path>`: print the contents of a file in the terminal
-  - Example: `cat /terminal:sys/pkg/scripts.json`
-- `echo <text>`: print `text` to the terminal
-  - Example: `echo foo`
-- `net_diagnostics`: print some useful networking diagnostic data
-- `peers`: print the peers the node currently hold connections with
-- `peer <name>`: print the peer's PKI info, if it exists
+    - Example: `top net:distro:sys`
+    - Example: `top`
 
 ## Running as a Docker container
 

@@ -1,27 +1,68 @@
-import useHomepageStore from "../store/homepageStore"
+import useHomepageStore, { HomepageApp } from "../store/homepageStore"
 import Widget from "./Widget"
 import usePersistentStore from "../store/persistentStore"
-import { isMobileCheck } from "../utils/dimensions"
-import classNames from "classnames"
+import { DragDropContext, Draggable, DropResult, Droppable } from '@hello-pangea/dnd'
+import { useEffect, useState } from "react"
 
 const Widgets = () => {
   const { apps } = useHomepageStore()
-  const { widgetSettings } = usePersistentStore();
-  const isMobile = isMobileCheck()
+  const { widgetSettings, widgetOrder, setWidgetOrder } = usePersistentStore();
+  const [orderedWidgets, setOrderedWidgets] = useState<HomepageApp[]>([]);
 
-  return <div className={classNames("flex-center flex-wrap flex-grow self-stretch", {
-    'gap-2 m-2': isMobile,
-    'gap-4 m-4': !isMobile
-  })}>
-    {apps
-      .filter(app => app.widget)
-      .map(({ widget, package_name }, _i, _appsWithWidgets) => !widgetSettings[package_name]?.hide && <Widget
-        package_name={package_name}
-        widget={widget!}
-        forceLarge={_appsWithWidgets.length === 1}
-        key={package_name}
-      />)}
-  </div>
+  useEffect(() => {
+    const visibleWidgets = apps.filter((app) => app.widget && !widgetSettings[app.id]?.hide);
+    const orderedVisibleWidgets = visibleWidgets.sort((a, b) => {
+      return widgetOrder.indexOf(a.id) - widgetOrder.indexOf(b.id);
+    });
+    setOrderedWidgets(orderedVisibleWidgets);
+  }, [apps, widgetSettings, widgetOrder]);
+
+  const onDragEnd = (result: DropResult) => {
+    if (!result.destination) {
+      return;
+    }
+
+    const reorderedWidgets = Array.from(orderedWidgets);
+    const [reorderedItem] = reorderedWidgets.splice(result.source.index, 1);
+    reorderedWidgets.splice(result.destination.index, 0, reorderedItem);
+
+    const newWidgetOrder = reorderedWidgets.map(widget => widget.id);
+    setWidgetOrder(newWidgetOrder);
+    setOrderedWidgets(reorderedWidgets);
+  }
+
+  return (
+    <DragDropContext onDragEnd={onDragEnd}>
+      <Droppable droppableId="widgets">
+        {(provided, _snapshot) => (
+          <div
+            id="widgets"
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+          >
+            {orderedWidgets.map((app, index) => (
+              <Draggable key={app.id} draggableId={app.id} index={index}>
+                {(provided, _snapshot) => (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.draggableProps}
+                    {...provided.dragHandleProps}
+                  >
+                    <Widget
+                      id={app.id}
+                      label={app.label}
+                      widget={app.widget!}
+                    />
+                  </div>
+                )}
+              </Draggable>
+            ))}
+            {provided.placeholder}
+          </div>
+        )}
+      </Droppable>
+    </DragDropContext>
+  );
 }
 
 export default Widgets

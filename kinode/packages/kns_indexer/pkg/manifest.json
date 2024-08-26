@@ -7,11 +7,13 @@
         "request_capabilities": [
             "eth:distro:sys",
             "http_server:distro:sys",
-            "net:distro:sys"
+            "net:distro:sys",
+            "timer:distro:sys"
         ],
         "grant_capabilities": [
             "eth:distro:sys",
-            "http_server:distro:sys"
+            "http_server:distro:sys",
+            "timer:distro:sys"
         ],
         "public": false
     }

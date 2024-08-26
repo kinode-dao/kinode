@@ -1,11 +1,11 @@
 use crate::net::types::{
-    HandshakePayload, OnchainPKI, PKINames, Peers, PendingPassthroughs, PendingStream,
-    RoutingRequest, TCP_PROTOCOL, WS_PROTOCOL,
+    HandshakePayload, OnchainPKI, Peers, PendingPassthroughs, PendingStream, RoutingRequest,
+    TCP_PROTOCOL, WS_PROTOCOL,
 };
 use lib::types::core::{
-    Address, Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction,
-    NetworkErrorSender, NodeRouting, PrintSender, Printout, ProcessId, Request, Response,
-    SendError, SendErrorKind, WrappedSendError,
+    Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
+    NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
+    WrappedSendError,
 };
 use {
     futures::{SinkExt, StreamExt},
@@ -94,26 +94,21 @@ pub async fn create_passthrough(
     }
     // send their net:distro:sys process a message, notifying it to create a *matching*
     // passthrough request, which we can pair with this pending one.
-    target_peer.sender.send(KernelMessage {
-        id: rand::random(),
-        source: Address {
-            node: our.name.clone(),
-            process: ProcessId::new(Some("net"), "distro", "sys"),
-        },
-        target: Address {
-            node: target_id.name.clone(),
-            process: ProcessId::new(Some("net"), "distro", "sys"),
-        },
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(5),
-            body: rmp_serde::to_vec(&NetAction::ConnectionRequest(from_id.name.clone()))?,
-            metadata: None,
-            capabilities: vec![],
-        }),
-        lazy_load_blob: None,
-    })?;
+    target_peer.sender.send(
+        KernelMessage::builder()
+            .id(rand::random())
+            .source((our.name.as_str(), "net", "distro", "sys"))
+            .target((target_id.name.as_str(), "net", "distro", "sys"))
+            .message(Message::Request(Request {
+                inherit: false,
+                expects_response: Some(5),
+                body: rmp_serde::to_vec(&NetAction::ConnectionRequest(from_id.name.clone()))?,
+                metadata: None,
+                capabilities: vec![],
+            }))
+            .build()
+            .unwrap(),
+    )?;
     // we'll remove this either if the above message gets a negative response,
     // or if the target node connects to us with a matching passthrough.
     // TODO it is currently possible to have dangling passthroughs in the map
@@ -180,7 +175,7 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
     }
 }
 
-pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI, names: &PKINames) {
+pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI) {
     pki.insert(
         log.name.clone(),
         Identity {
@@ -196,7 +191,6 @@ pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI, names: &PKINames) {
             },
         },
     );
-    names.insert(log.node, log.name);
 }
 
 pub fn validate_signature(from: &str, signature: &[u8], message: &[u8], pki: &OnchainPKI) -> bool {
@@ -217,9 +211,10 @@ pub fn validate_routing_request(
     pki: &OnchainPKI,
 ) -> anyhow::Result<(Identity, Identity)> {
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
-    let from_id = pki
-        .get(&routing_request.source)
-        .ok_or(anyhow::anyhow!("unknown KNS name"))?;
+    let from_id = pki.get(&routing_request.source).ok_or(anyhow::anyhow!(
+        "unknown KNS name '{}'",
+        routing_request.source
+    ))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
         net_key_string_to_hex(&from_id.networking_key),
@@ -230,9 +225,10 @@ pub fn validate_routing_request(
             &routing_request.signature,
         )
         .map_err(|e| anyhow::anyhow!("their_networking_key.verify failed: {:?}", e))?;
-    let target_id = pki
-        .get(&routing_request.target)
-        .ok_or(anyhow::anyhow!("unknown KNS name"))?;
+    let target_id = pki.get(&routing_request.target).ok_or(anyhow::anyhow!(
+        "unknown KNS name '{}'",
+        routing_request.target
+    ))?;
     if routing_request.target == routing_request.source {
         return Err(anyhow::anyhow!("can't route to self"));
     }
@@ -335,46 +331,31 @@ pub async fn parse_hello_message(
         ),
     )
     .await;
-    kernel_message_tx
-        .send(KernelMessage {
-            id: km.id,
-            source: Address {
-                node: our.name.clone(),
-                process: ProcessId::new(Some("net"), "distro", "sys"),
+    KernelMessage::builder()
+        .id(km.id)
+        .source((our.name.as_str(), "net", "distro", "sys"))
+        .target(km.rsvp.as_ref().unwrap_or(&km.source).clone())
+        .message(Message::Response((
+            Response {
+                inherit: false,
+                body: "delivered".as_bytes().to_vec(),
+                metadata: None,
+                capabilities: vec![],
             },
-            target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
-            rsvp: None,
-            message: Message::Response((
-                Response {
-                    inherit: false,
-                    body: "delivered".as_bytes().to_vec(),
-                    metadata: None,
-                    capabilities: vec![],
-                },
-                None,
-            )),
-            lazy_load_blob: None,
-        })
-        .await
-        .expect("net: kernel_message_tx was dropped");
+            None,
+        )))
+        .build()
+        .unwrap()
+        .send(kernel_message_tx)
+        .await;
 }
 
 /// Create a terminal printout at verbosity level 0.
 pub async fn print_loud(print_tx: &PrintSender, content: &str) {
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 0,
-            content: content.into(),
-        })
-        .await;
+    Printout::new(0, content).send(print_tx).await;
 }
 
 /// Create a terminal printout at verbosity level 2.
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 2,
-            content: content.into(),
-        })
-        .await;
+    Printout::new(2, content).send(print_tx).await;
 }

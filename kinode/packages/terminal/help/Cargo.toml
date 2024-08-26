@@ -1,0 +1,17 @@
+[package]
+name = "help"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+simulation-mode = []
+
+[dependencies]
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.9.0" }
+wit-bindgen = "0.24.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "kinode:process"

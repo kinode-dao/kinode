@@ -2,25 +2,22 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key,
 };
-use alloy_primitives::keccak256;
+use alloy_primitives::{keccak256, B256};
 use anyhow::Result;
-use digest::generic_array::GenericArray;
-use hmac::Hmac;
-use jwt::SignWithKey;
 use lib::types::core::Keyfile;
 use ring::pbkdf2;
-use ring::pkcs8::Document;
 use ring::rand::SystemRandom;
 use ring::signature::{self, KeyPair};
-use ring::{digest as ring_digest, rand::SecureRandom};
-use sha2::Sha256;
-use std::num::NonZeroU32;
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    num::NonZeroU32,
+};
 
 type DiskKey = [u8; CREDENTIAL_LEN];
 
-pub const CREDENTIAL_LEN: usize = ring_digest::SHA256_OUTPUT_LEN;
+pub const CREDENTIAL_LEN: usize = ring::digest::SHA256_OUTPUT_LEN;
 pub const ITERATIONS: u32 = 1_000_000;
-pub static PBKDF2_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256; // TODO maybe look into Argon2
+pub static PBKDF2_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256;
 
 pub fn encode_keyfile(
     password_hash: String,
@@ -30,8 +27,9 @@ pub fn encode_keyfile(
     jwt: &[u8],
     file_key: &[u8],
 ) -> Vec<u8> {
-    let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
+    use ring::rand::SecureRandom;
 
+    let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
     let rng = SystemRandom::new();
     let mut salt = [0u8; 32]; // generate a unique salt
     rng.fill(&mut salt).unwrap();
@@ -55,7 +53,7 @@ pub fn encode_keyfile(
     let jwtciphertext: Vec<u8> = cipher.encrypt(&jwt_nonce, jwt).unwrap();
     let fileciphertext: Vec<u8> = cipher.encrypt(&file_nonce, file_key.as_ref()).unwrap();
 
-    bincode::serialize(&(
+    serde_json::to_vec(&(
         username.clone(),
         routers.clone(),
         salt.to_vec(),
@@ -67,9 +65,18 @@ pub fn encode_keyfile(
 }
 
 pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'static str> {
+    use generic_array::GenericArray;
+
     let (username, routers, salt, key_enc, jwt_enc, file_enc) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
-            .map_err(|_| "failed to deserialize keyfile")?;
+        serde_json::from_slice::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+            keyfile,
+        )
+        .or_else(|_| {
+            bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+                keyfile,
+            )
+        })
+        .map_err(|_| "failed to deserialize keyfile")?;
 
     // rederive disk key
     let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
@@ -117,8 +124,11 @@ pub fn generate_jwt(
     username: &str,
     subdomain: &Option<String>,
 ) -> Option<String> {
-    let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(jwt_secret_bytes).ok()?;
+    use hmac::Hmac;
+    use jwt::SignWithKey;
+    use sha2::Sha256;
 
+    let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(jwt_secret_bytes).ok()?;
     let subdomain = match subdomain.clone().unwrap_or_default().as_str() {
         "" => None,
         subdomain => Some(subdomain.to_string()),
@@ -135,29 +145,79 @@ pub fn generate_jwt(
 
 #[cfg(not(feature = "simulation-mode"))]
 pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>), &'static str> {
-    let (username, routers, _salt, _key_enc, _jwt_enc) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
-            .map_err(|_| "failed to deserialize keyfile")?;
+    let (username, routers, _salt, _key_enc, _jwt_enc, _file_enc) =
+        serde_json::from_slice::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+            keyfile,
+        )
+        .or_else(|_| {
+            bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+                keyfile,
+            )
+        })
+        .map_err(|_| "failed to deserialize keyfile")?;
 
     Ok((username, routers))
 }
 
-pub fn namehash(name: &str) -> Vec<u8> {
-    let mut node = vec![0u8; 32];
+/// kinohash
+pub fn namehash(name: &str) -> [u8; 32] {
+    let mut node = B256::default();
+
     if name.is_empty() {
-        return node;
+        return node.into();
     }
     let mut labels: Vec<&str> = name.split(".").collect();
     labels.reverse();
     for label in labels.iter() {
-        node.append(&mut keccak256(label.as_bytes()).to_vec());
-        node = keccak256(node.as_slice()).to_vec();
+        let label_hash = keccak256(label.as_bytes());
+        node = keccak256([node, label_hash].concat());
     }
-    node
+    node.into()
+}
+
+pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr> {
+    match bytes.len() {
+        4 => {
+            // IPv4 address
+            let ip_num = u32::from_be_bytes(bytes.try_into().unwrap());
+            Ok(IpAddr::V4(Ipv4Addr::from(ip_num)))
+        }
+        16 => {
+            // IPv6 address
+            let ip_num = u128::from_be_bytes(bytes.try_into().unwrap());
+            Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
+        }
+        _ => Err(anyhow::anyhow!("Invalid byte length for IP address")),
+    }
+}
+
+#[cfg(feature = "simulation-mode")]
+pub fn ip_to_bytes(ip: IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(ipv4) => {
+            let mut bytes = Vec::with_capacity(4);
+            bytes.extend_from_slice(&ipv4.octets());
+            bytes
+        }
+        IpAddr::V6(ipv6) => {
+            let mut bytes = Vec::with_capacity(16);
+            bytes.extend_from_slice(&ipv6.octets());
+            bytes
+        }
+    }
+}
+
+pub fn bytes_to_port(bytes: &[u8]) -> Result<u16, String> {
+    match bytes.len() {
+        2 => Ok(u16::from_be_bytes([bytes[0], bytes[1]])),
+        other => Err(format!("Invalid byte length for port: {other}")),
+    }
 }
 
 /// randomly generated key to encrypt file chunks,
 pub fn generate_file_key() -> Vec<u8> {
+    use ring::rand::SecureRandom;
+
     let mut key = [0u8; 32];
     let rng = SystemRandom::new();
     rng.fill(&mut key).unwrap();
@@ -166,7 +226,7 @@ pub fn generate_file_key() -> Vec<u8> {
 
 /// # Returns
 /// a pair of (public key (encoded as a hex string), serialized key as a pkcs8 Document)
-pub fn generate_networking_key() -> (String, Document) {
+pub fn generate_networking_key() -> (String, ring::pkcs8::Document) {
     let seed = SystemRandom::new();
     let doc = signature::Ed25519KeyPair::generate_pkcs8(&seed).unwrap();
     let keys = signature::Ed25519KeyPair::from_pkcs8(doc.as_ref()).unwrap();

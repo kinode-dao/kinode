@@ -1,0 +1,182 @@
+/* CSS Reset and Base Styles */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+    display: block;
+    max-width: 100%;
+}
+
+input,
+button,
+textarea,
+select {
+    font-family: var(--font-family-main);
+}
+
+/* Variables */
+:root {
+    color-scheme: light dark;
+    --orange: #FF4F00;
+    --dark-orange: #cc4100;
+    --blue: #2B88D9;
+    --off-white: #fdfdfd;
+    --white: #ffffff;
+    --off-black: #0C090A;
+    --black: #000000;
+    --tan: #fdf6e3;
+    --ansi-red: #dc322f;
+    --maroon: #4f0000;
+    --gray: #657b83;
+    --tasteful-dark: #1f1f1f;
+
+    --font-family-main: 'Kode Mono', monospace;
+}
+
+/* Typography */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+label,
+li,
+span {
+    font-family: var(--font-family-main);
+    color: light-dark(var(--off-black), var(--off-white));
+}
+
+p,
+li {
+    font-size: 0.8em;
+}
+
+h1 {
+    font-size: 2em;
+}
+
+h2 {
+    font-size: 1.5em;
+}
+
+h3 {
+    font-size: 1.3em;
+}
+
+h4 {
+    font-size: 1.2em;
+}
+
+h5 {
+    font-size: 1.1em;
+}
+
+h6 {
+    font-size: 1em;
+}
+
+a {
+    font-family: var(--font-family-main);
+    color: light-dark(var(--blue), var(--orange));
+    text-decoration: none;
+}
+
+a:hover {
+    color: light-dark(var(--orange), var(--dark-orange));
+    text-decoration: underline wavy;
+}
+
+/* Layout */
+body {
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    background-color: light-dark(var(--tan), var(--tasteful-dark));
+    background-image: radial-gradient(circle at -1% -47%, #4700002b 7%, transparent 58.05%), radial-gradient(circle at 81% 210%, #d6430550 17%, transparent 77.05%);
+    min-width: 100vw;
+    min-height: 100vh;
+}
+
+/* Sections */
+section {
+    background-color: light-dark(var(--white), var(--maroon));
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    padding: 2rem;
+    margin-bottom: 2rem;
+    transition: transform 0.3s ease;
+}
+
+section:hover {
+    transform: translateY(-5px);
+}
+
+/* Forms */
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+form label {
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+}
+
+form input {
+    padding: 0.75rem;
+    border: 2px solid var(--orange);
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+form input:focus {
+    outline: none;
+    border-color: var(--dark-orange);
+    box-shadow: 0 0 0 3px rgba(255, 79, 0, 0.2);
+}
+
+/* Button styles */
+button {
+    display: inline-block;
+    padding: 10px 20px;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+    text-decoration: none;
+    background-color: var(--orange);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: var(--dark-orange);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+button.secondary {
+    background-color: light-dark(var(--off-white), var(--off-black));
+    color: var(--orange);
+    border: 2px solid var(--orange);
+}
+
+button.secondary:hover {
+    background-color: var(--orange);
+    color: white;
+}

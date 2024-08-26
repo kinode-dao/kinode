@@ -15,3 +15,9 @@ wit/
 .env
 kinode/src/bootstrapped_processes.rs
 kinode/packages/**/wasi_snapshot_preview1.wasm
+
+kinode/packages/app_store/pkg/ui/*
+kinode/packages/homepage/pkg/ui/*
+kinode/src/register-ui/build/
+kinode/src/register-ui/dist/
+kinode/packages/docs/pkg/ui

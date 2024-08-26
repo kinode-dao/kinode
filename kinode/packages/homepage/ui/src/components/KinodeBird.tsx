@@ -1,6 +1,6 @@
-const KinodeBird = () => <svg className='mt-2' width="67.5" height="48" viewBox="0 0 122 81" fill="none"
+const KinodeBird = () => <svg className='kino-bird' width="67.5" height="48" viewBox="0 0 122 81" fill="none"
   xmlns="http://www.w3.org/2000/svg">
-  <g clip-path="url(#clip0_6_651)">
+  <g clipPath="url(#clip0_6_651)">
     <path
       d="M89.3665 8.06803L121.5 0.35155L66.5111 0.320312L63.7089 7.69502L0.5 5.7032L54.0253 32.9925L36.1529 80.3203L89.3665 8.06803Z"
       fill="#FFF5D9" />

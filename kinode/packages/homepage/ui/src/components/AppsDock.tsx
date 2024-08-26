@@ -1,81 +1,53 @@
 import useHomepageStore, { HomepageApp } from "../store/homepageStore"
-import AppDisplay from "./AppDisplay"
 import usePersistentStore from "../store/persistentStore"
+import AppDisplay from "./AppDisplay"
 import { useEffect, useState } from "react"
-import { isMobileCheck } from "../utils/dimensions"
-import classNames from "classnames"
-import { DragDropContext, Draggable, DropResult, Droppable } from 'react-beautiful-dnd'
-import { getFetchUrl } from "../utils/fetch"
+import { DragDropContext, Draggable, DropResult, Droppable } from '@hello-pangea/dnd'
 
 const AppsDock: React.FC = () => {
   const { apps } = useHomepageStore()
-  const { favoriteApps, setFavoriteApps } = usePersistentStore()
+  const { appOrder, setAppOrder } = usePersistentStore()
   const [dockedApps, setDockedApps] = useState<HomepageApp[]>([])
 
   useEffect(() => {
-    let final: HomepageApp[] = []
-    const dockedApps = Object.entries(favoriteApps)
-      .filter(([_, { favorite }]) => favorite)
-      .map(([name, { order }]) => ({ ...apps.find(a => a.package_name === name), order }))
-      .filter(a => a) as HomepageApp[]
-    const orderedApps = dockedApps.filter(a => a.order !== undefined && a.order !== null)
-    const unorderedApps = dockedApps.filter(a => a.order === undefined || a.order === null)
+    // Sort apps based on persisted order
+    const orderedApps = apps.filter(app => app.favorite).sort((a, b) => {
+      return appOrder.indexOf(a.id) - appOrder.indexOf(b.id);
+    });
+    setDockedApps(orderedApps);
 
-    for (let i = 0; i < orderedApps.length; i++) {
-      final[orderedApps[i].order!] = orderedApps[i]
-    }
-
-    final = final.filter(a => a)
-    unorderedApps.forEach(a => final.push(a))
-    // console.log({ final })
-    setDockedApps(final)
-  }, [apps, favoriteApps])
-
-  const isMobile = isMobileCheck()
-
-  // a little function to help us with reordering the result
-  const reorder = (list: HomepageApp[], startIndex: number, endIndex: number) => {
-    const result = Array.from(list);
-    const [removed] = result.splice(startIndex, 1);
-    result.splice(endIndex, 0, removed);
-
-    return result;
-  };
-
-  const onDragEnd = (result: DropResult) => {
-    // dropped outside the list
-    if (!result.destination) {
-      return;
-    }
-
-    const items = reorder(
-      dockedApps,
-      result.source.index,
-      result.destination.index
-    );
-
-    const packageNames = items.map(app => app.package_name);
-
-    const faves = { ...favoriteApps }
-
-    packageNames.forEach((name, i) => {
-      // console.log('setting order for', name, 'to', i)
-      faves[name].order = i
-    })
-
-    setFavoriteApps(faves)
-
-    console.log({ favoriteApps })
-
-    fetch(getFetchUrl('/order'), {
+    // Sync the order with the backend
+    fetch('/order', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       credentials: 'include',
-      body: JSON.stringify(packageNames)
-    })
-      .catch(e => console.error(e));
+      body: JSON.stringify(orderedApps.map(app => [app.id, appOrder.indexOf(app.id)]))
+    });
+  }, [apps, appOrder])
+
+  const onDragEnd = (result: DropResult) => {
+    if (!result.destination) {
+      return;
+    }
+
+    const reorderedApps = Array.from(dockedApps);
+    const [reorderedItem] = reorderedApps.splice(result.source.index, 1);
+    reorderedApps.splice(result.destination.index, 0, reorderedItem);
+
+    const newAppOrder = reorderedApps.map(app => app.id);
+    setAppOrder(newAppOrder);
+    setDockedApps(reorderedApps);
+
+    fetch('/order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify(reorderedApps.map((app, index) => [app.id, index]))
+    });
   }
 
   return <DragDropContext onDragEnd={onDragEnd}>
@@ -84,33 +56,23 @@ const AppsDock: React.FC = () => {
         <div
           ref={provided.innerRef}
           {...provided.droppableProps}
-          className={classNames('flex-center flex-wrap border border-orange bg-orange/25 p-2 rounded !rounded-xl', {
-            'gap-8': !isMobile && dockedApps.length > 0,
-            'gap-4': !isMobile && dockedApps.length === 0,
-            'mb-4': !isMobile,
-            'gap-4 mb-2': isMobile,
-            'flex-col': dockedApps.length === 0
-          })}
         >
-          {/*dockedApps.length === 0
-            ? <AppDisplay app={apps.find(app => app.package_name === 'app_store')!} />
-            : */ dockedApps.map(app => <Draggable
-            key={app.package_name}
-            draggableId={app.package_name}
-            index={dockedApps.indexOf(app)}
+          {dockedApps.map((app, index) => <Draggable
+            key={app.id}
+            draggableId={app.id}
+            index={index}
           >
             {(provided, _snapshot) => (
               <div
                 ref={provided.innerRef}
                 {...provided.draggableProps}
                 {...provided.dragHandleProps}
+                className="docked-app"
               >
                 <AppDisplay app={app} />
               </div>
             )}
           </Draggable>)}
-          {provided.placeholder}
-          {dockedApps.length === 0 && <div>Favorite an app to pin it to your dock.</div>}
         </div>
       )}
     </Droppable>

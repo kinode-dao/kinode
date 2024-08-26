@@ -1,29 +1,19 @@
 import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import KinodeHeader from "../components/KnsHeader"
-import { OPTIMISM_OPT_HEX } from "../constants/chainId";
-import { KinodeTitle } from "../components/KinodeTitle";
 
 type OsHomeProps = {
-    openConnect: () => void
-    provider: any
     knsName: string
-    closeConnect: () => void
     nodeChainId: string
 }
 
-function KinodeHome({ openConnect, knsName, closeConnect, nodeChainId }: OsHomeProps) {
+function KinodeHome({ knsName }: OsHomeProps) {
     const navigate = useNavigate()
-    const inviteRedir = () => navigate('/claim-invite')
-    const registerEthRedir = () => navigate('/register-eth-name')
-    const registerRedir = () => navigate('/register-name')
+    const registerRedir = () => navigate('/commit-os-name')
     const resetRedir = () => navigate('/reset')
     const importKeyfileRedir = () => navigate('/import-keyfile')
     const loginRedir = () => navigate('/login')
-
+    const customRegisterRedir = () => navigate('/custom-register')
     const previouslyBooted = Boolean(knsName)
-
-    const hasNetwork = Boolean(window.ethereum)
 
     useEffect(() => {
         document.title = "Welcome | Kinode"
@@ -31,56 +21,39 @@ function KinodeHome({ openConnect, knsName, closeConnect, nodeChainId }: OsHomeP
 
     return (
         <>
-            <KinodeHeader header={<KinodeTitle prefix="Welcome to" showLogo />} openConnect={openConnect} closeConnect={closeConnect} hideConnect nodeChainId={nodeChainId} nameLogo />
-            <div className="flex flex-col max-w-[460px] w-full gap-4 mt-8">
-                {previouslyBooted ? (
-                    <button onClick={loginRedir}> Login </button>
-                ) : (
-                    <>
-                        {!hasNetwork && <h4 className="self-start mx-auto">
-                            You must install a Web3 wallet extension like Metamask in order to register or reset a username.
-                        </h4>}
-                        {hasNetwork && <h4 className="self-start mx-auto">
-                            New here? Register a username to get started
-                        </h4>}
-                        <button
-                            disabled={!hasNetwork}
-                            onClick={registerRedir}
-                        >
-                            Register Kinode Name
-                        </button>
-                        <h4 className="self-start mx-auto">
-                            Other options
-                        </h4>
-                        {nodeChainId !== OPTIMISM_OPT_HEX && <button
-                            disabled={!hasNetwork}
-                            onClick={registerEthRedir}
-                            className="alt"
-                        >
-                            Register ENS Name
-                        </button>}
-                        <button
-                            disabled={!hasNetwork}
-                            onClick={inviteRedir}
-                            className="alt"
-                        >
-                            Claim Kinode Invite
-                        </button>
-                        <button
-                            disabled={!hasNetwork}
-                            onClick={resetRedir}
-                            className="alt"
-                        >
-                            Reset Kinode Name
-                        </button>
-                        <button
-                            onClick={importKeyfileRedir}
-                            className="alt"
-                        >
-                            Import Keyfile
-                        </button>
-                    </>
-                )}
+            <div className="container fade-in">
+                <div className="section">
+                    <div className="content">
+                        {previouslyBooted ? (
+                            <div className="text-center">
+                                <h2 className="mb-2">Welcome back!</h2>
+                                <button onClick={loginRedir} className="button">Log in</button>
+                            </div>
+                        ) : (
+                            <>
+                                <h2 className="text-center mb-2">Welcome to Kinode</h2>
+                                <h4 className="text-center mb-2">New here? Register a name to get started</h4>
+                                <div className="button-group">
+                                    <button onClick={registerRedir} className="button">
+                                        Register .os Name
+                                    </button>
+                                </div>
+                                <h4 className="text-center mt-2 mb-2">Other options</h4>
+                                <div className="button-group">
+                                    <button onClick={importKeyfileRedir} className="button secondary">
+                                        Import Keyfile
+                                    </button>
+                                    <button onClick={resetRedir} className="button secondary">
+                                        Reset Existing Name
+                                    </button>
+                                    <button onClick={customRegisterRedir} className="button secondary">
+                                        Register Non-.os Name (Advanced)
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
             </div>
         </>
     )

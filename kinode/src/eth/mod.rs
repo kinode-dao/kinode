@@ -37,14 +37,14 @@ struct ActiveProviders {
     pub nodes: Vec<NodeProvider>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct UrlProvider {
     pub trusted: bool,
     pub url: String,
     pub pubsub: Option<RootProvider<PubSubFrontend>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct NodeProvider {
     /// NOT CURRENTLY USED
     pub trusted: bool,
@@ -100,7 +100,7 @@ type ResponseChannels = Arc<DashMap<u64, ProcessMessageSender>>;
 
 #[derive(Debug)]
 enum ActiveSub {
-    Local(JoinHandle<()>),
+    Local((tokio::sync::mpsc::Sender<bool>, JoinHandle<()>)),
     Remote {
         provider_node: String,
         handle: JoinHandle<()>,
@@ -111,8 +111,9 @@ enum ActiveSub {
 impl ActiveSub {
     async fn close(&self, sub_id: u64, state: &ModuleState) {
         match self {
-            ActiveSub::Local(handle) => {
-                handle.abort();
+            ActiveSub::Local((close_sender, _handle)) => {
+                close_sender.send(true).await.unwrap();
+                //handle.abort();
             }
             ActiveSub::Remote {
                 provider_node,
@@ -157,6 +158,38 @@ struct ModuleState {
     send_to_loop: MessageSender,
     /// our sender for terminal prints
     print_tx: PrintSender,
+}
+
+/// TODO replace with alloy abstraction
+fn valid_method(method: &str) -> Option<&'static str> {
+    match method {
+        "eth_getBalance" => Some("eth_getBalance"),
+        "eth_sendRawTransaction" => Some("eth_sendRawTransaction"),
+        "eth_call" => Some("eth_call"),
+        "eth_chainId" => Some("eth_chainId"),
+        "eth_getTransactionReceipt" => Some("eth_getTransactionReceipt"),
+        "eth_getTransactionCount" => Some("eth_getTransactionCount"),
+        "eth_estimateGas" => Some("eth_estimateGas"),
+        "eth_blockNumber" => Some("eth_blockNumber"),
+        "eth_getBlockByHash" => Some("eth_getBlockByHash"),
+        "eth_getBlockByNumber" => Some("eth_getBlockByNumber"),
+        "eth_getTransactionByHash" => Some("eth_getTransactionByHash"),
+        "eth_getCode" => Some("eth_getCode"),
+        "eth_getStorageAt" => Some("eth_getStorageAt"),
+        "eth_gasPrice" => Some("eth_gasPrice"),
+        "eth_accounts" => Some("eth_accounts"),
+        "eth_hashrate" => Some("eth_hashrate"),
+        "eth_getLogs" => Some("eth_getLogs"),
+        "eth_subscribe" => Some("eth_subscribe"),
+        "eth_unsubscribe" => Some("eth_unsubscribe"),
+        // "eth_mining" => Some("eth_mining"),
+        // "net_version" => Some("net_version"),
+        // "net_peerCount" => Some("net_peerCount"),
+        // "net_listening" => Some("net_listening"),
+        // "web3_clientVersion" => Some("web3_clientVersion"),
+        // "web3_sha3" => Some("web3_sha3"),
+        _ => None,
+    }
 }
 
 /// The ETH provider runtime process is responsible for connecting to one or more ETH RPC providers
@@ -322,6 +355,7 @@ async fn handle_message(
                 )
                 .await;
             }
+            Ok(())
         }
         Message::Request(req) => {
             let timeout = req.expects_response.unwrap_or(60);
@@ -330,7 +364,7 @@ async fn handle_message(
             };
             match req {
                 IncomingReq::EthAction(eth_action) => {
-                    return handle_eth_action(state, km, timeout, eth_action).await;
+                    handle_eth_action(state, km, timeout, eth_action).await
                 }
                 IncomingReq::EthConfigAction(eth_config_action) => {
                     kernel_message(
@@ -344,29 +378,47 @@ async fn handle_message(
                         &state.send_to_loop,
                     )
                     .await;
+                    Ok(())
                 }
                 IncomingReq::EthSubResult(eth_sub_result) => {
                     // forward this to rsvp, if we have the sub id in our active subs
                     let Some(rsvp) = km.rsvp else {
+                        verbose_print(
+                            &state.print_tx,
+                            "eth: got eth_sub_result with no rsvp, ignoring",
+                        )
+                        .await;
                         return Ok(()); // no rsvp, no need to forward
                     };
                     let sub_id = match eth_sub_result {
                         Ok(EthSub { id, .. }) => id,
                         Err(EthSubError { id, .. }) => id,
                     };
-                    if let Some(sub_map) = state.active_subscriptions.get(&rsvp) {
-                        if let Some(ActiveSub::Remote {
-                            provider_node,
-                            sender,
-                            ..
-                        }) = sub_map.get(&sub_id)
-                        {
-                            if provider_node == &km.source.node {
-                                if let Ok(()) = sender.send(eth_sub_result).await {
-                                    // successfully sent a subscription update from a
-                                    // remote provider to one of our processes
-                                    return Ok(());
+                    if let Some(mut sub_map) = state.active_subscriptions.get_mut(&rsvp) {
+                        if let Some(sub) = sub_map.get(&sub_id) {
+                            if let ActiveSub::Remote {
+                                provider_node,
+                                sender,
+                                ..
+                            } = sub
+                            {
+                                if provider_node == &km.source.node {
+                                    if let Ok(()) = sender.send(eth_sub_result).await {
+                                        // successfully sent a subscription update from a
+                                        // remote provider to one of our processes
+                                        return Ok(());
+                                    }
                                 }
+                                // failed to send subscription update to process,
+                                // unsubscribe from provider and close
+                                verbose_print(
+                                    &state.print_tx,
+                                    "eth: got eth_sub_result but provider node did not match or local sub was already closed",
+                                )
+                                .await;
+                                sub.close(sub_id, state).await;
+                                sub_map.remove(&sub_id);
+                                return Ok(());
                             }
                         }
                     }
@@ -374,13 +426,16 @@ async fn handle_message(
                     // so they can stop sending us updates
                     verbose_print(
                         &state.print_tx,
-                        "eth: got eth_sub_result but no matching sub found, unsubscribing",
+                        &format!(
+                            "eth: got eth_sub_result but no matching sub {} found, unsubscribing",
+                            sub_id
+                        ),
                     )
                     .await;
                     kernel_message(
-                        &state.our.clone(),
+                        &state.our,
                         km.id,
-                        km.source.clone(),
+                        km.source,
                         None,
                         true,
                         None,
@@ -388,6 +443,7 @@ async fn handle_message(
                         &state.send_to_loop,
                     )
                     .await;
+                    Ok(())
                 }
                 IncomingReq::SubKeepalive(sub_id) => {
                     // source expects that we have a local sub for them with this id
@@ -420,11 +476,11 @@ async fn handle_message(
                         &state.send_to_loop,
                     )
                     .await;
+                    Ok(())
                 }
             }
         }
     }
-    Ok(())
 }
 
 async fn handle_eth_action(
@@ -451,13 +507,19 @@ async fn handle_eth_action(
     verbose_print(
         &state.print_tx,
         &format!(
-            "eth: handling {} from {}",
+            "eth: handling {} from {}; active_subs len: {:?}",
+            //"eth: handling {} from {}",
             match &eth_action {
                 EthAction::SubscribeLogs { .. } => "subscribe",
                 EthAction::UnsubscribeLogs(_) => "unsubscribe",
                 EthAction::Request { .. } => "request",
             },
-            km.source
+            km.source,
+            state
+                .active_subscriptions
+                .iter()
+                .map(|v| v.len())
+                .collect::<Vec<_>>(),
         ),
     )
     .await;
@@ -479,12 +541,32 @@ async fn handle_eth_action(
             .await;
         }
         EthAction::UnsubscribeLogs(sub_id) => {
-            let mut sub_map = state
-                .active_subscriptions
-                .entry(km.source.clone())
-                .or_insert(HashMap::new());
+            let Some(mut sub_map) = state.active_subscriptions.get_mut(&km.source) else {
+                verbose_print(
+                    &state.print_tx,
+                    &format!(
+                        "eth: got unsubscribe from {} but no subscription found",
+                        km.source
+                    ),
+                )
+                .await;
+                error_message(
+                    &state.our,
+                    km.id,
+                    km.source,
+                    EthError::MalformedRequest,
+                    &state.send_to_loop,
+                )
+                .await;
+                return Ok(());
+            };
             if let Some(sub) = sub_map.remove(&sub_id) {
                 sub.close(sub_id, state).await;
+                verbose_print(
+                    &state.print_tx,
+                    &format!("eth: closed subscription {} for {}", sub_id, km.source.node),
+                )
+                .await;
                 kernel_message(
                     &state.our,
                     km.id,
@@ -499,7 +581,10 @@ async fn handle_eth_action(
             } else {
                 verbose_print(
                     &state.print_tx,
-                    "eth: got unsubscribe but no matching subscription found",
+                    &format!(
+                        "eth: got unsubscribe from {} but no subscription {} found",
+                        km.source, sub_id
+                    ),
                 )
                 .await;
                 error_message(
@@ -578,11 +663,15 @@ async fn fulfill_request(
     else {
         return EthResponse::Err(EthError::PermissionDenied); // will never hit
     };
-    let Some(method) = to_static_str(&method) else {
+    let Some(method) = valid_method(&method) else {
         return EthResponse::Err(EthError::InvalidMethod(method.to_string()));
     };
-    let Some(mut aps) = providers.get_mut(&chain_id) else {
-        return EthResponse::Err(EthError::NoRpcForChain);
+    let mut urls = {
+        // in code block to drop providers lock asap to avoid deadlock
+        let Some(aps) = providers.get(&chain_id) else {
+            return EthResponse::Err(EthError::NoRpcForChain);
+        };
+        aps.urls.clone()
     };
 
     // first, try any url providers we have for this chain,
@@ -590,7 +679,7 @@ async fn fulfill_request(
     // finally, if no provider works, return an error.
 
     // bump the successful provider to the front of the list for future requests
-    for (index, url_provider) in aps.urls.iter_mut().enumerate() {
+    for url_provider in urls.iter_mut() {
         let pubsub = match &url_provider.pubsub {
             Some(pubsub) => pubsub,
             None => {
@@ -613,8 +702,28 @@ async fn fulfill_request(
         };
         match pubsub.raw_request(method.into(), params.clone()).await {
             Ok(value) => {
-                let successful_provider = aps.urls.remove(index);
-                aps.urls.insert(0, successful_provider);
+                let mut is_replacement_successful = true;
+                providers.entry(chain_id).and_modify(|aps| {
+                    let Some(index) = find_index(
+                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                        &url_provider.url,
+                    ) else {
+                        is_replacement_successful = false;
+                        return ();
+                    };
+                    let old_provider = aps.urls.remove(index);
+                    match old_provider.pubsub {
+                        None => aps.urls.insert(0, url_provider.clone()),
+                        Some(_) => aps.urls.insert(0, old_provider),
+                    }
+                });
+                if !is_replacement_successful {
+                    verbose_print(
+                        print_tx,
+                        &format!("eth: unexpectedly couldn't find provider to be modified"),
+                    )
+                    .await;
+                }
                 return EthResponse::Response { value };
             }
             Err(rpc_error) => {
@@ -631,11 +740,38 @@ async fn fulfill_request(
                     return EthResponse::Err(EthError::RpcError(err));
                 }
                 // this provider failed and needs to be reset
-                url_provider.pubsub = None;
+                let mut is_reset_successful = true;
+                providers.entry(chain_id).and_modify(|aps| {
+                    let Some(index) = find_index(
+                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                        &url_provider.url,
+                    ) else {
+                        is_reset_successful = false;
+                        return ();
+                    };
+                    let mut url = aps.urls.remove(index);
+                    url.pubsub = None;
+                    aps.urls.insert(index, url);
+                });
+                if !is_reset_successful {
+                    verbose_print(
+                        print_tx,
+                        &format!("eth: unexpectedly couldn't find provider to be modified"),
+                    )
+                    .await;
+                }
             }
         }
     }
-    for node_provider in &mut aps.nodes {
+
+    let nodes = {
+        // in code block to drop providers lock asap to avoid deadlock
+        let Some(aps) = providers.get(&chain_id) else {
+            return EthResponse::Err(EthError::NoRpcForChain);
+        };
+        aps.nodes.clone()
+    };
+    for node_provider in &nodes {
         verbose_print(
             print_tx,
             &format!(
@@ -656,7 +792,13 @@ async fn fulfill_request(
         .await;
         if let EthResponse::Err(e) = response {
             if let EthError::RpcMalformedResponse = e {
-                node_provider.usable = false;
+                set_node_unusable(
+                    &providers,
+                    &chain_id,
+                    &node_provider.kns_update.name,
+                    print_tx,
+                )
+                .await;
             }
         } else {
             return response;
@@ -908,16 +1050,7 @@ async fn check_for_root_cap(
     caps_oracle
         .send(CapMessage::Has {
             on: process.clone(),
-            cap: Capability {
-                issuer: Address {
-                    node: our.to_string(),
-                    process: ETH_PROCESS_ID.clone(),
-                },
-                params: serde_json::to_string(&serde_json::json!({
-                    "root": true,
-                }))
-                .unwrap(),
-            },
+            cap: Capability::new((our, ETH_PROCESS_ID.clone()), "{\"root\":true}"),
             responder: send_cap_bool,
         })
         .await
@@ -995,4 +1128,48 @@ async fn kernel_message<T: Serialize>(
             lazy_load_blob: None,
         })
         .await;
+}
+
+fn find_index(vec: &Vec<&str>, item: &str) -> Option<usize> {
+    vec.iter().enumerate().find_map(
+        |(index, value)| {
+            if *value == item {
+                Some(index)
+            } else {
+                None
+            }
+        },
+    )
+}
+
+async fn set_node_unusable(
+    providers: &Providers,
+    chain_id: &u64,
+    node_name: &str,
+    print_tx: &PrintSender,
+) -> bool {
+    let mut is_replacement_successful = true;
+    providers.entry(chain_id.clone()).and_modify(|aps| {
+        let Some(index) = find_index(
+            &aps.nodes
+                .iter()
+                .map(|n| n.kns_update.name.as_str())
+                .collect(),
+            &node_name,
+        ) else {
+            is_replacement_successful = false;
+            return ();
+        };
+        let mut node = aps.nodes.remove(index);
+        node.usable = false;
+        aps.nodes.insert(index, node);
+    });
+    if !is_replacement_successful {
+        verbose_print(
+            print_tx,
+            &format!("eth: unexpectedly couldn't find provider to be modified"),
+        )
+        .await;
+    }
+    is_replacement_successful
 }

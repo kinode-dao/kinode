@@ -1,5 +1,3 @@
-import { ethers } from "ethers";
-import { KNSEnsEntry, KNSEnsExit, NameWrapper, ENSRegistry, KNSRegistryResolver, DotOsRegistrar } from "../abis/types";
 
 export interface PageProps {
   networkingKey: string,
@@ -15,8 +13,7 @@ export interface PageProps {
   direct: boolean,
   setDirect: React.Dispatch<React.SetStateAction<boolean>>,
   knsName: string,
-  setOsName: React.Dispatch<React.SetStateAction<string>>,
-
+  setKnsName: React.Dispatch<React.SetStateAction<string>>,
   key: string,
   keyFileName: string,
   setKeyFileName: React.Dispatch<React.SetStateAction<string>>,
@@ -24,19 +21,8 @@ export interface PageProps {
   setReset: React.Dispatch<React.SetStateAction<boolean>>,
   pw: string,
   setPw: React.Dispatch<React.SetStateAction<string>>,
-  dotOs: DotOsRegistrar,
-  kns: KNSRegistryResolver,
-  knsEnsEntryNetwork: number,
-  knsEnsEntry: KNSEnsEntry,
-  knsEnsExit: KNSEnsExit,
-  nameWrapper: NameWrapper,
-  ensRegistry: ENSRegistry,
-  connectOpen: boolean,
-  openConnect: () => void,
-  closeConnect: () => void,
-  provider?: ethers.providers.Web3Provider,
   appSizeOnLoad: number,
-  nodeChainId: string
+  nodeChainId: string,
 }
 
 export type NetworkingInfo = {

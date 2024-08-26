@@ -1,5 +1,5 @@
-use alloy_json_rpc::ErrorPayload;
-use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
+use alloy::rpc::json_rpc::ErrorPayload;
+use alloy::rpc::types::eth::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -84,9 +84,6 @@ pub enum EthError {
 
 /// The action type used for configuring eth:distro:sys. Only processes which have the "root"
 /// capability from eth:distro:sys can successfully send this action.
-///
-/// NOTE: changes to config will not be persisted between boots, they must be saved in .env
-/// to be reflected between boots. TODO: can change this
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthConfigAction {
     /// Add a new provider to the list of providers.
@@ -169,42 +166,5 @@ impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
             NodeOrRpcUrl::Node { kns_update, .. } => kns_update.name == other,
             NodeOrRpcUrl::RpcUrl(url) => url == other,
         }
-    }
-}
-
-//
-// Internal types
-//
-
-/// For static lifetimes of method strings.
-/// Replaced soon by alloy-rs network abstraction.
-pub fn to_static_str(method: &str) -> Option<&'static str> {
-    match method {
-        "eth_getBalance" => Some("eth_getBalance"),
-        "eth_sendRawTransaction" => Some("eth_sendRawTransaction"),
-        "eth_call" => Some("eth_call"),
-        "eth_chainId" => Some("eth_chainId"),
-        "eth_getTransactionReceipt" => Some("eth_getTransactionReceipt"),
-        "eth_getTransactionCount" => Some("eth_getTransactionCount"),
-        "eth_estimateGas" => Some("eth_estimateGas"),
-        "eth_blockNumber" => Some("eth_blockNumber"),
-        "eth_getBlockByHash" => Some("eth_getBlockByHash"),
-        "eth_getBlockByNumber" => Some("eth_getBlockByNumber"),
-        "eth_getTransactionByHash" => Some("eth_getTransactionByHash"),
-        "eth_getCode" => Some("eth_getCode"),
-        "eth_getStorageAt" => Some("eth_getStorageAt"),
-        "eth_gasPrice" => Some("eth_gasPrice"),
-        "eth_accounts" => Some("eth_accounts"),
-        "eth_hashrate" => Some("eth_hashrate"),
-        "eth_getLogs" => Some("eth_getLogs"),
-        "eth_subscribe" => Some("eth_subscribe"),
-        "eth_unsubscribe" => Some("eth_unsubscribe"),
-        // "eth_mining" => Some("eth_mining"),
-        // "net_version" => Some("net_version"),
-        // "net_peerCount" => Some("net_peerCount"),
-        // "net_listening" => Some("net_listening"),
-        // "web3_clientVersion" => Some("web3_clientVersion"),
-        // "web3_sha3" => Some("web3_sha3"),
-        _ => None,
     }
 }

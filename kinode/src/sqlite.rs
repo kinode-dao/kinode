@@ -1,121 +1,129 @@
-use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use dashmap::DashMap;
+use lib::types::core::{
+    Address, CapMessage, CapMessageSender, Capability, KernelMessage, LazyLoadBlob, Message,
+    MessageReceiver, MessageSender, PackageId, PrintSender, Printout, ProcessId, Request, Response,
+    SqlValue, SqliteAction, SqliteError, SqliteRequest, SqliteResponse, SQLITE_PROCESS_ID,
+};
 use rusqlite::Connection;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
-use tokio::fs;
-use tokio::sync::Mutex;
-
-use lib::types::core::*;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
+};
+use tokio::{fs, sync::Mutex};
 
 lazy_static::lazy_static! {
-    static ref READ_KEYWORDS: HashSet<String> = {
-        let mut set = HashSet::new();
-        let keywords = ["ANALYZE", "ATTACH", "BEGIN", "EXPLAIN", "PRAGMA", "SELECT", "VALUES", "WITH"];
-        for &keyword in &keywords {
-            set.insert(keyword.to_string());
-        }
-        set
-    };
+    static ref READ_KEYWORDS: HashSet<&'static str> =
+        HashSet::from(["ANALYZE", "ATTACH", "BEGIN", "EXPLAIN", "PRAGMA", "SELECT", "VALUES", "WITH"]);
 
-    static ref WRITE_KEYWORDS: HashSet<String> = {
-        let mut set = HashSet::new();
-        let keywords = ["ALTER", "ANALYZE", "COMMIT", "CREATE", "DELETE", "DETACH", "DROP", "END", "INSERT", "REINDEX", "RELEASE", "RENAME", "REPLACE", "ROLLBACK", "SAVEPOINT", "UPDATE", "VACUUM"];
-        for &keyword in &keywords {
-            set.insert(keyword.to_string());
-        }
-        set
-    };
+    static ref WRITE_KEYWORDS: HashSet<&'static str> =
+        HashSet::from(["ALTER", "ANALYZE", "COMMIT", "CREATE", "DELETE", "DETACH", "DROP", "END", "INSERT", "REINDEX", "RELEASE", "RENAME", "REPLACE", "ROLLBACK", "SAVEPOINT", "UPDATE", "VACUUM"]);
 }
 
 pub async fn sqlite(
-    our_node: String,
+    our_node: Arc<String>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let sqlite_path = format!("{}/sqlite", &home_directory_path);
-
-    if let Err(e) = fs::create_dir_all(&sqlite_path).await {
-        panic!("failed creating sqlite dir! {:?}", e);
+    let sqlite_path = Arc::new(format!("{home_directory_path}/sqlite"));
+    if let Err(e) = fs::create_dir_all(&*sqlite_path).await {
+        panic!("failed creating sqlite dir! {e:?}");
     }
 
     let open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>> = Arc::new(DashMap::new());
     let txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>> = Arc::new(DashMap::new());
 
-    let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
-        HashMap::new();
+    let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> = HashMap::new();
 
-    loop {
-        tokio::select! {
-            Some(km) = recv_from_loop.recv() => {
-                if our_node.clone() != km.source.node {
-                    println!(
-                        "sqlite: request must come from our_node={}, got: {}",
-                        our_node,
-                        km.source.node,
-                    );
-                    continue;
-                }
-
-                let queue = process_queues
-                    .entry(km.source.process.clone())
-                    .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
-                    .clone();
-
-                {
-                    let mut queue_lock = queue.lock().await;
-                    queue_lock.push_back(km.clone());
-                }
-
-                // clone Arcs
-                let our_node = our_node.clone();
-                let send_to_caps_oracle = send_to_caps_oracle.clone();
-                let send_to_terminal = send_to_terminal.clone();
-                let send_to_loop = send_to_loop.clone();
-                let open_dbs = open_dbs.clone();
-
-                let txs = txs.clone();
-                let sqlite_path = sqlite_path.clone();
-
-                tokio::spawn(async move {
-                    let mut queue_lock = queue.lock().await;
-                    if let Some(km) = queue_lock.pop_front() {
-                        if let Err(e) = handle_request(
-                            our_node.clone(),
-                            km.clone(),
-                            open_dbs.clone(),
-                            txs.clone(),
-                            send_to_loop.clone(),
-                            send_to_terminal.clone(),
-                            send_to_caps_oracle.clone(),
-                            sqlite_path.clone(),
-                        )
-                        .await
-                        {
-                            let _ = send_to_loop
-                                .send(make_error_message(our_node.clone(), &km, e))
-                                .await;
-                        }
-                    }
-                });
-            }
+    while let Some(km) = recv_from_loop.recv().await {
+        if *our_node != km.source.node {
+            Printout::new(
+                1,
+                format!(
+                    "sqlite: got request from {}, but requests must come from our node {our_node}",
+                    km.source.node
+                ),
+            )
+            .send(&send_to_terminal)
+            .await;
+            continue;
         }
+
+        let queue = process_queues
+            .get(&km.source.process)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Mutex::new(VecDeque::new())));
+
+        {
+            let mut queue_lock = queue.lock().await;
+            queue_lock.push_back(km);
+        }
+
+        // clone Arcs
+        let our_node = our_node.clone();
+        let send_to_loop = send_to_loop.clone();
+        let send_to_terminal = send_to_terminal.clone();
+        let send_to_caps_oracle = send_to_caps_oracle.clone();
+        let open_dbs = open_dbs.clone();
+        let txs = txs.clone();
+        let sqlite_path = sqlite_path.clone();
+
+        tokio::spawn(async move {
+            let mut queue_lock = queue.lock().await;
+            if let Some(km) = queue_lock.pop_front() {
+                let (km_id, km_rsvp) =
+                    (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
+
+                if let Err(e) = handle_request(
+                    &our_node,
+                    km,
+                    open_dbs,
+                    txs,
+                    &send_to_loop,
+                    &send_to_caps_oracle,
+                    &sqlite_path,
+                )
+                .await
+                {
+                    Printout::new(1, format!("sqlite: {e}"))
+                        .send(&send_to_terminal)
+                        .await;
+                    KernelMessage::builder()
+                        .id(km_id)
+                        .source((our_node.as_str(), SQLITE_PROCESS_ID.clone()))
+                        .target(km_rsvp)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: serde_json::to_vec(&SqliteResponse::Err { error: e })
+                                    .unwrap(),
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&send_to_loop)
+                        .await;
+                }
+            }
+        });
     }
+    Ok(())
 }
 
 async fn handle_request(
-    our_node: String,
+    our_node: &str,
     km: KernelMessage,
     open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
     txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>>,
-    send_to_loop: MessageSender,
-    send_to_terminal: PrintSender,
-    send_to_caps_oracle: CapMessageSender,
-    sqlite_path: String,
+    send_to_loop: &MessageSender,
+    send_to_caps_oracle: &CapMessageSender,
+    sqlite_path: &str,
 ) -> Result<(), SqliteError> {
     let KernelMessage {
         id,
@@ -123,13 +131,13 @@ async fn handle_request(
         message,
         lazy_load_blob: blob,
         ..
-    } = km.clone();
+    } = km;
     let Message::Request(Request {
         body,
         expects_response,
         metadata,
         ..
-    }) = message.clone()
+    }) = message
     else {
         return Err(SqliteError::InputError {
             error: "not a request".into(),
@@ -147,12 +155,12 @@ async fn handle_request(
     };
 
     check_caps(
-        our_node.clone(),
-        source.clone(),
-        open_dbs.clone(),
-        send_to_caps_oracle.clone(),
+        our_node,
+        &source,
+        &open_dbs,
+        send_to_caps_oracle,
         &request,
-        sqlite_path.clone(),
+        sqlite_path,
     )
     .await?;
 
@@ -178,7 +186,7 @@ async fn handle_request(
                 .next()
                 .map(|word| word.to_uppercase())
                 .unwrap_or("".to_string());
-            if !READ_KEYWORDS.contains(&first_word) {
+            if !READ_KEYWORDS.contains(first_word.as_str()) {
                 return Err(SqliteError::NotAReadKeyword);
             }
 
@@ -195,14 +203,14 @@ async fn handle_request(
                 .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
                     let mut map = HashMap::new();
                     for (i, column_name) in column_names.iter().enumerate() {
-                        let value: SqlValue = row.get(i)?;
+                        let value: Option<SqlValue> = row.get(i)?;
                         let value_json = match value {
-                            SqlValue::Integer(int) => serde_json::Value::Number(int.into()),
-                            SqlValue::Real(real) => serde_json::Value::Number(
+                            Some(SqlValue::Integer(int)) => serde_json::Value::Number(int.into()),
+                            Some(SqlValue::Real(real)) => serde_json::Value::Number(
                                 serde_json::Number::from_f64(real).unwrap(),
                             ),
-                            SqlValue::Text(text) => serde_json::Value::String(text),
-                            SqlValue::Blob(blob) => {
+                            Some(SqlValue::Text(text)) => serde_json::Value::String(text),
+                            Some(SqlValue::Blob(blob)) => {
                                 serde_json::Value::String(base64_standard.encode(blob))
                             } // or another representation if you prefer
                             _ => serde_json::Value::Null,
@@ -236,7 +244,7 @@ async fn handle_request(
                 .map(|word| word.to_uppercase())
                 .unwrap_or("".to_string());
 
-            if !WRITE_KEYWORDS.contains(&first_word) {
+            if !WRITE_KEYWORDS.contains(first_word.as_str()) {
                 return Err(SqliteError::NotAWriteKeyword);
             }
 
@@ -304,21 +312,12 @@ async fn handle_request(
         }
     };
 
-    if let Some(target) = km.rsvp.or_else(|| {
-        expects_response.map(|_| Address {
-            node: our_node.clone(),
-            process: source.process.clone(),
-        })
-    }) {
-        let response = KernelMessage {
-            id,
-            source: Address {
-                node: our_node.clone(),
-                process: SQLITE_PROCESS_ID.clone(),
-            },
-            target,
-            rsvp: None,
-            message: Message::Response((
+    if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
+        KernelMessage::builder()
+            .id(id)
+            .source((our_node, SQLITE_PROCESS_ID.clone()))
+            .target(target)
+            .message(Message::Response((
                 Response {
                     inherit: false,
                     body,
@@ -326,37 +325,27 @@ async fn handle_request(
                     capabilities: vec![],
                 },
                 None,
-            )),
-            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
+            )))
+            .lazy_load_blob(bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
-            }),
-        };
-
-        let _ = send_to_loop.send(response).await;
-    } else {
-        send_to_terminal
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "sqlite: not sending response: {:?}",
-                    serde_json::from_slice::<SqliteResponse>(&body)
-                ),
-            })
-            .await
-            .unwrap();
+            }))
+            .build()
+            .unwrap()
+            .send(send_to_loop)
+            .await;
     }
 
     Ok(())
 }
 
 async fn check_caps(
-    our_node: String,
-    source: Address,
-    open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
-    mut send_to_caps_oracle: CapMessageSender,
+    our_node: &str,
+    source: &Address,
+    open_dbs: &Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
+    send_to_caps_oracle: &CapMessageSender,
     request: &SqliteRequest,
-    sqlite_path: String,
+    sqlite_path: &str,
 ) -> Result<(), SqliteError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -366,17 +355,14 @@ async fn check_caps(
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.clone(),
-                            process: SQLITE_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::to_string(&serde_json::json!({
+                    cap: Capability::new(
+                        (our_node, SQLITE_PROCESS_ID.clone()),
+                        serde_json::json!({
                             "kind": "write",
                             "db": request.db.to_string(),
-                        }))
-                        .unwrap(),
-                    },
+                        })
+                        .to_string(),
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;
@@ -392,17 +378,14 @@ async fn check_caps(
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.clone(),
-                            process: SQLITE_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::to_string(&serde_json::json!({
+                    cap: Capability::new(
+                        (our_node, SQLITE_PROCESS_ID.clone()),
+                        serde_json::json!({
                             "kind": "read",
                             "db": request.db.to_string(),
-                        }))
-                        .unwrap(),
-                    },
+                        })
+                        .to_string(),
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;
@@ -426,7 +409,7 @@ async fn check_caps(
                 &request.db.to_string(),
                 &our_node,
                 &source,
-                &mut send_to_caps_oracle,
+                send_to_caps_oracle,
             )
             .await?;
             add_capability(
@@ -434,7 +417,7 @@ async fn check_caps(
                 &request.db.to_string(),
                 &our_node,
                 &source,
-                &mut send_to_caps_oracle,
+                send_to_caps_oracle,
             )
             .await?;
 
@@ -481,21 +464,21 @@ async fn add_capability(
     db: &str,
     our_node: &str,
     source: &Address,
-    send_to_caps_oracle: &mut CapMessageSender,
+    send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), SqliteError> {
     let cap = Capability {
         issuer: Address {
             node: our_node.to_string(),
             process: SQLITE_PROCESS_ID.clone(),
         },
-        params: serde_json::to_string(&serde_json::json!({ "kind": kind, "db": db })).unwrap(),
+        params: serde_json::json!({ "kind": kind, "db": db }).to_string(),
     };
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
             caps: vec![cap],
-            responder: send_cap_bool,
+            responder: Some(send_cap_bool),
         })
         .await?;
     let _ = recv_cap_bool.await?;
@@ -541,30 +524,5 @@ fn get_json_params(blob: Option<LazyLoadBlob>) -> Result<Vec<SqlValue>, SqliteEr
                 .collect::<Result<Vec<_>, _>>(),
             _ => Err(SqliteError::InvalidParameters),
         },
-    }
-}
-
-fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) -> KernelMessage {
-    KernelMessage {
-        id: km.id,
-        source: Address {
-            node: our_name.clone(),
-            process: SQLITE_PROCESS_ID.clone(),
-        },
-        target: match &km.rsvp {
-            None => km.source.clone(),
-            Some(rsvp) => rsvp.clone(),
-        },
-        rsvp: None,
-        message: Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&SqliteResponse::Err { error }).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )),
-        lazy_load_blob: None,
     }
 }

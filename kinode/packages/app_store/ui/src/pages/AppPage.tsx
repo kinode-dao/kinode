@@ -1,178 +1,182 @@
-import React, { useState, useEffect, useMemo, useCallback, ReactElement } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
-import { AppInfo } from "../types/Apps";
-import useAppsStore from "../store/apps-store";
-import ActionButton from "../components/ActionButton";
-import AppHeader from "../components/AppHeader";
-import SearchHeader from "../components/SearchHeader";
-import { PageProps } from "../types/Page";
-import { appId } from "../utils/app";
-import { PUBLISH_PATH } from "../constants/path";
-import HomeButton from "../components/HomeButton";
-import classNames from "classnames";
-import { isMobileCheck } from "../utils/dimensions";
-import { FaGlobe, FaPeopleGroup, FaStar } from "react-icons/fa6";
-
-interface AppPageProps extends PageProps { }
+import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash, FaSync } from "react-icons/fa";
+import useAppsStore from "../store";
+import { AppListing, PackageState } from "../types/Apps";
+import { compareVersions } from "../utils/compareVersions";
 
 export default function AppPage() {
-  // eslint-disable-line
-  const { myApps, listedApps, getListedApp } = useAppsStore();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const params = useParams();
-  const [app, setApp] = useState<AppInfo | undefined>(undefined);
-  const [launchPath, setLaunchPath] = useState('');
+  const { fetchListing, fetchInstalledApp, uninstallApp, setAutoUpdate } = useAppsStore();
+  const [app, setApp] = useState<AppListing | null>(null);
+  const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isUninstalling, setIsUninstalling] = useState(false);
+  const [isTogglingAutoUpdate, setIsTogglingAutoUpdate] = useState(false);
 
-  useEffect(() => {
-    const myApp = myApps.local.find((a) => appId(a) === params.id);
-    if (myApp) return setApp(myApp);
 
-    if (params.id) {
-      const app = listedApps.find((a) => appId(a) === params.id);
-      if (app) {
-        setApp(app);
-      } else {
-        getListedApp(params.id)
-          .then((app) => setApp(app))
-          .catch(console.error);
-      }
-    }
-  }, [params.id, myApps, listedApps]);
+  const loadData = useCallback(async () => {
+    if (!id) return;
+    setIsLoading(true);
+    setError(null);
 
-  const goToPublish = useCallback(() => {
-    navigate(PUBLISH_PATH, { state: { app } });
-  }, [app, navigate]);
+    try {
+      const [appData, installedAppData] = await Promise.all([
+        fetchListing(id),
+        fetchInstalledApp(id)
+      ]);
 
-  const version = useMemo(
-    () => app?.metadata?.properties?.current_version || "Unknown",
-    [app]
-  );
-  const versions = Object.entries(app?.metadata?.properties?.code_hashes || {});
-  const hash =
-    app?.state?.our_version ||
-    (versions[(versions.length || 1) - 1] || ["", ""])[1];
+      setApp(appData);
+      setInstalledApp(installedAppData);
 
-  const isMobile = isMobileCheck()
+      if (appData?.metadata?.properties?.code_hashes) {
+        const versions = appData.metadata.properties.code_hashes;
+        if (versions.length > 0) {
+          const latestVer = versions.reduce((latest, current) =>
+            compareVersions(current[0], latest[0]) > 0 ? current : latest
+          )[0];
+          setLatestVersion(latestVer);
 
-  const appDetails: Array<{ top: ReactElement, middle: ReactElement, bottom: ReactElement }> = [
-    // {
-    //   top: <div className={classNames({ 'text-sm': isMobile })}>0 ratings</div>,
-    //   middle: <span className="text-2xl">5.0</span>,
-    //   bottom: <div className={classNames("flex-center gap-1", {
-    //     'text-sm': isMobile
-    //   })}>
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //   </div>
-    // },
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Developer</div>,
-      middle: <FaPeopleGroup size={36} />,
-      bottom: <div className={classNames({ 'text-sm': isMobile })}>
-        {app?.publisher}
-      </div>
-    },
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Version</div>,
-      middle: <span className="text-2xl">{version}</span>,
-      bottom: <div className={classNames({ 'text-xs': isMobile })}>
-        {hash.slice(0, 5)}...{hash.slice(-5)}
-      </div>
-    },
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Mirrors</div>,
-      middle: <FaGlobe size={36} />,
-      bottom: <div className={classNames({ 'text-sm': isMobile })}>
-        {app?.metadata?.properties?.mirrors?.length || 0}
-      </div>
-    }
-  ]
-
-  useEffect(() => {
-    fetch('/apps').then(data => data.json())
-      .then((data: Array<{ package_name: string, path: string }>) => {
-        if (Array.isArray(data)) {
-          const homepageAppData = data.find(otherApp => app?.package === otherApp.package_name)
-          if (homepageAppData) {
-            setLaunchPath(homepageAppData.path)
+          if (installedAppData) {
+            const installedVersion = versions.find(([_, hash]) => hash === installedAppData.our_version_hash);
+            if (installedVersion) {
+              setCurrentVersion(installedVersion[0]);
+            }
           }
         }
-      })
-  }, [app])
+      }
+    } catch (err) {
+      setError("Failed to load app details. Please try again.");
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id, fetchListing, fetchInstalledApp]);
+
+  const handleUninstall = async () => {
+    if (!app) return;
+    setIsUninstalling(true);
+    try {
+      await uninstallApp(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+      await loadData();
+    } catch (error) {
+      console.error('Uninstallation failed:', error);
+      setError(`Uninstallation failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsUninstalling(false);
+    }
+  };
+
+  const handleToggleAutoUpdate = async () => {
+    if (!app || !latestVersion) return;
+    setIsTogglingAutoUpdate(true);
+    try {
+      const newAutoUpdateState = !app.auto_update;
+      await setAutoUpdate(`${app.package_id.package_name}:${app.package_id.publisher_node}`, latestVersion, newAutoUpdateState);
+      await loadData();
+    } catch (error) {
+      console.error('Failed to toggle auto-update:', error);
+      setError(`Failed to toggle auto-update: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsTogglingAutoUpdate(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleDownload = () => {
+    navigate(`/download/${id}`);
+  };
+
+  const handleLaunch = () => {
+    navigate(`/${app?.package_id.package_name}:${app?.package_id.package_name}:${app?.package_id.publisher_node}/`);
+  };
+
+  if (isLoading) {
+    return <div className="app-page"><h4>Loading app details...</h4></div>;
+  }
+
+  if (error) {
+    return <div className="app-page"><h4>{error}</h4></div>;
+  }
+
+  if (!app) {
+    return <div className="app-page"><h4>App details not found for {id}</h4></div>;
+  }
 
   return (
-    <div className={classNames("flex flex-col w-full p-2",
-      {
-        'gap-4 max-w-screen': isMobile,
-        'gap-8 max-w-[900px]': !isMobile,
-      })}
-    >
-      {!isMobile && <HomeButton />}
-      <SearchHeader
-        value=""
-        onChange={() => null}
-        hideSearch
-        hidePublish
-      />
-      <div className={classNames("flex-col-center card !rounded-3xl", {
-        'p-12 gap-4 grow overflow-y-auto': isMobile,
-        'p-24 gap-8': !isMobile,
-      })}>
-        {app ? <>
-          <AppHeader app={app} size={isMobile ? "medium" : "large"} />
-          <div className="w-5/6 h-0 border border-orange" />
-          <div className={classNames("flex items-start text-xl", {
-            'gap-4 flex-wrap': isMobile,
-            'gap-8': !isMobile,
-          })}>
-            {appDetails.map((detail, index) => <>
-              <div
-                className={classNames("flex-col-center gap-2 justify-between self-stretch", {
-                  'rounded-lg bg-white/10 p-1 min-w-1/4 grow': isMobile,
-                  'opacity-50': !isMobile,
-                })}
-                key={index}
-              >
-                {detail.top}
-                {detail.middle}
-                {detail.bottom}
-              </div>
-              {!isMobile && index !== appDetails.length - 1 && <div className="h-3/4 w-0 border border-orange self-center" />}
-            </>)}
-          </div>
-          {Array.isArray(app.metadata?.properties?.screenshots)
-            && app.metadata?.properties.screenshots.length > 0
-            && <div className="flex flex-wrap overflow-x-auto max-w-full">
-              {app.metadata.properties.screenshots.map(
-                (screenshot, index) => (
-                  <img key={index + screenshot} src={screenshot} className="mr-2 max-h-20 max-w-full rounded border border-black" />
-                )
-              )}
-            </div>}
-          <div className={classNames("flex-center gap-2", {
-            'flex-col': isMobile,
-          })}>
-            <ActionButton
-              app={app}
-              launchPath={launchPath}
-              className={classNames("self-center bg-orange text-lg px-12")}
-              permitMultiButton
-            />
-          </div>
-          {app.installed && app.state?.mirroring && (
-            <button type="button" onClick={goToPublish}>
-              Publish
-            </button>
-          )}
-        </> : <>
-          <h4>App details not found for </h4>
-          <h4>{params.id}</h4>
-        </>}
+    <section className="app-page">
+      <div className="app-header">
+        {app.metadata?.image && (
+          <img src={app.metadata.image} alt={app.metadata?.name || app.package_id.package_name} className="app-icon" />
+        )}
+        <div className="app-title">
+          <h2>{app.metadata?.name || app.package_id.package_name}</h2>
+          <p className="app-id">{`${app.package_id.package_name}.${app.package_id.publisher_node}`}</p>
+        </div>
       </div>
-    </div>
+
+      <div className="app-description">{app.metadata?.description || "No description available"}</div>
+
+      <div className="app-info">
+        <ul className="detail-list">
+          <li>
+            <span>Installed:</span>
+            <span className="status-icon">{installedApp ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}</span>
+          </li>
+          {currentVersion && (
+            <li><span>Current Version:</span> <span>{currentVersion}</span></li>
+          )}
+          {latestVersion && (
+            <li><span>Latest Version:</span> <span>{latestVersion}</span></li>
+          )}
+          <li><span>Publisher:</span> <span>{app.package_id.publisher_node}</span></li>
+          <li><span>License:</span> <span>{app.metadata?.properties?.license || "Not specified"}</span></li>
+          <li>
+            <span>Auto Update:</span>
+            <span className="status-icon">
+              {app.auto_update ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}
+            </span>
+          </li>
+        </ul>
+      </div>
+
+      <div className="app-actions">
+        {installedApp && (
+          <>
+            <button onClick={handleLaunch} className="primary">
+              <FaPlay /> Launch
+            </button>
+            <button onClick={handleUninstall} className="secondary" disabled={isUninstalling}>
+              {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />} Uninstall
+            </button>
+            <button onClick={handleToggleAutoUpdate} className="secondary" disabled={isTogglingAutoUpdate}>
+              {isTogglingAutoUpdate ? <FaSpinner className="fa-spin" /> : <FaSync />}
+              {app.auto_update ? " Disable" : " Enable"} Auto Update
+            </button>
+          </>
+        )}
+        <button onClick={handleDownload} className="primary">
+          <FaDownload /> Download
+        </button>
+      </div>
+
+      {app.metadata?.properties?.screenshots && (
+        <div className="app-screenshots">
+          <h3>Screenshots</h3>
+          <div className="screenshot-container">
+            {app.metadata.properties.screenshots.map((screenshot, index) => (
+              <img key={index} src={screenshot} alt={`Screenshot ${index + 1}`} className="app-screenshot" />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }

@@ -11,16 +11,12 @@ export interface PersistentStore {
     }
   }
   setWidgetSettings: (widgetSettings: PersistentStore['widgetSettings']) => void
-  toggleWidgetVisibility: (package_name: string) => void
-  setWidgetSize: (package_name: string, size: 'small' | 'large') => void,
-  favoriteApps: {
-    [key: string]: {
-      favorite: boolean
-      order?: number
-    }
-  }
-  setFavoriteApps: (favoriteApps: PersistentStore['favoriteApps']) => void
-  favoriteApp: (package_name: string) => void
+  toggleWidgetVisibility: (package_id: string) => void
+  setWidgetSize: (package_id: string, size: 'small' | 'large') => void,
+  widgetOrder: string[]
+  setWidgetOrder: (widgetOrder: string[]) => void
+  appOrder: string[]
+  setAppOrder: (appOrder: string[]) => void
 }
 
 const usePersistentStore = create<PersistentStore>()(
@@ -29,45 +25,35 @@ const usePersistentStore = create<PersistentStore>()(
       get,
       set,
       widgetSettings: {},
-      favoriteApps: {},
       setWidgetSettings: (widgetSettings: PersistentStore['widgetSettings']) => set({ widgetSettings }),
-      setFavoriteApps: (favoriteApps: PersistentStore['favoriteApps']) => set({ favoriteApps }),
-      toggleWidgetVisibility: (package_name: string) => {
+      toggleWidgetVisibility: (package_id: string) => {
         const { widgetSettings } = get()
         set({
           widgetSettings: {
             ...widgetSettings,
-            [package_name]: {
-              ...widgetSettings[package_name],
-              hide: !widgetSettings[package_name]?.hide
+            [package_id]: {
+              ...widgetSettings[package_id],
+              hide: !widgetSettings[package_id]?.hide
             }
           }
         })
       },
-      setWidgetSize: (package_name: string, size: 'small' | 'large') => {
+      setWidgetSize: (package_id: string, size: 'small' | 'large') => {
         const { widgetSettings } = get()
         set({
           widgetSettings: {
             ...widgetSettings,
-            [package_name]: {
-              ...widgetSettings[package_name],
+            [package_id]: {
+              ...widgetSettings[package_id],
               size
             }
           }
         })
       },
-      favoriteApp: async (package_name: string) => {
-        const { favoriteApps } = get()
-        set({
-          favoriteApps: {
-            ...favoriteApps,
-            [package_name]: {
-              ...favoriteApps[package_name],
-              favorite: !favoriteApps[package_name]?.favorite
-            }
-          }
-        })
-      },
+      widgetOrder: [],
+      setWidgetOrder: (widgetOrder: string[]) => set({ widgetOrder }),
+      appOrder: [],
+      setAppOrder: (appOrder: string[]) => set({ appOrder }),
     }),
     {
       name: 'homepage_persistent_store', // unique name for the store

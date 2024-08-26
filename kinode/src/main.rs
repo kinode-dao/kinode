@@ -2,7 +2,12 @@
 #![feature(btree_extract_if)]
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
-use lib::types::core::*;
+use lib::types::core::{
+    CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
+    KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
+    KERNEL_PROCESS_ID,
+};
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
@@ -19,6 +24,7 @@ mod kv;
 mod net;
 #[cfg(not(feature = "simulation-mode"))]
 mod register;
+mod sol;
 mod sqlite;
 mod state;
 mod terminal;
@@ -37,6 +43,9 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const WS_MIN_PORT: u16 = 9_000;
+const TCP_MIN_PORT: u16 = 10_000;
+const MAX_PORT: u16 = 65_535;
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
@@ -44,9 +53,10 @@ pub const CHAIN_ID: u64 = 10;
 #[cfg(feature = "simulation-mode")]
 pub const CHAIN_ID: u64 = 31337;
 #[cfg(not(feature = "simulation-mode"))]
-pub const KNS_ADDRESS: &str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+pub const KIMAP_ADDRESS: &str = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
 #[cfg(feature = "simulation-mode")]
-pub const KNS_ADDRESS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 #[tokio::main]
 async fn main() {
@@ -67,14 +77,12 @@ async fn main() {
     let rpc = matches.get_one::<String>("rpc");
     let password = matches.get_one::<String>("password");
 
-    // if we are in sim-mode, detached determines whether terminal is interactive
-    #[cfg(not(feature = "simulation-mode"))]
-    let is_detached = false;
+    // detached determines whether terminal is interactive
+    let detached = *matches.get_one::<bool>("detached").unwrap();
 
     #[cfg(feature = "simulation-mode")]
-    let (fake_node_name, is_detached, fakechain_port) = (
+    let (fake_node_name, fakechain_port) = (
         matches.get_one::<String>("fake-node-name"),
-        *matches.get_one::<bool>("detached").unwrap(),
         matches.get_one::<u16>("fakechain-port").cloned(),
     );
 
@@ -167,16 +175,19 @@ async fn main() {
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     let our_ip = find_public_ip().await;
-    let (ws_tcp_handle, ws_flag_used) = setup_networking(ws_networking_port).await;
+    let (ws_tcp_handle, ws_flag_used) = setup_networking("ws", ws_networking_port).await;
     #[cfg(not(feature = "simulation-mode"))]
-    let (tcp_tcp_handle, tcp_flag_used) = setup_networking(tcp_networking_port).await;
+    let (tcp_tcp_handle, tcp_flag_used) = setup_networking("tcp", tcp_networking_port).await;
 
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
         fake_node_name.cloned(),
         password.cloned(),
         home_directory_path,
-        (ws_tcp_handle, ws_flag_used),
+        (
+            ws_tcp_handle.expect("need ws networking for simulation mode"),
+            ws_flag_used,
+        ),
         // NOTE: fakenodes only using WS protocol at the moment
         fakechain_port,
     )
@@ -197,6 +208,7 @@ async fn main() {
                 (tcp_tcp_handle, tcp_flag_used),
                 http_server_port,
                 rpc.cloned(),
+                detached,
             )
             .await
         }
@@ -274,6 +286,7 @@ async fn main() {
      *  if any of these modules fail, the program exits with an error.
      */
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
+    let our_name_arc = Arc::new(our.name.clone());
 
     let (kernel_process_map, db, reverse_cap_index) = state::load_state(
         our.name.clone(),
@@ -326,7 +339,7 @@ async fn main() {
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     tasks.spawn(state::state_sender(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         state_receiver,
@@ -334,7 +347,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(kv::kv(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         kv_receiver,
@@ -342,7 +355,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(sqlite::sqlite(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         sqlite_receiver,
@@ -381,7 +394,7 @@ async fn main() {
         print_sender.clone(),
     ));
     tasks.spawn(vfs::vfs(
-        our.name.clone(),
+        our_name_arc,
         kernel_message_sender.clone(),
         print_sender.clone(),
         vfs_message_receiver,
@@ -395,10 +408,8 @@ async fn main() {
     let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
             match res {
-                Ok(_) => "graceful exit".into(),
-                Err(e) => format!(
-                    "runtime crash: {e:?}"
-                ),
+                Ok(()) => "graceful exit".into(),
+                Err(e) => format!("runtime crash: {e:?}"),
             }
 
         }
@@ -410,38 +421,28 @@ async fn main() {
             kernel_debug_message_sender,
             print_sender.clone(),
             print_receiver,
-            is_detached,
+            detached,
             verbose_mode,
         ) => {
             match quit {
-                Ok(_) => match kernel_message_sender
-                    .send(KernelMessage {
-                        id: rand::random(),
-                        source: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        rsvp: None,
-                        message: Message::Request(Request {
+                Ok(()) => {
+                    KernelMessage::builder()
+                        .id(rand::random())
+                        .source((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .target((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .message(Message::Request(Request {
                             inherit: false,
                             expects_response: None,
                             body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                             metadata: None,
                             capabilities: vec![],
-                        }),
-                        lazy_load_blob: None,
-                    })
-                    .await
-                {
-                    Ok(()) => "graceful exit".into(),
-                    Err(_) => {
-                        "failed to gracefully shut down kernel".into()
-                    }
-                },
+                        }))
+                        .build()
+                        .unwrap()
+                        .send(&kernel_message_sender)
+                        .await;
+                    "graceful exit".into()
+                }
                 Err(e) => e.to_string(),
             }
         }
@@ -449,17 +450,8 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
-    let stdout = std::io::stdout();
-    let mut stdout = stdout.lock();
-    crossterm::execute!(
-        stdout,
-        crossterm::event::DisableBracketedPaste,
-        crossterm::terminal::SetTitle(""),
-        crossterm::style::SetForegroundColor(crossterm::style::Color::Red),
-        crossterm::style::Print(format!("\r\n{quit_msg}\r\n")),
-        crossterm::style::ResetColor,
-    )
-    .expect("failed to clean up terminal visual state! your terminal window might be funky now");
+    // reset all modified aspects of terminal -- clean ourselves up
+    terminal::utils::cleanup(&quit_msg);
 }
 
 async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
@@ -467,10 +459,9 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
         match http::utils::find_open_port(*port, port + 1).await {
             Some(bound) => bound.local_addr().unwrap().port(),
             None => {
-                println!(
-                    "error: couldn't bind {}; first available port found was {}. \
+                panic!(
+                    "error: couldn't bind {port}; first available port found was {}. \
                         Set an available port with `--port` and try again.",
-                    port,
                     http::utils::find_open_port(*port, port + 1000)
                         .await
                         .expect("no ports found in range")
@@ -478,7 +469,6 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
                         .unwrap()
                         .port(),
                 );
-                panic!();
             }
         }
     } else {
@@ -499,19 +489,30 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
 /// If a specific port is provided, it attempts to bind to it directly.
 /// If no port is provided, it searches for the first available port between 9000 and 65535.
 /// Returns a tuple containing the TcpListener and a boolean indicating if a specific port was used.
-async fn setup_networking(networking_port: Option<&u16>) -> (tokio::net::TcpListener, bool) {
+async fn setup_networking(
+    protocol: &str,
+    networking_port: Option<&u16>,
+) -> (Option<tokio::net::TcpListener>, bool) {
+    if let Some(&0) = networking_port {
+        return (None, true);
+    }
     match networking_port {
         Some(port) => {
             let listener = http::utils::find_open_port(*port, port + 1)
                 .await
                 .expect("port selected with flag could not be bound");
-            (listener, true)
+            (Some(listener), true)
         }
         None => {
-            let listener = http::utils::find_open_port(9000, 65535)
+            let min_port = if protocol == "ws" {
+                WS_MIN_PORT
+            } else {
+                TCP_MIN_PORT
+            };
+            let listener = http::utils::find_open_port(min_port, MAX_PORT)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
-            (listener, false)
+            (Some(listener), false)
         }
     }
 }
@@ -532,7 +533,7 @@ pub async fn simulate_node(
                     panic!("Fake node must be booted with either a --fake-node-name, --password, or both.");
                 }
                 Some(password) => {
-                    let keyfile = tokio::fs::read(format!("{}/.keys", home_directory_path))
+                    let keyfile = tokio::fs::read(format!("{home_directory_path}/.keys"))
                         .await
                         .expect("could not read keyfile");
                     let decoded = keygen::decode_keyfile(&keyfile, &password)
@@ -568,7 +569,7 @@ pub async fn simulate_node(
             let fakechain_port: u16 = fakechain_port.unwrap_or(8545);
             let ws_port = ws_networking.local_addr().unwrap().port();
 
-            fakenet::register_local(&name, ws_port, &pubkey, fakechain_port)
+            fakenet::mint_local(&name, ws_port, &pubkey, fakechain_port)
                 .await
                 .unwrap();
 
@@ -602,7 +603,7 @@ pub async fn simulate_node(
             );
 
             tokio::fs::write(
-                format!("{}/.keys", home_directory_path),
+                format!("{home_directory_path}/.keys"),
                 encoded_keyfile.clone(),
             )
             .await
@@ -615,9 +616,9 @@ pub async fn simulate_node(
 
 async fn create_home_directory(home_directory_path: &str) {
     if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {:?}", e);
+        panic!("failed to create home directory: {e:?}");
     }
-    println!("home at {}\r", home_directory_path);
+    println!("home at {home_directory_path}\r");
 }
 
 /// build the command line interface for kinode
@@ -638,7 +639,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
-            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 9000]")
+            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 10000]")
                 .alias("--tcp-port")
                 .value_parser(value_parser!(u16)),
         )
@@ -652,8 +653,12 @@ fn build_command() -> Command {
                 .default_value("true")
                 .value_parser(value_parser!(bool)),
         )
+        .arg(
+            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
+                .action(clap::ArgAction::SetTrue),
+        )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
-        .arg(arg!(--password <PASSWORD> "Node password"));
+        .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -661,10 +666,6 @@ fn build_command() -> Command {
         .arg(
             arg!(--"fakechain-port" <FAKECHAIN_PORT> "Port to bind to for fakechain")
                 .value_parser(value_parser!(u16)),
-        )
-        .arg(
-            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
-                .action(clap::ArgAction::SetTrue),
         );
     app
 }
@@ -683,7 +684,7 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
         println!("Finding public IP address...");
         match tokio::time::timeout(std::time::Duration::from_secs(5), public_ip::addr_v4()).await {
             Ok(Some(ip)) => {
-                println!("Public IP found: {}", ip);
+                println!("Public IP found: {ip}");
                 ip
             }
             _ => {
@@ -709,10 +710,11 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
 async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     http_server_port: u16,
     maybe_rpc: Option<String>,
+    detached: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<bool>();
 
@@ -726,11 +728,12 @@ async fn serve_register_fe(
                 tx,
                 kill_rx,
                 our_ip,
-                ws_networking,
-                tcp_networking,
+                (ws_networking.0.as_ref(), ws_networking.1),
+                (tcp_networking.0.as_ref(), tcp_networking.1),
                 http_server_port,
                 disk_keyfile,
-                maybe_rpc) => {
+                maybe_rpc,
+                detached) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -738,14 +741,14 @@ async fn serve_register_fe(
         }
     };
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        encoded_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{home_directory_path}/.keys"), &encoded_keyfile)
+        .await
+        .unwrap();
 
     let _ = kill_tx.send(true);
+
+    drop(ws_networking.0);
+    drop(tcp_networking.0);
 
     (our, encoded_keyfile, decoded_keyfile)
 }
@@ -754,21 +757,21 @@ async fn serve_register_fe(
 async fn login_with_password(
     home_directory_path: &str,
     our_ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {alloy_primitives::Address as EthAddress, digest::Digest, ring::signature::KeyPair};
+    use {
+        ring::signature::KeyPair,
+        sha2::{Digest, Sha256},
+    };
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
-
-    // KnsRegistrar contract address
-    let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
+    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
 
     let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
 
@@ -793,26 +796,22 @@ async fn login_with_password(
 
     register::assign_routing(
         &mut our,
-        kns_address,
         provider,
-        (
-            ws_networking.0.local_addr().unwrap().port(),
-            ws_networking.1,
-        ),
-        (
-            tcp_networking.0.local_addr().unwrap().port(),
-            tcp_networking.1,
-        ),
+        match ws_networking.0 {
+            Some(listener) => (listener.local_addr().unwrap().port(), ws_networking.1),
+            None => (0, ws_networking.1),
+        },
+        match tcp_networking.0 {
+            Some(listener) => (listener.local_addr().unwrap().port(), tcp_networking.1),
+            None => (0, tcp_networking.1),
+        },
     )
     .await
     .expect("information used to boot does not match information onchain");
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        disk_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{home_directory_path}/.keys"), &disk_keyfile)
+        .await
+        .unwrap();
 
     (our, disk_keyfile, k)
 }

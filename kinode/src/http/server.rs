@@ -193,7 +193,7 @@ pub async fn http_server(
     let rpc_bound_path = BoundPath {
         app: Some(ProcessId::new(Some("rpc"), "distro", "sys")),
         path: path.clone(),
-        secure_subdomain: None, // TODO maybe RPC *should* have subdomain?
+        secure_subdomain: None,
         authenticated: false,
         local_only: true,
         static_content: None,
@@ -218,7 +218,6 @@ pub async fn http_server(
     ));
 
     while let Some(km) = recv_in_server.recv().await {
-        // we *can* move this into a dedicated task, but it's not necessary
         handle_app_message(
             km,
             http_response_senders.clone(),
@@ -460,18 +459,22 @@ async fn ws_handler(
 
     drop(ws_path_bindings);
 
+    // stripping ProcessId from path
+    let formatted_path = format!(
+        "/{}",
+        original_path
+            .trim_start_matches('/')
+            .strip_prefix(&app.to_string())
+            .unwrap_or("")
+            .trim_start_matches('/')
+    );
+
     Ok(ws_connection.on_upgrade(move |ws: WebSocket| async move {
         maintain_websocket(
             ws,
             our.clone(),
             app,
-            // remove process id from beginning of path by splitting into segments
-            // separated by "/" and taking all but the first
-            original_path
-                .split('/')
-                .skip(1)
-                .collect::<Vec<&str>>()
-                .join("/"),
+            formatted_path,
             jwt_secret_bytes.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
@@ -547,12 +550,22 @@ async fn http_handler(
                 .into_response());
             }
             if request_subdomain != subdomain {
+                let query_string = if !query_params.is_empty() {
+                    let params: Vec<String> = query_params
+                        .iter()
+                        .map(|(key, value)| format!("{}={}", key, value))
+                        .collect();
+                    format!("?{}", params.join("&"))
+                } else {
+                    String::new()
+                };
+
                 return Ok(warp::http::Response::builder()
                     .status(StatusCode::TEMPORARY_REDIRECT)
                     .header(
                         "Location",
                         format!(
-                            "{}://{}.{}{}",
+                            "{}://{}.{}{}{}",
                             match headers.get("X-Forwarded-Proto") {
                                 Some(proto) => proto.to_str().unwrap_or("http"),
                                 None => "http",
@@ -560,6 +573,7 @@ async fn http_handler(
                             subdomain,
                             host,
                             original_path,
+                            query_string,
                         ),
                     )
                     .body(vec![])
@@ -996,7 +1010,6 @@ async fn maintain_websocket(
             read = read_stream.next() => {
                 match read {
                     Some(Ok(msg)) => {
-
                         let ws_msg_type = if msg.is_text() {
                             WsMessageType::Text
                         } else if msg.is_binary() {

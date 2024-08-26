@@ -1,17 +1,15 @@
 import React, { useState, useEffect, FormEvent, useCallback } from "react";
-import KinodeHeader from "../components/KnsHeader";
 import Loader from "../components/Loader";
-import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
-import { KinodeTitle } from "../components/KinodeTitle";
-import { getFetchUrl } from "../utils/fetch";
+import { sha256, toBytes } from "viem";
+import { useSignTypedData, useAccount, useChainId } from 'wagmi'
+import { KIMAP } from "../abis";
 
 type SetPasswordProps = {
   direct: boolean;
   pw: string;
   reset: boolean;
-  provider?: providers.Web3Provider,
   knsName: string;
   setPw: React.Dispatch<React.SetStateAction<string>>;
   appSizeOnLoad: number;
@@ -24,15 +22,16 @@ function SetPassword({
   direct,
   pw,
   reset,
-  provider,
   setPw,
   appSizeOnLoad,
-  closeConnect,
-  nodeChainId,
 }: SetPasswordProps) {
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState<boolean>(false);
+
+  const { signTypedDataAsync } = useSignTypedData();
+  const { address } = useAccount();
+  const chainId = useChainId();
 
   useEffect(() => {
     document.title = "Set Password";
@@ -53,25 +52,40 @@ function SetPassword({
 
       setTimeout(async () => {
         setLoading(true);
-        let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
-        let signer = await provider?.getSigner();
-        let owner = await signer?.getAddress();
-        let chain_id = await signer?.getChainId();
+        let hashed_password = sha256(toBytes(pw));
+        let owner = address;
         let timestamp = Date.now();
 
-        let sig_data = JSON.stringify({
-          username: knsName,
-          password_hash: hashed_password,
-          timestamp,
-          direct,
-          reset,
-          chain_id,
-        });
-
-        let signature = await signer?.signMessage(utils.toUtf8Bytes(sig_data));
+        const signature = await signTypedDataAsync({
+          domain: {
+            name: "Kimap",
+            version: "1",
+            chainId: chainId,
+            verifyingContract: KIMAP,
+          },
+          types: {
+            Boot: [
+              { name: 'username', type: 'string' },
+              { name: 'password_hash', type: 'bytes32' },
+              { name: 'timestamp', type: 'uint256' },
+              { name: 'direct', type: 'bool' },
+              { name: 'reset', type: 'bool' },
+              { name: 'chain_id', type: 'uint256' },
+            ],
+          },
+          primaryType: 'Boot',
+          message: {
+            username: knsName,
+            password_hash: hashed_password,
+            timestamp: BigInt(timestamp),
+            direct,
+            reset,
+            chain_id: BigInt(chainId),
+          },
+        })
 
         try {
-          const result = await fetch(getFetchUrl("/boot"), {
+          const result = await fetch("/boot", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
@@ -83,7 +97,7 @@ function SetPassword({
               owner,
               timestamp,
               signature,
-              chain_id,
+              chain_id: chainId,
             }),
           });
           const base64String = await result.json();
@@ -91,13 +105,12 @@ function SetPassword({
           downloadKeyfile(knsName, base64String);
 
           const interval = setInterval(async () => {
-            const res = await fetch(getFetchUrl("/"), { credentials: 'include' });
+            const res = await fetch("/", { credentials: 'include' });
 
             if (
               res.status < 300 &&
               Number(res.headers.get("content-length")) !== appSizeOnLoad
             ) {
-              console.log("WE GOOD, ROUTING")
               clearInterval(interval);
               window.location.replace("/");
             }
@@ -113,56 +126,41 @@ function SetPassword({
 
   return (
     <>
-      <KinodeHeader
-        header={<KinodeTitle prefix="Set Password" showLogo />}
-        openConnect={() => { }}
-        closeConnect={closeConnect}
-        nodeChainId={nodeChainId}
-      />
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (
-        <form id="signup-form" className="flex flex-col w-full max-w-[450px] gap-4" onSubmit={handleSubmit}>
-          <div className="flex flex-col w-full place-items-center place-content-center">
-            <div className="flex w-full place-items-center mb-2">
-              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2" style={{ fontSize: 20 }} htmlFor="password">New Password</label>
-              <Tooltip text={`This password will be used to log in if you restart your node or switch browsers.`} />
-            </div>
-            <div className="flex w-full place-items-center">
-              <input
-                className="grow"
-                type="password"
-                id="password"
-                required
-                minLength={6}
-                name="password"
-                placeholder="Min 6 characters"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                autoFocus
-              />
-            </div>
+        <form className="form" onSubmit={handleSubmit}>
+          <div className="form-group">
+            <Tooltip text="This password will be used to log in when you restart your node or switch browsers.">
+              <label className="form-label" htmlFor="password">Set password for {knsName}</label>
+            </Tooltip>
+            <input
+              type="password"
+              id="password"
+              required
+              minLength={6}
+              name="password"
+              placeholder="6 characters minimum"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              autoFocus
+            />
           </div>
-          <div className="flex flex-col w-full place-items-center place-content-center">
-            <div className="flex w-full place-items-center">
-              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-4" style={{ fontSize: 20 }} htmlFor="confirm-password">Confirm Password</label>
-            </div>
-            <div className="flex w-full place-items-center">
-              <input
-                className="grow"
-                type="password"
-                id="confirm-password"
-                required
-                minLength={6}
-                name="confirm-password"
-                placeholder="Min 6 characters"
-                value={pw2}
-                onChange={(e) => setPw2(e.target.value)}
-              />
-            </div>
-            {Boolean(error) && <p style={{ color: "red" }}>{error}</p>}
+          <div className="form-group">
+            <label className="form-label" htmlFor="confirm-password">Confirm Password</label>
+            <input
+              type="password"
+              id="confirm-password"
+              required
+              minLength={6}
+              name="confirm-password"
+              placeholder="6 characters minimum"
+              value={pw2}
+              onChange={(e) => setPw2(e.target.value)}
+            />
           </div>
-          <button type="submit">Submit</button>
+          {Boolean(error) && <p className="error-message">{error}</p>}
+          <button type="submit" className="button">Submit</button>
         </form>
       )}
     </>

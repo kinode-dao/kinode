@@ -1,10 +1,9 @@
 use lib::types::core::{
-    Address, Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
-    NetworkErrorSender, NodeRouting, PrintSender, ProcessId,
+    Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
+    NetworkErrorSender, NodeRouting, PrintSender,
 };
 use types::{
-    IdentityExt, NetData, OnchainPKI, PKINames, Peers, PendingPassthroughs, TCP_PROTOCOL,
-    WS_PROTOCOL,
+    IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL, WS_PROTOCOL,
 };
 use {dashmap::DashMap, ring::signature::Ed25519KeyPair, std::sync::Arc, tokio::task::JoinSet};
 
@@ -47,17 +46,12 @@ pub async fn networking(
     // and store a mapping of peers we have an active route for
     let pki: OnchainPKI = Arc::new(DashMap::new());
     let peers: Peers = Arc::new(DashMap::new());
-    // keep a mapping of namehashes (used onchain) to node-ids.
-    // this allows us to act as a translator for others, and translate
-    // our own router namehashes if we are indirect.
-    let names: PKINames = Arc::new(DashMap::new());
     // only used by routers
     let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
 
     let net_data = NetData {
         pki,
         peers,
-        names,
         pending_passthroughs,
     };
 
@@ -83,10 +77,10 @@ pub async fn networking(
                     "net: fatal error: need at least one networking protocol"
                 ));
             }
-            if ports.contains_key(WS_PROTOCOL) {
+            if ext.our.ws_routing().is_some() {
                 tasks.spawn(ws::receiver(ext.clone(), net_data.clone()));
             }
-            if ports.contains_key(TCP_PROTOCOL) {
+            if ext.our.tcp_routing().is_some() {
                 tasks.spawn(tcp::receiver(ext.clone(), net_data.clone()));
             }
         }
@@ -165,11 +159,11 @@ async fn handle_local_request(
             // we shouldn't get these locally, ignore
         }
         Ok(NetAction::KnsUpdate(log)) => {
-            utils::ingest_log(log, &data.pki, &data.names);
+            utils::ingest_log(log, &data.pki);
         }
         Ok(NetAction::KnsBatchUpdate(logs)) => {
             for log in logs {
-                utils::ingest_log(log, &data.pki, &data.names);
+                utils::ingest_log(log, &data.pki);
             }
         }
         Ok(gets) => {
@@ -187,15 +181,11 @@ async fn handle_local_request(
                     NetResponse::Peer(data.pki.get(&peer).map(|p| p.clone())),
                     None,
                 ),
-                NetAction::GetName(namehash) => (
-                    NetResponse::Name(data.names.get(&namehash).map(|n| n.clone())),
-                    None,
-                ),
                 NetAction::GetDiagnostics => {
                     let mut printout = String::new();
                     printout.push_str(&format!(
                         "indexing from contract address {}\r\n",
-                        crate::KNS_ADDRESS
+                        crate::KIMAP_ADDRESS
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(
@@ -271,29 +261,25 @@ async fn handle_local_request(
                     return;
                 }
             };
-            ext.kernel_message_tx
-                .send(KernelMessage {
-                    id: km.id,
-                    source: Address {
-                        node: ext.our.name.clone(),
-                        process: ProcessId::new(Some("net"), "distro", "sys"),
+            KernelMessage::builder()
+                .id(km.id)
+                .source((ext.our.name.as_str(), "net", "distro", "sys"))
+                .target(km.rsvp.as_ref().unwrap_or(&km.source).clone())
+                .message(lib::core::Message::Response((
+                    lib::core::Response {
+                        inherit: false,
+                        body: rmp_serde::to_vec(&response_body)
+                            .expect("net: failed to serialize response"),
+                        metadata: None,
+                        capabilities: vec![],
                     },
-                    target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
-                    rsvp: None,
-                    message: lib::core::Message::Response((
-                        lib::core::Response {
-                            inherit: false,
-                            body: rmp_serde::to_vec(&response_body)
-                                .expect("net: failed to serialize response"),
-                            metadata: None,
-                            capabilities: vec![],
-                        },
-                        None,
-                    )),
-                    lazy_load_blob: response_blob,
-                })
-                .await
-                .expect("net: kernel channel was dropped");
+                    None,
+                )))
+                .lazy_load_blob(response_blob)
+                .build()
+                .unwrap()
+                .send(&ext.kernel_message_tx)
+                .await;
         }
     }
 }
