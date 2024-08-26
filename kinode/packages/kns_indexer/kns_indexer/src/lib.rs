@@ -154,6 +154,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         &mut pending_notes,
     );
     println!("done syncing old logs.");
+    handle_pending_notes(&mut state, &mut pending_notes)?;
 
     loop {
         let Ok(message) = await_message() else {
