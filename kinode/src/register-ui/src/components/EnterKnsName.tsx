@@ -47,6 +47,12 @@ function EnterKnsName({
       let validities: string[] = [];
       setIsPunyfied('');
 
+      if (/[A-Z]/.test(name)) {
+        validities.push(NAME_URL);
+        setNameValidities(validities);
+        return;
+      }
+
       let normalized = ''
       index = validities.indexOf(NAME_INVALID_PUNY);
       try {
@@ -69,7 +75,9 @@ function EnterKnsName({
         index = validities.indexOf(NAME_URL);
         if (name !== "" && !isValidDomain(normalized)) {
           if (index === -1) validities.push(NAME_URL);
-        } else if (index !== -1) validities.splice(index, 1);
+        } else if (index !== -1) {
+          validities.splice(index, 1);
+        }
 
         index = validities.indexOf(NAME_CLAIMED);
 
