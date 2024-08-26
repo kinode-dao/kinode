@@ -6,10 +6,12 @@ import { keccak256, toBytes } from 'viem';
 import { mechAbi, KIMAP, encodeIntoMintCall, encodeMulticalls, kimapAbi, MULTICALL } from "../abis";
 import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
+import { PackageSelector } from "../components";
+
 
 export default function PublishPage() {
   const { openConnectModal } = useConnectModal();
-  const { ourApps, fetchOurApps } = useAppsStore();
+  const { ourApps, fetchOurApps, installed } = useAppsStore();
   const publicClient = usePublicClient();
 
   const { address, isConnected, isConnecting } = useAccount();
@@ -45,6 +47,11 @@ export default function PublishPage() {
       alert("Error calculating metadata hash. Please ensure the URL is valid and the metadata is in JSON format.");
     }
   }, [metadataUrl]);
+
+  const handlePackageSelection = (packageName: string, publisherId: string) => {
+    setPackageName(packageName);
+    setPublisherId(publisherId);
+  };
 
   const publishPackage = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
@@ -187,26 +194,10 @@ export default function PublishPage() {
       ) : (
         <form className="publish-form" onSubmit={publishPackage}>
           <div className="form-group">
-            <label htmlFor="package-name">Package Name</label>
-            <input
-              id="package-name"
-              type="text"
-              required
-              placeholder="my-package"
-              value={packageName}
-              onChange={(e) => setPackageName(e.target.value)}
-            />
+            <label htmlFor="package-select">Select Package</label>
+            <PackageSelector onPackageSelect={handlePackageSelection} />
           </div>
-          <div className="form-group">
-            <label htmlFor="publisher-id">Publisher ID</label>
-            <input
-              id="publisher-id"
-              type="text"
-              required
-              value={publisherId}
-              onChange={(e) => setPublisherId(e.target.value)}
-            />
-          </div>
+
           <div className="form-group">
             <label htmlFor="metadata-url">Metadata URL</label>
             <input
