@@ -47,12 +47,6 @@ function EnterKnsName({
       let validities: string[] = [];
       setIsPunyfied('');
 
-      const len = [...name].length;
-      index = validities.indexOf(NAME_LENGTH);
-      if (len < 9 && len !== 0) {
-        if (index === -1) validities.push(NAME_LENGTH);
-      } else if (index !== -1) validities.splice(index, 1);
-
       let normalized = ''
       index = validities.indexOf(NAME_INVALID_PUNY);
       try {
@@ -61,6 +55,12 @@ function EnterKnsName({
       } catch (e) {
         if (index === -1) validities.push(NAME_INVALID_PUNY);
       }
+
+      const len = [...normalized].length - 3;
+      index = validities.indexOf(NAME_LENGTH);
+      if (len < 9 && len !== 0) {
+        if (index === -1) validities.push(NAME_LENGTH);
+      } else if (index !== -1) validities.splice(index, 1);
 
       if (normalized !== (name + ".os")) setIsPunyfied(normalized);
 
