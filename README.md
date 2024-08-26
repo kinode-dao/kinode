@@ -150,7 +150,12 @@ To build a local Docker image, run the following command in this project root.
 
 ```bash
 # The `VERSION` may be replaced with the tag of a GitHub release
-docker buildx build -t 0xlynett/kinode . --build-arg VERSION=v0.9.1 --platform linux/amd64,linux/arm64
+
+# Build for your system's architecture
+docker build . -t 0xlynett/kinode --build-arg VERSION=v0.9.1
+
+# Build a multiarch image
+docker buildx build . --platform arm64,amd64 --build-arg VERSION=v0.9.1 -t 0xlynett/kinode
 ```
 
 For example:
