@@ -1,7 +1,7 @@
-use crate::kinode::process::downloads::{DownloadRequests, DownloadResponses};
+use crate::kinode::process::downloads::DownloadRequests;
 use kinode::process::downloads::LocalDownloadRequest;
 use kinode_process_lib::{
-    await_next_message_body, call_init, println, Address, Message, PackageId, Request,
+    await_next_message_body, call_init, println, Address, PackageId, Request,
 };
 
 wit_bindgen::generate!({
@@ -37,40 +37,23 @@ fn init(our: Address) {
 
     let version_hash: String = arg3.to_string();
 
-    let Ok(Ok(Message::Response { body, .. })) =
-        Request::to((our.node(), ("downloads", "app_store", "sys")))
-            .body(
-                serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
-                    package_id: crate::kinode::process::main::PackageId {
-                        package_name: package_id.package_name.clone(),
-                        publisher_node: package_id.publisher_node.clone(),
-                    },
-                    download_from: download_from.clone(),
-                    desired_version_hash: version_hash.clone(),
-                }))
-                .expect("Failed to serialize LocalDownloadRequest"),
-            )
-            .send_and_await_response(10)
+    let Ok(_) = Request::to((our.node(), ("downloads", "app_store", "sys")))
+        .body(
+            serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
+                package_id: crate::kinode::process::main::PackageId {
+                    package_name: package_id.package_name.clone(),
+                    publisher_node: package_id.publisher_node.clone(),
+                },
+                download_from: download_from.clone(),
+                desired_version_hash: version_hash.clone(),
+            }))
+            .expect("Failed to serialize LocalDownloadRequest"),
+        )
+        .send()
     else {
-        println!("download: failed to get a response from app_store..!");
+        println!("download: failed to send request to downloads:app_store!");
         return;
     };
 
-    let Ok(response) = serde_json::from_slice::<DownloadResponses>(&body) else {
-        println!("download: failed to parse response from app_store..!");
-        return;
-    };
-
-    match response {
-        DownloadResponses::Error(_e) => {
-            println!("download: error");
-        }
-        DownloadResponses::Success => {
-            println!("download: success");
-        }
-        _ => {
-            println!("download: unexpected response from app_store..!");
-            return;
-        }
-    }
+    println!("download: request sent, started download from {download_from}");
 }
