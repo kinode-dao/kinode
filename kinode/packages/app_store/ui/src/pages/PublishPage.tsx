@@ -8,10 +8,11 @@ import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
 import { PackageSelector } from "../components";
 
+const NAME_INVALID = "Package name must contain only valid characters (a-z, 0-9, -, and .)";
 
 export default function PublishPage() {
   const { openConnectModal } = useConnectModal();
-  const { ourApps, fetchOurApps, installed } = useAppsStore();
+  const { ourApps, fetchOurApps, installed, downloads } = useAppsStore();
   const publicClient = usePublicClient();
 
   const { address, isConnected, isConnecting } = useAccount();
@@ -26,27 +27,74 @@ export default function PublishPage() {
   const [metadataUrl, setMetadataUrl] = useState<string>("");
   const [metadataHash, setMetadataHash] = useState<string>("");
 
+  const [nameValidity, setNameValidity] = useState<string | null>(null);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+
   useEffect(() => {
     fetchOurApps();
   }, [fetchOurApps]);
+
+  const validatePackageName = useCallback((name: string) => {
+    // Allow lowercase letters, numbers, hyphens, and dots
+    const validNameRegex = /^[a-z0-9.-]+$/;
+
+    if (!validNameRegex.test(name)) {
+      setNameValidity(NAME_INVALID);
+    } else {
+      setNameValidity(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (packageName) {
+      validatePackageName(packageName);
+    } else {
+      setNameValidity(null);
+    }
+  }, [packageName, validatePackageName]);
 
 
   const calculateMetadataHash = useCallback(async () => {
     if (!metadataUrl) {
       setMetadataHash("");
+      setMetadataError("");
       return;
     }
 
     try {
       const metadataResponse = await fetch(metadataUrl);
       const metadataText = await metadataResponse.text();
-      JSON.parse(metadataText); // confirm it's valid JSON
+      const metadata = JSON.parse(metadataText);
+
+      // Check if code_hashes exist in metadata and is an object
+      if (metadata.properties && metadata.properties.code_hashes && typeof metadata.properties.code_hashes === 'object') {
+        const codeHashes = metadata.properties.code_hashes;
+        const missingHashes = Object.entries(codeHashes).filter(([version, hash]) =>
+          !downloads[`${packageName}:${publisherId}`]?.some(d => d.File?.name === `${hash}.zip`)
+        );
+
+        if (missingHashes.length > 0) {
+          setMetadataError(`Missing local downloads for mirroring versions: ${missingHashes.map(([version]) => version).join(', ')}`);
+        } else {
+          setMetadataError("");
+        }
+      } else {
+        setMetadataError("The metadata does not contain the required 'code_hashes' property or it's not in the expected format");
+      }
+
       const metadataHash = keccak256(toBytes(metadataText));
       setMetadataHash(metadataHash);
     } catch (error) {
-      alert("Error calculating metadata hash. Please ensure the URL is valid and the metadata is in JSON format.");
+      if (error instanceof SyntaxError) {
+        setMetadataError("The metadata is not valid JSON. Please check the file for syntax errors.");
+      } else if (error instanceof Error) {
+        setMetadataError(`Error processing metadata: ${error.message}`);
+      } else {
+        setMetadataError("An unknown error occurred while processing the metadata.");
+      }
+      setMetadataHash("");
     }
-  }, [metadataUrl]);
+  }, [metadataUrl, packageName, publisherId, downloads]);
 
   const handlePackageSelection = (packageName: string, publisherId: string) => {
     setPackageName(packageName);
@@ -196,6 +244,7 @@ export default function PublishPage() {
           <div className="form-group">
             <label htmlFor="package-select">Select Package</label>
             <PackageSelector onPackageSelect={handlePackageSelection} />
+            {nameValidity && <p className="error-message">{nameValidity}</p>}
           </div>
 
           <div className="form-group">
@@ -212,6 +261,7 @@ export default function PublishPage() {
             <p className="help-text">
               Metadata is a JSON file that describes your package.
             </p>
+            {metadataError && <p className="error-message">{metadataError}</p>}
           </div>
           <div className="form-group">
             <label htmlFor="metadata-hash">Metadata Hash</label>
@@ -223,7 +273,7 @@ export default function PublishPage() {
               placeholder="Calculated automatically from metadata URL"
             />
           </div>
-          <button type="submit" disabled={isConfirming}>
+          <button type="submit" disabled={isConfirming || nameValidity !== null}>
             {isConfirming ? 'Publishing...' : 'Publish'}
           </button>
         </form>

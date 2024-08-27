@@ -16,7 +16,7 @@ export default function DownloadPage() {
         downloadApp,
         installApp,
         removeDownload,
-        checkMirror,
+        clearAllActiveDownloads,
     } = useAppsStore();
 
     const [showMetadata, setShowMetadata] = useState(false);
@@ -34,8 +34,9 @@ export default function DownloadPage() {
     useEffect(() => {
         if (id) {
             fetchData(id);
+            clearAllActiveDownloads();
         }
-    }, [id, fetchData]);
+    }, [id, fetchData, clearAllActiveDownloads]);
 
     const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
         setSelectedMirror(mirror);
