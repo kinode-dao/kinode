@@ -3,7 +3,7 @@ import useAppsStore from "../store";
 
 interface MirrorSelectorProps {
     packageId: string | undefined;
-    onMirrorSelect: (mirror: string) => void;
+    onMirrorSelect: (mirror: string, status: boolean | null | 'http') => void;
 }
 
 const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSelect }) => {
@@ -40,8 +40,10 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSele
     }, [packageId, fetchListing, checkMirror]);
 
     useEffect(() => {
-        onMirrorSelect(selectedMirror);
-    }, [selectedMirror, onMirrorSelect]);
+        if (selectedMirror) {
+            onMirrorSelect(selectedMirror, mirrorStatuses[selectedMirror]);
+        }
+    }, [selectedMirror, mirrorStatuses, onMirrorSelect]);
 
     const handleMirrorChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const value = e.target.value;
