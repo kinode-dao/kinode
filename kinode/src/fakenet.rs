@@ -169,6 +169,29 @@ pub async fn mint_local(
     let tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
     let _receipt = tx_hash.get_receipt().await?;
 
+    // send a small amount of ETH to the zero address
+    // this is a workaround to get anvil to mine a block after our registration tx
+    // instead of doing block-time 1s or similar, which leads to runaway mem-usage.
+    let zero_address = Address::default();
+    let small_amount = U256::from(10); // 10 wei (0.00000001 ETH)
+
+    let nonce = provider.get_transaction_count(wallet_address).await?;
+
+    let small_tx = TransactionRequest::default()
+        .to(zero_address)
+        .value(small_amount)
+        .nonce(nonce)
+        .with_chain_id(31337)
+        .with_gas_limit(21_000)
+        .with_max_priority_fee_per_gas(200_000_000_000)
+        .with_max_fee_per_gas(300_000_000_000);
+
+    let small_tx_envelope = small_tx.build(&wallet).await?;
+    let small_tx_encoded = small_tx_envelope.encoded_2718();
+
+    let small_tx_hash = provider.send_raw_transaction(&small_tx_encoded).await?;
+    let _small_receipt = small_tx_hash.get_receipt().await?;
+
     Ok(())
 }
 
