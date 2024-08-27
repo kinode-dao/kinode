@@ -47,11 +47,11 @@ function EnterKnsName({
       let validities: string[] = [];
       setIsPunyfied('');
 
-      const len = [...name].length;
-      index = validities.indexOf(NAME_LENGTH);
-      if (len < 9 && len !== 0) {
-        if (index === -1) validities.push(NAME_LENGTH);
-      } else if (index !== -1) validities.splice(index, 1);
+      if (/[A-Z]/.test(name)) {
+        validities.push(NAME_URL);
+        setNameValidities(validities);
+        return;
+      }
 
       let normalized = ''
       index = validities.indexOf(NAME_INVALID_PUNY);
@@ -62,6 +62,12 @@ function EnterKnsName({
         if (index === -1) validities.push(NAME_INVALID_PUNY);
       }
 
+      const len = [...normalized].length - 3;
+      index = validities.indexOf(NAME_LENGTH);
+      if (len < 9 && len !== 0) {
+        if (index === -1) validities.push(NAME_LENGTH);
+      } else if (index !== -1) validities.splice(index, 1);
+
       if (normalized !== (name + ".os")) setIsPunyfied(normalized);
 
       // only check if name is valid punycode
@@ -69,7 +75,9 @@ function EnterKnsName({
         index = validities.indexOf(NAME_URL);
         if (name !== "" && !isValidDomain(normalized)) {
           if (index === -1) validities.push(NAME_URL);
-        } else if (index !== -1) validities.splice(index, 1);
+        } else if (index !== -1) {
+          validities.splice(index, 1);
+        }
 
         index = validities.indexOf(NAME_CLAIMED);
 

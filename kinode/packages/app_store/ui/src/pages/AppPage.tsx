@@ -95,7 +95,7 @@ export default function AppPage() {
   };
 
   const handleLaunch = () => {
-    navigate(`/${app?.package_id.package_name}:${app?.package_id.package_name}:${app?.package_id.publisher_node}/`);
+    window.location.href = `/${app?.package_id.package_name}:${app?.package_id.package_name}:${app?.package_id.publisher_node}/`;
   };
 
   if (isLoading) {
