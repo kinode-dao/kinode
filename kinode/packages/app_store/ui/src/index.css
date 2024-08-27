@@ -224,6 +224,11 @@ td {
     align-items: center;
     gap: 0.5rem;
     color: var(--red);
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+}
+
+.form-group {
     margin-bottom: 1rem;
 }
 
