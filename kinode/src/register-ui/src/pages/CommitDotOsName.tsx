@@ -52,7 +52,7 @@ function CommitDotOsName({
 
     useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
-    const enterOsNameProps = { address, name, setName, nameValidities, setNameValidities, triggerNameCheck }
+    const enterOsNameProps = { address, name, setName, fixedTlz: ".os", nameValidities, setNameValidities, triggerNameCheck }
 
     useEffect(() => {
         if (!address) {

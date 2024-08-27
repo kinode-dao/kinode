@@ -13,9 +13,10 @@ export const NAME_INVALID_PUNY = "Unsupported punycode character";
 export const NAME_NOT_OWNER = "Name already exists and does not belong to this wallet";
 export const NAME_NOT_REGISTERED = "Name is not registered";
 
-type ClaimOsNameProps = {
+type EnterNameProps = {
   address?: `0x${string}`;
   name: string;
+  fixedTlz?: string;
   setName: React.Dispatch<React.SetStateAction<string>>;
   nameValidities: string[];
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>;
@@ -28,12 +29,13 @@ function EnterKnsName({
   address,
   name,
   setName,
+  fixedTlz,
   nameValidities,
   setNameValidities,
   triggerNameCheck,
   setTba,
   isReset = false,
-}: ClaimOsNameProps) {
+}: EnterNameProps) {
   const client = usePublicClient();
   const debouncer = useRef<NodeJS.Timeout | null>(null);
 
@@ -56,22 +58,24 @@ function EnterKnsName({
       let normalized = ''
       index = validities.indexOf(NAME_INVALID_PUNY);
       try {
-        normalized = toAscii(name + ".os");
+        normalized = toAscii(fixedTlz ? name + fixedTlz : name);
         if (index !== -1) validities.splice(index, 1);
       } catch (e) {
         if (index === -1) validities.push(NAME_INVALID_PUNY);
       }
 
-      const len = [...normalized].length - 3;
-      index = validities.indexOf(NAME_LENGTH);
-      if (len < 9 && len !== 0) {
-        if (index === -1) validities.push(NAME_LENGTH);
-      } else if (index !== -1) validities.splice(index, 1);
+      if (fixedTlz === '.os') {
+        const len = [...normalized].length - 3;
+        index = validities.indexOf(NAME_LENGTH);
+        if (len < 9 && len !== 0) {
+          if (index === -1) validities.push(NAME_LENGTH);
+        } else if (index !== -1) validities.splice(index, 1);
+      }
 
-      if (normalized !== (name + ".os")) setIsPunyfied(normalized);
+      if (normalized !== (fixedTlz ? name + fixedTlz : name)) setIsPunyfied(normalized);
 
       // only check if name is valid punycode
-      if (normalized && normalized !== '.os') {
+      if (normalized) {
         index = validities.indexOf(NAME_URL);
         if (name !== "" && !isValidDomain(normalized)) {
           if (index === -1) validities.push(NAME_URL);
@@ -119,22 +123,22 @@ function EnterKnsName({
     }, 500);
   }, [name, triggerNameCheck, isReset]);
 
-  const noDotsOrSpaces = (e: any) =>
-    e.target.value.indexOf(".") === -1 && e.target.value.indexOf(" ") === -1 && setName(e.target.value);
+  const noSpaces = (e: any) =>
+    e.target.value.indexOf(" ") === -1 && setName(e.target.value);
 
   return (
     <div className="enter-kns-name">
       <div className="input-wrapper">
         <input
           value={name}
-          onChange={noDotsOrSpaces}
+          onChange={noSpaces}
           type="text"
           required
-          name="dot-os-name"
+          name="kns-name"
           placeholder="mynode123"
           className="kns-input"
         />
-        <span className="kns-suffix">.os</span>
+        {fixedTlz && <span className="kns-suffix">{fixedTlz}</span>}
       </div>
       {nameValidities.map((x, i) => (
         <p key={i} className="error-message">{x}</p>
