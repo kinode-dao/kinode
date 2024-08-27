@@ -43,7 +43,6 @@ export default function DownloadPage() {
         setIsMirrorOnline(status === 'http' ? true : status);
     }, []);
 
-
     const sortedVersions = useMemo(() => {
         if (!app || !app.metadata?.properties?.code_hashes) return [];
         return app.metadata.properties.code_hashes
