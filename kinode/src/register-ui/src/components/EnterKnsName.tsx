@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import isValidDomain from "is-valid-domain";
 import { toAscii } from "idna-uts46-hx";
 import { usePublicClient } from 'wagmi'
 
@@ -45,7 +44,6 @@ function EnterKnsName({
     if (debouncer.current) clearTimeout(debouncer.current);
 
     debouncer.current = setTimeout(async () => {
-      let index: number;
       let validities: string[] = [];
       setIsPunyfied('');
 
@@ -56,67 +54,53 @@ function EnterKnsName({
       }
 
       let normalized = ''
-      index = validities.indexOf(NAME_INVALID_PUNY);
       try {
         normalized = toAscii(fixedTlz ? name + fixedTlz : name);
-        if (index !== -1) validities.splice(index, 1);
       } catch (e) {
-        if (index === -1) validities.push(NAME_INVALID_PUNY);
+        validities.push(NAME_INVALID_PUNY);
       }
 
+      // length check, only for .os
       if (fixedTlz === '.os') {
         const len = [...normalized].length - 3;
-        index = validities.indexOf(NAME_LENGTH);
         if (len < 9 && len !== 0) {
-          if (index === -1) validities.push(NAME_LENGTH);
-        } else if (index !== -1) validities.splice(index, 1);
+          validities.push(NAME_LENGTH);
+        }
       }
 
-      if (normalized !== (fixedTlz ? name + fixedTlz : name)) setIsPunyfied(normalized);
+      if (normalized !== (fixedTlz ? name + fixedTlz : name)) {
+        setIsPunyfied(normalized);
+      }
 
-      // only check if name is valid punycode
-      if (normalized) {
-        index = validities.indexOf(NAME_URL);
-        if (name !== "" && !isValidDomain(normalized)) {
-          if (index === -1) validities.push(NAME_URL);
-        } else if (index !== -1) {
-          validities.splice(index, 1);
-        }
+      // only check ownership if name is otherwise valid
+      if (validities.length === 0 && normalized.length > 2) {
+        try {
+          const namehash = kinohash(normalized)
 
-        index = validities.indexOf(NAME_CLAIMED);
+          const data = await client?.readContract({
+            address: KIMAP,
+            abi: kimapAbi,
+            functionName: "get",
+            args: [namehash]
+          })
 
-        // only check if name is valid and long enough
-        if (validities.length === 0 || index !== -1 && normalized.length > 2) {
-          try {
-            const namehash = kinohash(normalized)
-            // maybe separate into helper function for readability?
-            // also note picking the right chain ID & address!
-            const data = await client?.readContract({
-              address: KIMAP,
-              abi: kimapAbi,
-              functionName: "get",
-              args: [namehash]
-            })
-
-            const tba = data?.[0];
-            if (tba !== undefined) {
-              setTba ? (setTba(tba)) : null;
-            } else {
-              validities.push(NAME_NOT_REGISTERED);
-            }
-
-            const owner = data?.[1];
-            const owner_is_zero = owner === "0x0000000000000000000000000000000000000000";
-
-            if (!owner_is_zero && !isReset) validities.push(NAME_CLAIMED);
-
-            if (!owner_is_zero && isReset && address && owner !== address) validities.push(NAME_NOT_OWNER);
-
-            if (isReset && owner_is_zero) validities.push(NAME_NOT_REGISTERED);
-          } catch (e) {
-            console.error({ e })
-            if (index !== -1) validities.splice(index, 1);
+          const tba = data?.[0];
+          if (tba !== undefined) {
+            setTba ? (setTba(tba)) : null;
+          } else if (isReset) {
+            validities.push(NAME_NOT_REGISTERED);
           }
+
+          const owner = data?.[1];
+          const owner_is_zero = owner === "0x0000000000000000000000000000000000000000";
+
+          if (!owner_is_zero && !isReset) validities.push(NAME_CLAIMED);
+
+          if (!owner_is_zero && isReset && address && owner !== address) validities.push(NAME_NOT_OWNER);
+
+          if (isReset && owner_is_zero) validities.push(NAME_NOT_REGISTERED);
+        } catch (e) {
+          console.error({ e })
         }
       }
       setNameValidities(validities);
