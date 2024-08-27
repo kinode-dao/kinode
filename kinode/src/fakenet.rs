@@ -166,7 +166,8 @@ pub async fn mint_local(
     let tx_encoded = tx_envelope.encoded_2718();
 
     // Send the raw transaction and retrieve the transaction receipt.
-    let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
+    let tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
+    let _receipt = tx_hash.get_receipt().await?;
 
     Ok(())
 }
