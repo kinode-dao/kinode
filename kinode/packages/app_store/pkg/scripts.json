@@ -4,10 +4,12 @@
         "public": false,
         "request_networking": false,
         "request_capabilities": [
-            "main:app_store:sys"
+            "main:app_store:sys",
+            "downloads:app_store:sys"
         ],
         "grant_capabilities": [
-            "main:app_store:sys"
+            "main:app_store:sys",
+            "downloads:app_store:sys"
         ],
         "wit_version": 0
     },
