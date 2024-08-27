@@ -136,7 +136,8 @@ fn build_and_zip_package(
         let mut writer = Cursor::new(Vec::new());
         let options = FileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
-            .unix_permissions(0o755);
+            .unix_permissions(0o755)
+            .last_modified_time(zip::DateTime::from_date_and_time(2023, 6, 19, 0, 0, 0).unwrap());
         {
             let mut zip = zip::ZipWriter::new(&mut writer);
 
