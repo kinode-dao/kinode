@@ -13,12 +13,13 @@ pub fn spawn_send_transfer(
     to_addr: &Address,
 ) -> anyhow::Result<()> {
     let transfer_id: u64 = rand::random();
+    let timer_id = ProcessId::new(Some("timer"), "distro", "sys");
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
         &format!("{}/pkg/ft_worker.wasm", our.package_id()),
         OnExit::None,
         our_capabilities(),
-        vec![],
+        vec![timer_id],
         false,
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
@@ -48,12 +49,13 @@ pub fn spawn_receive_transfer(
     timeout: u64,
 ) -> anyhow::Result<Address> {
     let transfer_id: u64 = rand::random();
+    let timer_id = ProcessId::new(Some("timer"), "distro", "sys");
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
         &format!("{}/pkg/ft_worker.wasm", our.package_id()),
         OnExit::None,
         our_capabilities(),
-        vec![],
+        vec![timer_id],
         false,
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
