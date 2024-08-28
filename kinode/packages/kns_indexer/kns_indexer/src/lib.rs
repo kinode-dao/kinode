@@ -278,7 +278,10 @@ fn handle_pending_notes(
             for (note, attempt) in notes.drain(..) {
                 if attempt >= MAX_PENDING_ATTEMPTS {
                     // skip notes that have exceeded max attempts
-                    println!("dropping note from block {block} after {attempt} attempts");
+                    print_to_terminal(
+                        1,
+                        &format!("dropping note from block {block} after {attempt} attempts"),
+                    );
                     continue;
                 }
                 if let Err(e) = handle_note(state, &note) {
