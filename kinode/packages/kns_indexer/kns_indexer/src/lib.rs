@@ -156,6 +156,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // set a timer tick so any pending logs will be processed
     timer::set_timer(DELAY_MS, None);
     println!("done syncing old logs.");
+    handle_pending_notes(&mut state, &mut pending_notes)?;
 
     loop {
         let Ok(message) = await_message() else {
@@ -435,15 +436,20 @@ fn handle_log(
             if !kimap::valid_note(&note) {
                 return Err(anyhow::anyhow!("skipping invalid note: {note}"));
             }
-            if let Some(block_number) = log.block_number {
-                print_to_terminal(
-                    1,
-                    &format!("adding note to pending_notes for block {block_number}"),
-                );
-                pending_notes
-                    .entry(block_number)
-                    .or_default()
-                    .push((decoded, 0));
+            // handle note: if it precedes parent mint event, add it to pending_notes
+            if let Err(e) = handle_note(state, &decoded) {
+                if let Some(KnsError::NoParentError) = e.downcast_ref::<KnsError>() {
+                    if let Some(block_number) = log.block_number {
+                        print_to_terminal(
+                            1,
+                            &format!("adding note to pending_notes for block {block_number}"),
+                        );
+                        pending_notes
+                            .entry(block_number)
+                            .or_default()
+                            .push((decoded, 0));
+                    }
+                }
             }
         }
         _log => {

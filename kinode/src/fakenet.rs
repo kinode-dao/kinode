@@ -58,38 +58,7 @@ pub async fn mint_local(
 
     let provider: RootProvider<PubSubFrontend> = ProviderBuilder::default().on_ws(ws).await?;
 
-    // interesting, even if we have a minted name, this does not explicitly fail.
-    // also note, fake.dev.os seems to currently work, need to gate dots from names?
-    let mint_call = mintCall {
-        who: wallet_address,
-        label: Bytes::from(label.as_bytes().to_vec()),
-        initialization: vec![].into(),
-        erc721Data: vec![].into(),
-        implementation: Address::from_str(KINO_ACCOUNT_IMPL).unwrap(),
-    }
-    .abi_encode();
-
-    let nonce = provider.get_transaction_count(wallet_address).await?;
-
-    let tx = TransactionRequest::default()
-        .to(minter)
-        .input(TransactionInput::new(mint_call.into()))
-        .nonce(nonce)
-        .with_chain_id(31337)
-        .with_gas_limit(12_000_00)
-        .with_max_priority_fee_per_gas(200_000_000_000)
-        .with_max_fee_per_gas(300_000_000_000);
-
-    // Build the transaction using the `EthereumSigner` with the provided signer.
-    let tx_envelope = tx.build(&wallet).await?;
-
-    // Encode the transaction using EIP-2718 encoding.
-    let tx_encoded = tx_envelope.encoded_2718();
-
-    // Send the raw transaction and retrieve the transaction receipt.
-    let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
-
-    // get tba to set KNS records
+    // get tba to see if name is already registered
     let namehash: [u8; 32] = keygen::namehash(name);
 
     let get_call = getCall {
@@ -149,30 +118,79 @@ pub async fn mint_local(
         },
     ];
 
+    let is_reset = tba != Address::default();
+
     let multicall = aggregateCall { calls: multicalls }.abi_encode();
 
-    let execute_call = executeCall {
+    let execute_call: Vec<u8> = executeCall {
         to: multicall_address,
         value: U256::from(0), // free mint
         data: multicall.into(),
-        operation: 1, // ?
+        operation: 1,
     }
     .abi_encode();
+
+    let (input_bytes, to) = if is_reset {
+        // name is already registered, multicall reset it
+        (execute_call, tba)
+    } else {
+        // name is not registered, mint it with multicall in initialization param
+        (
+            mintCall {
+                who: wallet_address,
+                label: Bytes::from(label.as_bytes().to_vec()),
+                initialization: execute_call.into(),
+                erc721Data: vec![].into(),
+                implementation: Address::from_str(KINO_ACCOUNT_IMPL).unwrap(),
+            }
+            .abi_encode(),
+            minter,
+        )
+    };
 
     let nonce = provider.get_transaction_count(wallet_address).await?;
 
     let tx = TransactionRequest::default()
-        .to(tba)
-        .input(TransactionInput::new(execute_call.into()))
+        .to(to)
+        .input(TransactionInput::new(input_bytes.into()))
         .nonce(nonce)
         .with_chain_id(31337)
         .with_gas_limit(12_000_00)
         .with_max_priority_fee_per_gas(200_000_000_000)
         .with_max_fee_per_gas(300_000_000_000);
 
+    // Build the transaction using the `EthereumSigner` with the provided signer.
     let tx_envelope = tx.build(&wallet).await?;
+
+    // Encode the transaction using EIP-2718 encoding.
     let tx_encoded = tx_envelope.encoded_2718();
-    let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
+
+    // Send the raw transaction and retrieve the transaction receipt.
+    let tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
+    let _receipt = tx_hash.get_receipt().await?;
+
+    // send a small amount of ETH to the zero address
+    // this is a workaround to get anvil to mine a block after our registration tx
+    // instead of doing block-time 1s or similar, which leads to runaway mem-usage.
+    let zero_address = Address::default();
+    let small_amount = U256::from(10); // 10 wei (0.00000001 ETH)
+
+    let nonce = provider.get_transaction_count(wallet_address).await?;
+
+    let small_tx = TransactionRequest::default()
+        .to(zero_address)
+        .value(small_amount)
+        .nonce(nonce)
+        .with_chain_id(31337)
+        .with_gas_limit(21_000)
+        .with_max_priority_fee_per_gas(200_000_000_000)
+        .with_max_fee_per_gas(300_000_000_000);
+
+    let small_tx_envelope = small_tx.build(&wallet).await?;
+    let small_tx_encoded = small_tx_envelope.encoded_2718();
+
+    let small_tx_hash = provider.send_raw_transaction(&small_tx_encoded).await?;
+    let _small_receipt = small_tx_hash.get_receipt().await?;
 
     Ok(())
 }
