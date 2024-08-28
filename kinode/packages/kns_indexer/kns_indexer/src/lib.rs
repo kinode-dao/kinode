@@ -153,6 +153,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         notes_filter.clone(),
         &mut pending_notes,
     );
+    // set a timer tick so any pending logs will be processed
+    timer::set_timer(DELAY_MS, None);
     println!("done syncing old logs.");
 
     loop {
