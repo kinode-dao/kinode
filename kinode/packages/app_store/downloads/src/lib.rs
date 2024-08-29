@@ -553,9 +553,9 @@ fn open_or_create_file(path: &str) -> anyhow::Result<File> {
 
 /// helper function for vfs directories, open if exists, if not create
 fn open_or_create_dir(path: &str) -> anyhow::Result<Directory> {
-    match vfs::open_dir(path, true, None) {
+    match vfs::open_dir(path, false, None) {
         Ok(dir) => Ok(dir),
-        Err(_) => match vfs::open_dir(path, false, None) {
+        Err(_) => match vfs::open_dir(path, true, None) {
             Ok(dir) => Ok(dir),
             Err(_) => Err(anyhow::anyhow!("could not create dir")),
         },
