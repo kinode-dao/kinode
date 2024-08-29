@@ -129,15 +129,23 @@ fn handle_receiver(
 ) -> anyhow::Result<()> {
     // TODO: write to a temporary location first, then check hash as we go, then rename to final location.
 
-    let package_dir = vfs::open_dir(&format!(
-        "/app_store:sys/downloads/{}:{}/",
-        package_id.package_name,
-        package_id.publisher(),
-    ), true, None)?;
+    let package_dir = vfs::open_dir(
+        &format!(
+            "/app_store:sys/downloads/{}:{}/",
+            package_id.package_name,
+            package_id.publisher(),
+        ),
+        true,
+        None,
+    )?;
 
     let timer_address = Address::from_str("our@timer:distro:sys")?;
 
-    let mut file = vfs::open_file(&format!("{}{}.zip", &package_dir.path, version_hash), true, None)?;
+    let mut file = vfs::open_file(
+        &format!("{}{}.zip", &package_dir.path, version_hash),
+        true,
+        None,
+    )?;
     let mut size: Option<u64> = None;
     let mut hasher = Sha256::new();
 

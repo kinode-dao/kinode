@@ -75,7 +75,8 @@ fn init(our: Address) {
 
     let mut downloads =
         vfs::open_dir("/app_store:sys/downloads", true, None).expect("could not open downloads");
-    let mut tmp = vfs::open_dir("/app_store:sys/downloads/tmp", true, None).expect("could not open tmp");
+    let mut tmp =
+        vfs::open_dir("/app_store:sys/downloads/tmp", true, None).expect("could not open tmp");
 
     let mut auto_updates: HashSet<(PackageId, String)> = HashSet::new();
 
