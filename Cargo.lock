@@ -2609,7 +2609,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -3636,7 +3636,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.9.1"
-source = "git+https://github.com/kinode-dao/process_lib?rev=631d346#631d346ccf879b854ebc9b47f4c2cd71cf2f1771"
+source = "git+https://github.com/kinode-dao/process_lib?rev=1c495ad#1c495ad8687dd580aa2aa2222f8e7958679220a6"
 dependencies = [
  "alloy 0.1.4",
  "alloy-primitives",
