@@ -58,6 +58,7 @@ generic-array = "0.14.7"
 hex = "0.4.3"
 hmac = "0.12"
 http = "1.1.0"
+indexmap = "2.4"
 jwt = "0.16"
 lib = { path = "../lib" }
 lazy_static = "1.4.0"

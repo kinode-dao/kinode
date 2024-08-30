@@ -53,14 +53,14 @@ pub struct EthSubError {
 ///
 /// In the case of an [`EthAction::SubscribeLogs`] request, the response will indicate if
 /// the subscription was successfully created or not.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum EthResponse {
     Ok,
     Response { value: serde_json::Value },
     Err(EthError),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum EthError {
     /// RPC provider returned an error
     RpcError(ErrorPayload),
