@@ -3547,6 +3547,7 @@ dependencies = [
  "hex",
  "hmac",
  "http 1.1.0",
+ "indexmap",
  "jwt",
  "kit 0.6.10",
  "lazy_static",
