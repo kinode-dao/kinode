@@ -38,7 +38,7 @@ const CHAIN_TIMEOUT: u64 = 60; // 60s
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
 #[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &str = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
+const KIMAP_ADDRESS: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
 
 const DELAY_MS: u64 = 1_000; // 1s
 

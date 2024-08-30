@@ -153,6 +153,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         notes_filter.clone(),
         &mut pending_notes,
     );
+    // set a timer tick so any pending logs will be processed
+    timer::set_timer(DELAY_MS, None);
     println!("done syncing old logs.");
 
     loop {
@@ -276,7 +278,10 @@ fn handle_pending_notes(
             for (note, attempt) in notes.drain(..) {
                 if attempt >= MAX_PENDING_ATTEMPTS {
                     // skip notes that have exceeded max attempts
-                    println!("dropping note from block {block} after {attempt} attempts");
+                    print_to_terminal(
+                        1,
+                        &format!("dropping note from block {block} after {attempt} attempts"),
+                    );
                     continue;
                 }
                 if let Err(e) = handle_note(state, &note) {
@@ -433,15 +438,20 @@ fn handle_log(
             if !kimap::valid_note(&note) {
                 return Err(anyhow::anyhow!("skipping invalid note: {note}"));
             }
-            if let Some(block_number) = log.block_number {
-                print_to_terminal(
-                    1,
-                    &format!("adding note to pending_notes for block {block_number}"),
-                );
-                pending_notes
-                    .entry(block_number)
-                    .or_default()
-                    .push((decoded, 0));
+            // handle note: if it precedes parent mint event, add it to pending_notes
+            if let Err(e) = handle_note(state, &decoded) {
+                if let Some(KnsError::NoParentError) = e.downcast_ref::<KnsError>() {
+                    if let Some(block_number) = log.block_number {
+                        print_to_terminal(
+                            1,
+                            &format!("adding note to pending_notes for block {block_number}"),
+                        );
+                        pending_notes
+                            .entry(block_number)
+                            .or_default()
+                            .push((decoded, 0));
+                    }
+                }
             }
         }
         _log => {

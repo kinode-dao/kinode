@@ -9,6 +9,7 @@
             "http_server:distro:sys",
             "main:app_store:sys",
             "chain:app_store:sys",
+            "terminal:terminal:sys",
             "vfs:distro:sys",
             {
                 "process": "vfs:distro:sys",
@@ -20,6 +21,7 @@
         "grant_capabilities": [
             "http_server:distro:sys",
             "vfs:distro:sys",
+            "terminal:terminal:sys",
             "http_client:distro:sys"
         ],
         "public": false

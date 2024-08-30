@@ -31,7 +31,7 @@ mod terminal;
 mod timer;
 mod vfs;
 
-const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
+const EVENT_LOOP_CHANNEL_CAPACITY: usize = 100_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
 const TERMINAL_CHANNEL_CAPACITY: usize = 32;
 const WEBSOCKET_SENDER_CHANNEL_CAPACITY: usize = 32;
