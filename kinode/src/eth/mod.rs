@@ -656,7 +656,8 @@ async fn handle_eth_action(
                                     &mut since_last_block_number,
                                 ),
                             )
-                            .await {
+                            .await
+                            {
                                 Ok(response) => {
                                     kernel_message(
                                         &our,
@@ -672,8 +673,14 @@ async fn handle_eth_action(
                                 }
                                 Err(_) => {
                                     // task timeout
-                                    error_message(&our, km.id, km.source.clone(), EthError::RpcTimeout, &send_to_loop)
-                                        .await;
+                                    error_message(
+                                        &our,
+                                        km.id,
+                                        km.source.clone(),
+                                        EthError::RpcTimeout,
+                                        &send_to_loop,
+                                    )
+                                    .await;
                                 }
                             }
                         } else {
