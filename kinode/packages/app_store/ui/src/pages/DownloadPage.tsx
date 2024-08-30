@@ -36,7 +36,7 @@ export default function DownloadPage() {
             fetchData(id);
             clearAllActiveDownloads();
         }
-    }, [id, fetchData, clearAllActiveDownloads]);
+    }, [id, fetchData, clearAllActiveDownloads, installedApp]);
 
     const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
         setSelectedMirror(mirror);
@@ -75,19 +75,22 @@ export default function DownloadPage() {
         if (!app || !selectedVersion) return false;
         const versionData = sortedVersions.find(v => v.version === selectedVersion);
         if (!versionData) return false;
-        const downloadKey = `${app.package_id.package_name}:${selectedMirror}:${versionData.hash}`;
-        return !!activeDownloads[downloadKey];
-    }, [app, selectedVersion, sortedVersions, selectedMirror, activeDownloads]);
-
+        // Check for any active download for this app, not just the selected version
+        return Object.keys(activeDownloads).some(key => key.startsWith(`${app.package_id.package_name}:`));
+    }, [app, selectedVersion, sortedVersions, activeDownloads]);
 
     const downloadProgress = useMemo(() => {
         if (!isDownloading || !app || !selectedVersion) return null;
         const versionData = sortedVersions.find(v => v.version === selectedVersion);
         if (!versionData) return null;
-        const downloadKey = `${app.package_id.package_name}:${selectedMirror}:${versionData.hash}`;
-        const progress = activeDownloads[downloadKey];
+        // Find the active download for this app
+        const activeDownloadKey = Object.keys(activeDownloads).find(key =>
+            key.startsWith(`${app.package_id.package_name}:`)
+        );
+        if (!activeDownloadKey) return null;
+        const progress = activeDownloads[activeDownloadKey];
         return progress ? Math.round((progress.downloaded / progress.total) * 100) : 0;
-    }, [isDownloading, app, selectedVersion, sortedVersions, selectedMirror, activeDownloads]);
+    }, [isDownloading, app, selectedVersion, sortedVersions, activeDownloads]);
 
     const isCurrentVersionInstalled = useMemo(() => {
         if (!app || !selectedVersion || !installedApp) return false;
@@ -170,6 +173,7 @@ export default function DownloadPage() {
                     {sortedVersions.map(({ version }, index) => (
                         <option key={version} value={version}>
                             {version} {index === 0 ? "(newest)" : ""}
+                            {installedApp && installedApp.our_version_hash === sortedVersions[index].hash ? " (installed)" : ""}
                         </option>
                     ))}
                 </select>
