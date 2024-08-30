@@ -1097,37 +1097,48 @@ async fn kernel_message<T: Serialize>(
     body: T,
     send_to_loop: &MessageSender,
 ) {
-    let _ = send_to_loop
-        .send(KernelMessage {
-            id: km_id,
-            source: Address {
-                node: our.to_string(),
-                process: ETH_PROCESS_ID.clone(),
-            },
-            target,
-            rsvp,
-            message: if req {
-                Message::Request(Request {
+    let Err(e) = send_to_loop.try_send(KernelMessage {
+        id: km_id,
+        source: Address {
+            node: our.to_string(),
+            process: ETH_PROCESS_ID.clone(),
+        },
+        target,
+        rsvp,
+        message: if req {
+            Message::Request(Request {
+                inherit: false,
+                expects_response: timeout,
+                body: serde_json::to_vec(&body).unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            })
+        } else {
+            Message::Response((
+                Response {
                     inherit: false,
-                    expects_response: timeout,
                     body: serde_json::to_vec(&body).unwrap(),
                     metadata: None,
                     capabilities: vec![],
-                })
-            } else {
-                Message::Response((
-                    Response {
-                        inherit: false,
-                        body: serde_json::to_vec(&body).unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    },
-                    None,
-                ))
-            },
-            lazy_load_blob: None,
-        })
-        .await;
+                },
+                None,
+            ))
+        },
+        lazy_load_blob: None,
+    }) else {
+        // not Err -> send successful; done here
+        return;
+    };
+    // its an Err: handle
+    match e {
+        tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+            panic!("(eth) kernel message sender: receiver closed");
+        }
+        tokio::sync::mpsc::error::TrySendError::Full(_) => {
+            // TODO: implement backpressure
+            panic!("(eth) kernel overloaded with messages: TODO: implement backpressure");
+        }
+    }
 }
 
 fn find_index(vec: &Vec<&str>, item: &str) -> Option<usize> {

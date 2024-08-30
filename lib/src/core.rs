@@ -1190,7 +1190,20 @@ impl KernelMessage {
     }
 
     pub async fn send(self, sender: &MessageSender) {
-        sender.send(self).await.expect("kernel message sender died");
+        let Err(e) = sender.try_send(self) else {
+            // not Err -> send successful; done here
+            return;
+        };
+        // its an Err: handle
+        match e {
+            tokio::sync::mpsc::error::TrySendError::Closed(_) => {
+                panic!("kernel message sender: receiver closed");
+            }
+            tokio::sync::mpsc::error::TrySendError::Full(_) => {
+                // TODO: implement backpressure
+                panic!("kernel overloaded with messages: TODO: implement backpressure");
+            }
+        }
     }
 }
 
