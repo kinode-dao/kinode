@@ -727,7 +727,7 @@ async fn fulfill_request(
         let mut request_cache = request_cache.lock().await;
         if let Some((cache_hit, time_of_hit)) = request_cache.shift_remove(&serialized_action) {
             // refresh cache entry (it is most recently accessed) & return it
-            if time_of_hit.elapsed() > Duration::from_millis(DELAY_MS) {
+            if time_of_hit.elapsed() < Duration::from_millis(DELAY_MS) {
                 println!("cache hit\r");
                 request_cache.insert(serialized_action, (cache_hit.clone(), time_of_hit));
                 return cache_hit;
