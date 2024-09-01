@@ -5,7 +5,7 @@ use crate::kinode::process::downloads::{
 use kinode_process_lib::*;
 use kinode_process_lib::{
     print_to_terminal, println, timer,
-    vfs::{open_dir, open_file, Directory, File, SeekFrom},
+    vfs::{File, SeekFrom},
 };
 use sha2::{Digest, Sha256};
 use std::io::Read;
@@ -102,7 +102,7 @@ fn handle_sender(worker: &str, package_id: &PackageId, version_hash: &str) -> an
         package_id.package_name, package_id.publisher_node, version_hash
     );
 
-    let mut file = open_file(&filename, false, None)?;
+    let mut file = vfs::open_file(&filename, false, None)?;
     let size = file.metadata()?.len;
     let num_chunks = (size as f64 / CHUNK_SIZE as f64).ceil() as u64;
 
@@ -129,15 +129,23 @@ fn handle_receiver(
 ) -> anyhow::Result<()> {
     // TODO: write to a temporary location first, then check hash as we go, then rename to final location.
 
-    let package_dir = open_or_create_dir(&format!(
-        "/app_store:sys/downloads/{}:{}/",
-        package_id.package_name,
-        package_id.publisher(),
-    ))?;
+    let package_dir = vfs::open_dir(
+        &format!(
+            "/app_store:sys/downloads/{}:{}/",
+            package_id.package_name,
+            package_id.publisher(),
+        ),
+        true,
+        None,
+    )?;
 
     let timer_address = Address::from_str("our@timer:distro:sys")?;
 
-    let mut file = open_or_create_file(&format!("{}{}.zip", &package_dir.path, version_hash))?;
+    let mut file = vfs::open_file(
+        &format!("{}{}.zip", &package_dir.path, version_hash),
+        true,
+        None,
+    )?;
     let mut size: Option<u64> = None;
     let mut hasher = Sha256::new();
 
@@ -289,7 +297,7 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
             let mut contents = String::new();
             file.read_to_string(&mut contents)?;
 
-            let manifest_file = open_or_create_file(&manifest_path)?;
+            let manifest_file = vfs::open_file(&manifest_path, true, None)?;
             manifest_file.write(contents.as_bytes())?;
 
             print_to_terminal(1, "Extracted and wrote manifest.json");
@@ -298,28 +306,6 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
     }
 
     Ok(())
-}
-
-/// helper function for vfs files, open if exists, if not create
-fn open_or_create_file(path: &str) -> anyhow::Result<File> {
-    match open_file(path, false, None) {
-        Ok(file) => Ok(file),
-        Err(_) => match open_file(path, true, None) {
-            Ok(file) => Ok(file),
-            Err(_) => Err(anyhow::anyhow!("could not create file")),
-        },
-    }
-}
-
-/// helper function for vfs directories, open if exists, if not create
-fn open_or_create_dir(path: &str) -> anyhow::Result<Directory> {
-    match open_dir(path, true, None) {
-        Ok(dir) => Ok(dir),
-        Err(_) => match open_dir(path, false, None) {
-            Ok(dir) => Ok(dir),
-            Err(_) => Err(anyhow::anyhow!("could not create dir")),
-        },
-    }
 }
 
 impl crate::kinode::process::main::PackageId {

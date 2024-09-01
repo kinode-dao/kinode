@@ -386,24 +386,20 @@ async fn maintain_local_subscription(
     mut close_receiver: tokio::sync::mpsc::Receiver<bool>,
     print_tx: &PrintSender,
 ) -> Result<(), EthSubError> {
-    loop {
+    let e = loop {
         tokio::select! {
             _ = close_receiver.recv() => {
-                unsubscribe(rx, &chain_id, providers, print_tx).await;
+                //unsubscribe(rx, &chain_id, providers, print_tx).await;
                 return Ok(());
             },
             value = rx.recv() => {
-                let Ok(value) = value else {
-                    break;
+                let value = match value {
+                    Ok(v) => v,
+                    Err(e) => break e.to_string(),
                 };
                 let result: SubscriptionResult = match serde_json::from_str(value.get()) {
                     Ok(res) => res,
-                    Err(e) => {
-                        return Err(EthSubError {
-                            id: sub_id,
-                            error: e.to_string(),
-                        });
-                    }
+                    Err(e) => break e.to_string(),
                 };
                 kernel_message(
                     our,
@@ -418,16 +414,16 @@ async fn maintain_local_subscription(
                 .await;
             },
         }
-    }
+    };
     active_subscriptions
         .entry(target.clone())
         .and_modify(|sub_map| {
             sub_map.remove(&sub_id);
         });
-    unsubscribe(rx, &chain_id, providers, print_tx).await;
+    //unsubscribe(rx, &chain_id, providers, print_tx).await;
     Err(EthSubError {
         id: sub_id,
-        error: format!("subscription ({target}) closed unexpectedly"),
+        error: format!("subscription ({target}) closed unexpectedly {e}"),
     })
 }
 

@@ -5,7 +5,6 @@
 
 </p>
 
-
 Kinode is a general-purpose sovereign cloud computer, built for crypto.
 
 This repo contains the core runtime and processes.
@@ -17,10 +16,10 @@ Then follow the instructions to [install it](https://book.kinode.org/install.htm
 
 If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a line in `#dev-support`.
 
-
 ## Setup
 
 On certain operating systems, you may need to install these dependencies if they are not already present:
+
 - openssl-sys: https://docs.rs/crate/openssl-sys/0.9.19
 - libclang 5.0: https://rust-lang.github.io/rust-bindgen/requirements.html
 
@@ -58,6 +57,7 @@ No security audits of this crate have ever been performed. This software is unde
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
 TODO: document feature flags in `--simulation-mode`
+
 ```bash
 # OPTIONAL: --release flag
 cargo +nightly run -p kinode -- home
@@ -70,6 +70,7 @@ On boot you will be prompted to navigate to `localhost:8080` (or whatever HTTP p
 By default, a node will use the [hardcoded providers](./kinode/src/eth/default_providers_mainnet.json) for the network it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/src/eth/default_providers_mainnet.json) for a template to create `.eth_providers`.
 
 You may also add a RPC provider or otherwise modify your configuration by sending messages from the terminal to the `eth:distro:sys` process. You can get one for free at `alchemy.com`. Use this message format to add a provider -- this will make your node's performance better when accessing a blockchain:
+
 ```
 m our@eth:distro:sys '{"AddProvider": {"chain_id": <SOME_CHAIN_ID>, "trusted": true, "provider": {"RpcUrl": "<WS_RPC_URL>"}}}'
 ```
@@ -169,9 +170,15 @@ The image includes EXPOSE directives for TCP port `8080` and TCP port `9000`. Po
 If you are running a direct node, you must map port `9000` to the same port on the host and on your router. Otherwise, your Kinode will not be able to connect to the rest of the network as connection info is written to the chain, and this information is based on the view from inside the Docker container.
 
 To build a local Docker image, run the following command in this project root.
+
 ```bash
 # The `VERSION` may be replaced with the tag of a GitHub release
-docker build -t 0xlynett/kinode . --build-arg VERSION=v0.8.6
+
+# Build for your system's architecture
+docker build . -t 0xlynett/kinode --build-arg VERSION=v0.9.1
+
+# Build a multiarch image
+docker buildx build . --platform arm64,amd64 --build-arg VERSION=v0.9.1 -t 0xlynett/kinode
 ```
 
 For example:
