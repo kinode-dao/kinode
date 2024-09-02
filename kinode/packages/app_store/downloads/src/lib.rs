@@ -14,7 +14,7 @@ use kinode_process_lib::{
     await_message, call_init, get_blob, get_state,
     http::client,
     print_to_terminal, println, set_state,
-    vfs::{self, Directory, File},
+    vfs::{self, Directory},
     Address, Message, PackageId, ProcessId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
@@ -74,8 +74,9 @@ fn init(our: Address) {
         .expect("could not create /downloads drive");
 
     let mut downloads =
-        open_or_create_dir("/app_store:sys/downloads").expect("could not open downloads");
-    let mut tmp = open_or_create_dir("/app_store:sys/downloads/tmp").expect("could not open tmp");
+        vfs::open_dir("/app_store:sys/downloads", true, None).expect("could not open downloads");
+    let mut tmp =
+        vfs::open_dir("/app_store:sys/downloads/tmp", true, None).expect("could not open tmp");
 
     let mut auto_updates: HashSet<(PackageId, String)> = HashSet::new();
 
@@ -291,7 +292,7 @@ fn handle_message(
                     downloads.path,
                     add_req.package_id.clone().to_process_lib().to_string()
                 );
-                let _ = open_or_create_dir(&package_dir)?;
+                let _ = vfs::open_dir(&package_dir, true, None)?;
 
                 // Write the zip file
                 let zip_path = format!("{}/{}.zip", package_dir, add_req.version_hash);
@@ -439,7 +440,7 @@ fn handle_receive_http_download(
     let bytes = get_blob().ok_or(DownloadError::BlobNotFound)?.bytes;
 
     let package_dir = format!("{}/{}", "/app_store:sys/downloads", package_id.to_string());
-    let _ = open_or_create_dir(&package_dir).map_err(|_| DownloadError::VfsError)?;
+    let _ = vfs::open_dir(&package_dir, true, None).map_err(|_| DownloadError::VfsError)?;
 
     let calculated_hash = format!("{:x}", Sha256::digest(&bytes));
     if calculated_hash != version_hash {
@@ -519,7 +520,7 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
             let mut contents = String::new();
             file.read_to_string(&mut contents)?;
 
-            let manifest_file = open_or_create_file(&manifest_path)?;
+            let manifest_file = vfs::open_file(&manifest_path, true, None)?;
             manifest_file.write(contents.as_bytes())?;
 
             print_to_terminal(1, &format!("Extracted and wrote manifest.json"));
@@ -538,28 +539,6 @@ fn get_manifest_hash(package_id: PackageId, version_hash: String) -> anyhow::Res
     let manifest_bytes = manifest_file.read()?;
     let manifest_hash = keccak_256_hash(&manifest_bytes);
     Ok(manifest_hash)
-}
-
-/// helper function for vfs files, open if exists, if not create
-fn open_or_create_file(path: &str) -> anyhow::Result<File> {
-    match vfs::open_file(path, false, None) {
-        Ok(file) => Ok(file),
-        Err(_) => match vfs::open_file(path, true, None) {
-            Ok(file) => Ok(file),
-            Err(_) => Err(anyhow::anyhow!("could not create file")),
-        },
-    }
-}
-
-/// helper function for vfs directories, open if exists, if not create
-fn open_or_create_dir(path: &str) -> anyhow::Result<Directory> {
-    match vfs::open_dir(path, true, None) {
-        Ok(dir) => Ok(dir),
-        Err(_) => match vfs::open_dir(path, false, None) {
-            Ok(dir) => Ok(dir),
-            Err(_) => Err(anyhow::anyhow!("could not create dir")),
-        },
-    }
 }
 
 /// generate a Keccak-256 hash string (with 0x prefix) of the metadata bytes

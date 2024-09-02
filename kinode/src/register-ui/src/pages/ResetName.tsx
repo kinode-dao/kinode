@@ -36,7 +36,7 @@ function ResetKnsName({
   const { data: hash, writeContract, isPending, isError, error } = useWriteContract({
     mutation: {
       onSuccess: (data) => {
-        addRecentTransaction({ hash: data, description: `Reset KNS ID: ${name}.os` });
+        addRecentTransaction({ hash: data, description: `Reset KNS ID: ${name}` });
       }
     }
   });
@@ -46,11 +46,10 @@ function ResetKnsName({
     });
   const addRecentTransaction = useAddRecentTransaction();
 
-  const [name, setName] = useState<string>(knsName.slice(0, -3));
+  const [name, setName] = useState<string>(knsName);
   const [nameValidities, setNameValidities] = useState<string[]>([])
   const [tba, setTba] = useState<string>("");
   const [triggerNameCheck, setTriggerNameCheck] = useState<boolean>(false);
-
 
   useEffect(() => {
     document.title = "Reset";
@@ -75,7 +74,7 @@ function ResetKnsName({
         return;
       }
 
-      setKnsName(name + ".os");
+      setKnsName(name);
 
       try {
         const data = await generateNetworkingKeys({

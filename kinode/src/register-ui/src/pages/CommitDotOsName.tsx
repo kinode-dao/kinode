@@ -1,5 +1,6 @@
 import { useState, useEffect, FormEvent, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { toAscii } from "idna-uts46-hx";
 import EnterKnsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
@@ -51,7 +52,7 @@ function CommitDotOsName({
 
     useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
-    const enterOsNameProps = { address, name, setName, nameValidities, setNameValidities, triggerNameCheck }
+    const enterOsNameProps = { address, name, setName, fixedTlz: ".os", nameValidities, setNameValidities, triggerNameCheck }
 
     useEffect(() => {
         if (!address) {
@@ -66,6 +67,7 @@ function CommitDotOsName({
             openConnectModal?.()
             return
         }
+        setName(toAscii(name));
         console.log("committing to .os name: ", name)
         const commitSecret = keccak256(stringToHex(name))
         const commit = keccak256(

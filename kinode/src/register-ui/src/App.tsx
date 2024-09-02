@@ -6,7 +6,7 @@ import MintDotOsName from "./pages/MintDotOsName";
 import MintCustom from "./pages/MintCustom";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
-import ResetDotOsName from './pages/ResetDotOsName'
+import ResetName from './pages/ResetName'
 import KinodeHome from "./pages/KinodeHome"
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
@@ -112,7 +112,7 @@ function App() {
               <Route path="/commit-os-name" element={<CommitDotOsName  {...props} />} />
               <Route path="/mint-os-name" element={<MintDotOsName  {...props} />} />
               <Route path="/set-password" element={<SetPassword {...props} />} />
-              <Route path="/reset" element={<ResetDotOsName {...props} />} />
+              <Route path="/reset" element={<ResetName {...props} />} />
               <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
               <Route path="/login" element={<Login {...props} />} />
               <Route path="/custom-register" element={<MintCustom {...props} />} />

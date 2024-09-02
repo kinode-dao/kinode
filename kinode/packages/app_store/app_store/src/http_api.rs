@@ -8,9 +8,8 @@ use crate::{
 
 use kinode_process_lib::{
     http::{self, server, Method, StatusCode},
-    Address, LazyLoadBlob, PackageId, Request,
+    println, Address, LazyLoadBlob, PackageId, Request, SendError, SendErrorKind,
 };
-use kinode_process_lib::{SendError, SendErrorKind};
 use serde_json::json;
 use std::{collections::HashMap, str::FromStr};
 
@@ -266,7 +265,7 @@ fn serve_paths(
             }
         }
         // GET detail about a specific app
-        // update a downloaded app: PUT
+        // DELETE uninstall an app
         "/apps/:id" => {
             let Ok(package_id) = get_package_id(url_params) else {
                 return Ok((
@@ -294,6 +293,7 @@ fn serve_paths(
                 Method::DELETE => {
                     // uninstall an app
                     crate::utils::uninstall(state, &package_id)?;
+                    println!("successfully uninstalled {:?}", package_id);
                     Ok((
                         StatusCode::NO_CONTENT,
                         None,
@@ -474,7 +474,10 @@ fn serve_paths(
                 state,
                 &our.node().to_string(),
             ) {
-                Ok(_) => Ok((StatusCode::CREATED, None, vec![])),
+                Ok(_) => {
+                    println!("successfully installed package: {:?}", process_package_id);
+                    Ok((StatusCode::CREATED, None, vec![]))
+                }
                 Err(e) => Ok((
                     StatusCode::SERVICE_UNAVAILABLE,
                     None,

@@ -73,8 +73,8 @@ fn init(our: Address) {
     loop {
         match await_message() {
             Err(send_error) => {
-                // TODO handle these based on what they are triggered by
-                println!("got network error: {send_error}");
+                // for now, these are timer callbacks to already finished ft_workers.
+                print_to_terminal(1, &format!("got network error: {send_error}"));
             }
             Ok(message) => {
                 if let Err(e) = handle_message(&our, &mut state, &mut http_server, &message) {
