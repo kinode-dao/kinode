@@ -17,7 +17,7 @@ wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
     world: "app-store-sys-v1",
-    additional_derives: [serde::Deserialize, serde::Serialize],
+    additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
 const CHUNK_SIZE: u64 = 262144; // 256KB
@@ -42,10 +42,10 @@ fn init(our: Address) {
 
     let start = std::time::Instant::now();
 
-    let req: DownloadRequests =
-        serde_json::from_slice(&body).expect("ft_worker: got unparseable init message");
-
-    match req {
+    match body
+        .try_into()
+        .expect("ft_worker: got unparseable init message")
+    {
         DownloadRequests::LocalDownload(local_request) => {
             let LocalDownloadRequest {
                 package_id,
@@ -107,10 +107,10 @@ fn handle_sender(worker: &str, package_id: &PackageId, version_hash: &str) -> an
     let num_chunks = (size as f64 / CHUNK_SIZE as f64).ceil() as u64;
 
     Request::new()
-        .body(serde_json::to_vec(&DownloadRequests::Size(SizeUpdate {
+        .body(DownloadRequests::Size(SizeUpdate {
             package_id: package_id.clone().into(),
             size,
-        }))?)
+        }))
         .target(target_worker.clone())
         .send()?;
     file.seek(SeekFrom::Start(0))?;
@@ -154,13 +154,11 @@ fn handle_receiver(
         if *message.source() == timer_address {
             return Ok(());
         }
-        let Message::Request { body, .. } = message else {
+        if !message.is_request() {
             return Err(anyhow::anyhow!("ft_worker: got bad message"));
-        };
+        }
 
-        let req: DownloadRequests = serde_json::from_slice(&body)?;
-
-        match req {
+        match message.body().try_into()? {
             DownloadRequests::Chunk(chunk) => {
                 handle_chunk(&mut file, &chunk, parent_process, &mut size, &mut hasher)?;
                 if let Some(s) = size {
@@ -180,15 +178,13 @@ fn handle_receiver(
                             let req = DownloadCompleteRequest {
                                 package_id: package_id.clone().into(),
                                 version_hash: version_hash.to_string(),
-                                error: Some(DownloadError::HashMismatch(HashMismatch {
+                                err: Some(DownloadError::HashMismatch(HashMismatch {
                                     desired: version_hash.to_string(),
                                     actual: recieved_hash,
                                 })),
                             };
                             Request::new()
-                                .body(serde_json::to_vec(&DownloadRequests::DownloadComplete(
-                                    req,
-                                ))?)
+                                .body(DownloadRequests::DownloadComplete(req))
                                 .target(parent_process.clone())
                                 .send()?;
                         }
@@ -200,13 +196,13 @@ fn handle_receiver(
                         extract_and_write_manifest(&contents, &manifest_filename)?;
 
                         Request::new()
-                            .body(serde_json::to_vec(&DownloadRequests::DownloadComplete(
+                            .body(DownloadRequests::DownloadComplete(
                                 DownloadCompleteRequest {
                                     package_id: package_id.clone().into(),
                                     version_hash: version_hash.to_string(),
-                                    error: None,
+                                    err: None,
                                 },
-                            ))?)
+                            ))
                             .target(parent_process.clone())
                             .send()?;
                         return Ok(());
@@ -238,14 +234,12 @@ fn send_chunk(
     file.read_at(&mut buffer)?;
 
     Request::new()
-        .body(serde_json::to_vec(&DownloadRequests::Chunk(
-            ChunkRequest {
-                package_id: package_id.clone().into(),
-                version_hash: version_hash.to_string(),
-                offset,
-                length,
-            },
-        ))?)
+        .body(DownloadRequests::Chunk(ChunkRequest {
+            package_id: package_id.clone().into(),
+            version_hash: version_hash.to_string(),
+            offset,
+            length,
+        }))
         .target(target.clone())
         .blob_bytes(buffer)
         .send()?;
@@ -272,14 +266,12 @@ fn handle_chunk(
         // let progress = ((chunk.offset + chunk.length) as f64 / *total_size as f64 * 100.0) as u64;
 
         Request::new()
-            .body(serde_json::to_vec(&DownloadRequests::Progress(
-                ProgressUpdate {
-                    package_id: chunk.package_id.clone(),
-                    downloaded: chunk.offset + chunk.length,
-                    total: *total_size,
-                    version_hash: chunk.version_hash.clone(),
-                },
-            ))?)
+            .body(DownloadRequests::Progress(ProgressUpdate {
+                package_id: chunk.package_id.clone(),
+                downloaded: chunk.offset + chunk.length,
+                total: *total_size,
+                version_hash: chunk.version_hash.clone(),
+            }))
             .target(parent.clone())
             .send()?;
     }

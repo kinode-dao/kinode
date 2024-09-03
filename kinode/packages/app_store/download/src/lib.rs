@@ -1,5 +1,4 @@
-use crate::kinode::process::downloads::DownloadRequests;
-use kinode::process::downloads::LocalDownloadRequest;
+use crate::kinode::process::downloads::{DownloadRequests, LocalDownloadRequest};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, PackageId, Request,
 };
@@ -8,7 +7,7 @@ wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
     world: "app-store-sys-v1",
-    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
 call_init!(init);
@@ -38,17 +37,14 @@ fn init(our: Address) {
     let version_hash: String = arg3.to_string();
 
     let Ok(_) = Request::to((our.node(), ("downloads", "app_store", "sys")))
-        .body(
-            serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
-                package_id: crate::kinode::process::main::PackageId {
-                    package_name: package_id.package_name.clone(),
-                    publisher_node: package_id.publisher_node.clone(),
-                },
-                download_from: download_from.clone(),
-                desired_version_hash: version_hash.clone(),
-            }))
-            .expect("Failed to serialize LocalDownloadRequest"),
-        )
+        .body(DownloadRequests::LocalDownload(LocalDownloadRequest {
+            package_id: crate::kinode::process::main::PackageId {
+                package_name: package_id.package_name.clone(),
+                publisher_node: package_id.publisher_node.clone(),
+            },
+            download_from: download_from.clone(),
+            desired_version_hash: version_hash.clone(),
+        }))
         .send()
     else {
         println!("download: failed to send request to downloads:app_store!");

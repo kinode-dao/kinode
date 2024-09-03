@@ -20,8 +20,8 @@ use crate::kinode::process::downloads::{
     DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
 };
 use crate::kinode::process::main::{
-    ApisResponse, GetApiResponse, HandlingError, InstallPackageRequest, InstallResponse,
-    LocalRequest, LocalResponse, NewPackageRequest, NewPackageResponse, SendError,
+    ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
+    LocalResponse, NewPackageRequest, NewPackageResponse, Response as AppStoreResponse,
     UninstallResponse,
 };
 use kinode_process_lib::{
@@ -35,7 +35,7 @@ wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
     world: "app-store-sys-v1",
-    additional_derives: [serde::Deserialize, serde::Serialize],
+    additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
 mod http_api;
@@ -46,7 +46,7 @@ const VFS_TIMEOUT: u64 = 10;
 
 // internal types
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
 #[serde(untagged)] // untagged as a meta-type for all incoming requests
 pub enum Req {
     LocalRequest(LocalRequest),
@@ -55,7 +55,7 @@ pub enum Req {
     Http(http::server::HttpServerRequest),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     LocalResponse(LocalResponse),
@@ -80,14 +80,19 @@ fn init(our: Address) {
 
                 let error_message = format!("got network error: {send_error}");
                 println!("{error_message}");
-                let response = Response::new().body(serde_json::to_vec(SendError(error_message))?);
+                Response::new()
+                    .body(AppStoreResponse::SendError(error_message))
+                    .send()
+                    .unwrap();
             }
             Ok(message) => {
                 if let Err(e) = handle_message(&our, &mut state, &mut http_server, &message) {
                     let error_message = format!("error handling message: {e:?}");
                     println!("{error_message}");
-                    let response =
-                        Response::new().body(serde_json::to_vec(HandlingError(error_message))?);
+                    Response::new()
+                        .body(AppStoreResponse::HandlingError(error_message))
+                        .send()
+                        .unwrap();
                 }
             }
         }
@@ -105,13 +110,13 @@ fn handle_message(
     message: &Message,
 ) -> anyhow::Result<()> {
     if message.is_request() {
-        match serde_json::from_slice::<Req>(message.body())? {
+        match message.body().try_into()? {
             Req::LocalRequest(local_request) => {
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("request from non-local node"));
                 }
                 let (body, blob) = handle_local_request(our, state, local_request);
-                let response = Response::new().body(serde_json::to_vec(&body)?);
+                let response = Response::new().body(&body);
                 if let Some(blob) = blob {
                     response.blob(blob).send()?;
                 } else {
@@ -139,7 +144,7 @@ fn handle_message(
                     http::server::WsMessageType::Text,
                     LazyLoadBlob {
                         mime: Some("application/json".to_string()),
-                        bytes: serde_json::json!({
+                        bytes: serde_json::to_vec(&serde_json::json!({
                             "kind": "progress",
                             "data": {
                                 "package_id": progress.package_id,
@@ -147,10 +152,8 @@ fn handle_message(
                                 "downloaded": progress.downloaded,
                                 "total": progress.total,
                             }
-                        })
-                        .to_string()
-                        .as_bytes()
-                        .to_vec(),
+                        }))
+                        .unwrap(),
                     },
                 );
             }
@@ -164,17 +167,15 @@ fn handle_message(
                     http::server::WsMessageType::Text,
                     LazyLoadBlob {
                         mime: Some("application/json".to_string()),
-                        bytes: serde_json::json!({
+                        bytes: serde_json::to_vec(&serde_json::json!({
                             "kind": "complete",
                             "data": {
                                 "package_id": req.package_id,
                                 "version_hash": req.version_hash,
-                                "error": req.error,
+                                "error": req.err,
                             }
-                        })
-                        .to_string()
-                        .as_bytes()
-                        .to_vec(),
+                        }))
+                        .unwrap(),
                     },
                 );
 
@@ -215,7 +216,7 @@ fn handle_message(
             }
         }
     } else {
-        match serde_json::from_slice::<Resp>(message.body())? {
+        match message.body().try_into()? {
             Resp::LocalResponse(_) => {
                 // don't need to handle these at the moment
             }

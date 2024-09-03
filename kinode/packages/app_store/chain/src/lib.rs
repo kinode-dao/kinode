@@ -25,7 +25,7 @@ wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
     world: "app-store-sys-v1",
-    additional_derives: [serde::Deserialize, serde::Serialize],
+    additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
 #[cfg(not(feature = "simulation-mode"))]
@@ -68,7 +68,7 @@ pub struct PackageListing {
     pub auto_update: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
 #[serde(untagged)] // untagged as a meta-type for all incoming requests
 pub enum Req {
     Eth(eth::EthSubResult),
@@ -115,8 +115,7 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
             return Ok(());
         }
     } else {
-        let req: Req = serde_json::from_slice(message.body())?;
-        match req {
+        match message.body().try_into()? {
             Req::Eth(eth_result) => {
                 if !message.is_local(our) || message.source().process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!(
@@ -163,9 +162,7 @@ fn handle_local_request(state: &mut State, req: ChainRequests) -> anyhow::Result
                     auto_update: app.auto_update,
                 });
             let response = ChainResponses::GetApp(onchain_app);
-            Response::new()
-                .body(serde_json::to_vec(&response)?)
-                .send()?;
+            Response::new().body(&response).send()?;
         }
         ChainRequests::GetApps => {
             let apps: Vec<OnchainApp> = state
@@ -175,9 +172,7 @@ fn handle_local_request(state: &mut State, req: ChainRequests) -> anyhow::Result
                 .collect();
 
             let response = ChainResponses::GetApps(apps);
-            Response::new()
-                .body(serde_json::to_vec(&response)?)
-                .send()?;
+            Response::new().body(&response).send()?;
         }
         ChainRequests::GetOurApps => {
             let apps: Vec<OnchainApp> = state
@@ -192,36 +187,26 @@ fn handle_local_request(state: &mut State, req: ChainRequests) -> anyhow::Result
                 .collect();
 
             let response = ChainResponses::GetOurApps(apps);
-            Response::new()
-                .body(serde_json::to_vec(&response)?)
-                .send()?;
+            Response::new().body(&response).send()?;
         }
         ChainRequests::StartAutoUpdate(package_id) => {
             if let Some(listing) = state.listings.get_mut(&package_id.to_process_lib()) {
                 listing.auto_update = true;
                 let response = ChainResponses::AutoUpdateStarted;
-                Response::new()
-                    .body(serde_json::to_vec(&response)?)
-                    .send()?;
+                Response::new().body(&response).send()?;
             } else {
-                let error_response = ChainResponses::Error(ChainError::NoPackage);
-                Response::new()
-                    .body(serde_json::to_vec(&error_response)?)
-                    .send()?;
+                let error_response = ChainResponses::Err(ChainError::NoPackage);
+                Response::new().body(&error_response).send()?;
             }
         }
         ChainRequests::StopAutoUpdate(package_id) => {
             if let Some(listing) = state.listings.get_mut(&package_id.to_process_lib()) {
                 listing.auto_update = false;
                 let response = ChainResponses::AutoUpdateStopped;
-                Response::new()
-                    .body(serde_json::to_vec(&response)?)
-                    .send()?;
+                Response::new().body(&response).send()?;
             } else {
-                let error_response = ChainResponses::Error(ChainError::NoPackage);
-                Response::new()
-                    .body(serde_json::to_vec(&error_response)?)
-                    .send()?;
+                let error_response = ChainResponses::Err(ChainError::NoPackage);
+                Response::new().body(&error_response).send()?;
             }
         }
     }
@@ -328,7 +313,7 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
                 metadata: metadata.into(),
             });
             Request::to(("our", "downloads", "app_store", "sys"))
-                .body(serde_json::to_vec(&request)?)
+                .body(&request)
                 .send()?;
         }
     }

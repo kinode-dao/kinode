@@ -9,7 +9,7 @@ wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
     world: "app-store-sys-v1",
-    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
 call_init!(init);
@@ -40,24 +40,21 @@ fn init(our: Address) {
 
     let Ok(Ok(Message::Response { body, .. })) =
         Request::to((our.node(), ("main", "app_store", "sys")))
-            .body(
-                serde_json::to_vec(&LocalRequest::Install(InstallPackageRequest {
-                    package_id: crate::kinode::process::main::PackageId {
-                        package_name: package_id.package_name.clone(),
-                        publisher_node: package_id.publisher_node.clone(),
-                    },
-                    version_hash,
-                    metadata: None,
-                }))
-                .unwrap(),
-            )
+            .body(LocalRequest::Install(InstallPackageRequest {
+                package_id: crate::kinode::process::main::PackageId {
+                    package_name: package_id.package_name.clone(),
+                    publisher_node: package_id.publisher_node.clone(),
+                },
+                version_hash,
+                metadata: None,
+            }))
             .send_and_await_response(5)
     else {
         println!("install: failed to get a response from app_store..!");
         return;
     };
 
-    let Ok(response) = serde_json::from_slice::<LocalResponse>(&body) else {
+    let Ok(response) = body.try_into() else {
         println!("install: failed to parse response from app_store..!");
         return;
     };
