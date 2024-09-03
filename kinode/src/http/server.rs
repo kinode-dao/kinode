@@ -188,38 +188,36 @@ pub async fn http_server(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) -> anyhow::Result<()> {
-    let our_name = Arc::new(our_name);
-    let encoded_keyfile = Arc::new(encoded_keyfile);
-    let jwt_secret_bytes = Arc::new(jwt_secret_bytes);
     let http_response_senders: HttpResponseSenders = Arc::new(DashMap::new());
     let ws_senders: WebSocketSenders = Arc::new(DashMap::new());
-    let path = format!("/rpc:distro:sys/message");
 
-    // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
-    let rpc_bound_path = BoundPath {
-        app: Some(ProcessId::new(Some("rpc"), "distro", "sys")),
-        path: path.clone(),
-        secure_subdomain: None,
-        authenticated: false,
-        local_only: true,
-        static_content: None,
-    };
-    bindings_map.add(&path, rpc_bound_path);
-    let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
-    // ws path bindings
+    // add local-only RPC path
+    bindings_map.add(
+        "/rpc:distro:sys/message",
+        BoundPath {
+            app: Some(ProcessId::new(Some("rpc"), "distro", "sys")),
+            path: "/rpc:distro:sys/message".to_string(),
+            secure_subdomain: None,
+            authenticated: false,
+            local_only: true,
+            static_content: None,
+        },
+    );
+
+    let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
     let ws_path_bindings: WsPathBindings = Arc::new(RwLock::new(Router::new()));
 
     tokio::spawn(serve(
-        our_name.clone(),
+        Arc::new(our_name),
         our_port,
         http_response_senders.clone(),
         path_bindings.clone(),
         ws_path_bindings.clone(),
         ws_senders.clone(),
-        encoded_keyfile.clone(),
-        jwt_secret_bytes.clone(),
+        Arc::new(encoded_keyfile),
+        Arc::new(jwt_secret_bytes),
         send_to_loop.clone(),
         print_tx.clone(),
     ));
@@ -258,9 +256,9 @@ async fn serve(
         .await;
 
     // filter to receive websockets
-    let cloned_msg_tx = send_to_loop.clone();
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
+    let cloned_msg_tx = send_to_loop.clone();
     let cloned_print_tx = print_tx.clone();
     let ws_route = warp::ws()
         .and(warp::addr::remote())
@@ -398,22 +396,19 @@ async fn ws_handler(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    let original_path = utils::normalize_path(path.as_str()).to_string();
-    Printout::new(
-        2,
-        format!("http_server: got ws request for {original_path}"),
-    )
-    .send(&print_tx)
-    .await;
+    let original_path = utils::normalize_path(path.as_str());
+    Printout::new(2, format!("http_server: ws request for {original_path}"))
+        .send(&print_tx)
+        .await;
 
     let serialized_headers = utils::serialize_headers(&headers);
-    let ws_path_bindings = ws_path_bindings.read().await;
 
-    let Ok(route) = ws_path_bindings.recognize(&original_path) else {
+    let ws_path_bindings = ws_path_bindings.read().await;
+    let Ok(route) = ws_path_bindings.recognize(original_path) else {
         return Err(warp::reject::not_found());
     };
-
     let bound_path = route.handler();
+
     let Some(app) = bound_path.app.clone() else {
         return Err(warp::reject::not_found());
     };
@@ -424,14 +419,6 @@ async fn ws_handler(
         };
 
         if let Some(ref subdomain) = bound_path.secure_subdomain {
-            Printout::new(
-                2,
-                format!(
-                    "http_server: ws request for {original_path} bound by subdomain {subdomain}"
-                ),
-            )
-            .send(&print_tx)
-            .await;
             // assert that host matches what this app wants it to be
             let host = match host {
                 Some(host) => host,
@@ -505,19 +492,24 @@ async fn http_handler(
     print_tx: PrintSender,
     login_html: Arc<String>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    // trim trailing "/"
     let original_path = utils::normalize_path(path.as_str());
-    Printout::new(
-        2,
-        format!("http_server: got request for path {original_path}"),
-    )
-    .send(&print_tx)
-    .await;
+    let base_path = original_path.split('/').skip(1).next().unwrap_or("");
+    Printout::new(2, format!("http_server: request for {original_path}"))
+        .send(&print_tx)
+        .await;
+
     let id: u64 = rand::random();
     let serialized_headers = utils::serialize_headers(&headers);
-    let path_bindings = path_bindings.read().await;
 
-    let Ok(route) = path_bindings.recognize(&original_path) else {
+    let path_bindings = path_bindings.read().await;
+    let route = if let Ok(route) = path_bindings.recognize(&original_path) {
+        route
+    } else if let Ok(base_route) = path_bindings.recognize(base_path) {
+        // if the specific path isn't found, try the base path which should
+        // be just the process ID. use the base path configuration to handle
+        // paths that have not been specifically bound by that process.
+        base_route
+    } else {
         Printout::new(
             2,
             format!("http_server: no route found for {original_path}"),
@@ -536,12 +528,6 @@ async fn http_handler(
 
     if bound_path.authenticated {
         if let Some(ref subdomain) = bound_path.secure_subdomain {
-            Printout::new(
-                2,
-                format!("http_server: request for {original_path} bound by subdomain {subdomain}"),
-            )
-            .send(&print_tx)
-            .await;
             let request_subdomain = host.host().split('.').next().unwrap_or("");
             // assert that host matches what this app wants it to be
             if request_subdomain.is_empty() {
@@ -696,29 +682,14 @@ async fn http_handler(
     drop(path_bindings);
 
     if is_fire_and_forget {
-        match send_to_loop.send(message).await {
-            Ok(_) => {}
-            Err(_) => {
-                return Ok(
-                    warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR)
-                        .into_response(),
-                );
-            }
-        }
+        message.send(&send_to_loop).await;
         return Ok(warp::reply::with_status(vec![], StatusCode::OK).into_response());
     }
 
     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
     http_response_senders.insert(id, (original_path.to_string(), response_sender));
 
-    match send_to_loop.send(message).await {
-        Ok(_) => {}
-        Err(_) => {
-            return Ok(
-                warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-            );
-        }
-    }
+    message.send(&send_to_loop).await;
 
     let timeout_duration = tokio::time::Duration::from_secs(HTTP_SELF_IMPOSED_TIMEOUT);
     let result = tokio::time::timeout(timeout_duration, response_receiver).await;
@@ -1160,7 +1131,6 @@ async fn handle_app_message(
                     .send(&print_tx)
                     .await;
                     if !cache {
-                        // trim trailing "/"
                         path_bindings.add(
                             &path,
                             BoundPath {
@@ -1183,7 +1153,6 @@ async fn handle_app_message(
                             .await;
                             return;
                         };
-                        // trim trailing "/"
                         path_bindings.add(
                             &path,
                             BoundPath {
@@ -1233,7 +1202,6 @@ async fn handle_app_message(
                             .await;
                             return;
                         };
-                        // trim trailing "/"
                         path_bindings.add(
                             &path,
                             BoundPath {
