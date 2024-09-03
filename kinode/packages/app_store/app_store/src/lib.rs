@@ -20,8 +20,9 @@ use crate::kinode::process::downloads::{
     DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
 };
 use crate::kinode::process::main::{
-    ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
-    LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
+    ApisResponse, GetApiResponse, HandlingError, InstallPackageRequest, InstallResponse,
+    LocalRequest, LocalResponse, NewPackageRequest, NewPackageResponse, SendError,
+    UninstallResponse,
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
@@ -33,7 +34,7 @@ use state::State;
 wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
-    world: "app-store-sys-v0",
+    world: "app-store-sys-v1",
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
@@ -73,12 +74,20 @@ fn init(our: Address) {
     loop {
         match await_message() {
             Err(send_error) => {
-                // for now, these are timer callbacks to already finished ft_workers.
-                print_to_terminal(1, &format!("got network error: {send_error}"));
+                // TODO: handle these more gracefully so only real send errors are printed
+                // // for now, these are timer callbacks to already finished ft_workers.
+                // print_to_terminal(1, &format!("got network error: {send_error}"));
+
+                let error_message = format!("got network error: {send_error}");
+                println!("{error_message}");
+                let response = Response::new().body(serde_json::to_vec(SendError(error_message))?);
             }
             Ok(message) => {
                 if let Err(e) = handle_message(&our, &mut state, &mut http_server, &message) {
-                    println!("error handling message: {:?}", e);
+                    let error_message = format!("error handling message: {e:?}");
+                    println!("{error_message}");
+                    let response =
+                        Response::new().body(serde_json::to_vec(HandlingError(error_message))?);
                 }
             }
         }

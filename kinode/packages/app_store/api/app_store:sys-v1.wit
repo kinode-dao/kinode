@@ -1,6 +1,6 @@
 interface downloads {
     //
-    // download API as presented by download:app_store:sys-v0
+    // download API as presented by download:app_store:sys-v1
     //
 
     use standard.{package-id};
@@ -26,7 +26,7 @@ interface downloads {
     variant download-responses {
         success,
         error(download-error),
-        get-files(list<entry>),   
+        get-files(list<entry>),
     }
 
     record local-download-request {
@@ -96,7 +96,7 @@ interface downloads {
         version-hash: string,
     }
 
-    // part of new-package-request local-only flow. 
+    // part of new-package-request local-only flow.
     record add-download-request {
         package-id: package-id,
         version-hash: string,
@@ -118,7 +118,7 @@ interface downloads {
 
 interface chain {
     //
-    // on-chain API as presented by chain:app_store:sys-v0
+    // on-chain API as presented by chain:app_store:sys-v1
     //
 
     use standard.{package-id};
@@ -143,7 +143,7 @@ interface chain {
     variant chain-error {
         no-package,
     }
-    
+
     record onchain-app {
         package-id: package-id,
         tba: string,
@@ -177,7 +177,7 @@ interface chain {
 
 interface main {
     //
-    // app store API as presented by main:app_store:sys-v0
+    // app store API as presented by main:app_store:sys-v1
     //
 
     use standard.{package-id};
@@ -192,6 +192,8 @@ interface main {
         local(local-response),
         chain-error(chain-error),
         download-error(download-error),
+        send-error(string),
+        handling-error(string),
     }
 
     variant local-request {
@@ -215,7 +217,7 @@ interface main {
         package-id: package-id,
         mirror: bool,
     }
-    
+
     record install-package-request {
         package-id: package-id,
         metadata: option<onchain-metadata>, // if None == local sideload package.
@@ -250,7 +252,7 @@ interface main {
     }
 }
 
-world app-store-sys-v0 {
+world app-store-sys-v1 {
     import main;
     import downloads;
     import chain;

@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
-    world: "app-store-sys-v0",
+    world: "app-store-sys-v1",
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
