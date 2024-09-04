@@ -58,6 +58,7 @@ pub async fn terminal(
     mut print_rx: PrintReceiver,
     is_detached: bool,
     verbose_mode: u8,
+    is_logging: bool,
 ) -> anyhow::Result<()> {
     let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
@@ -68,12 +69,12 @@ pub async fn terminal(
     let cursor_col: u16 = prompt_len as u16;
     let line_col: usize = cursor_col as usize;
 
-    let in_step_through: bool = false;
+    let in_step_through = false;
 
-    let search_mode: bool = false;
+    let search_mode = false;
     let search_depth: usize = 0;
 
-    let logging_mode: bool = false;
+    let logging_mode = is_logging;
 
     // the terminal stores the most recent 1000 lines entered by user
     // in history. TODO should make history size adjustable.
