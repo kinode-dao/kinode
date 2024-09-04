@@ -24,7 +24,7 @@ impl Drop for RawMode {
     }
 }
 
-pub fn startup(
+pub fn splash(
     our: &Identity,
     version: &str,
     is_detached: bool,

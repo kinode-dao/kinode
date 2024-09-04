@@ -21,24 +21,33 @@ pub mod utils;
 
 pub struct State {
     pub stdout: std::io::Stdout,
+    /// handle for writing to on-disk log (disabled by default, triggered by CTRL+L)
     pub log_writer: BufWriter<std::fs::File>,
+    /// in-memory searchable command history (default size: 1000)
     pub command_history: utils::CommandHistory,
+    /// terminal window width, 0 is leftmost column
     pub win_cols: u16,
+    /// terminal window height, 0 is topmost row
     pub win_rows: u16,
-    pub prompt_len: usize,
+    /// prompt for user input (e.g. "mynode.os > ")
+    pub prompt: &'static str,
     pub line_col: usize,
     pub cursor_col: u16,
     pub current_line: String,
+    /// flag representing whether we are in step-through mode (activated by CTRL+J, stepped by CTRL+S)
     pub in_step_through: bool,
+    /// flag representing whether we are in search mode (activated by CTRL+R, exited by CTRL+G)
     pub search_mode: bool,
+    /// depth of search mode (activated by CTRL+R, increased by CTRL+R)
     pub search_depth: usize,
+    /// flag representing whether we are in logging mode (activated by CTRL+L)
     pub logging_mode: bool,
+    /// verbosity mode (increased by CTRL+V)
     pub verbose_mode: u8,
 }
 
-/*
- *  terminal driver
- */
+/// main entry point for terminal process
+/// called by main.rs
 pub async fn terminal(
     our: Identity,
     version: &str,
@@ -50,12 +59,12 @@ pub async fn terminal(
     is_detached: bool,
     verbose_mode: u8,
 ) -> anyhow::Result<()> {
-    let (stdout, _maybe_raw_mode) = utils::startup(&our, version, is_detached)?;
+    let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
     let (win_cols, win_rows) = crossterm::terminal::size().expect("terminal: couldn't fetch size");
 
-    let current_line = format!("{} > ", our.name);
-    let prompt_len: usize = our.name.len() + 3;
+    let prompt = Box::leak(format!("{} > ", our.name).into_boxed_str());
+    let prompt_len: usize = prompt.len();
     let cursor_col: u16 = prompt_len as u16;
     let line_col: usize = cursor_col as usize;
 
@@ -99,10 +108,10 @@ pub async fn terminal(
         command_history,
         win_cols,
         win_rows,
-        prompt_len,
+        prompt,
         line_col,
         cursor_col,
-        current_line,
+        current_line: prompt.to_string(),
         in_step_through,
         search_mode,
         search_depth,
@@ -229,7 +238,7 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
         cursor::MoveTo(0, state.win_rows),
         Print(utils::truncate_in_place(
             &state.current_line,
-            state.prompt_len,
+            state.prompt.len(),
             state.win_cols,
             (state.line_col, state.cursor_col)
         )),
@@ -252,7 +261,7 @@ async fn handle_event(
         command_history,
         win_cols,
         win_rows,
-        prompt_len,
+        prompt,
         line_col,
         cursor_col,
         current_line,
@@ -298,7 +307,7 @@ async fn handle_event(
                 cursor::MoveTo(0, *win_rows),
                 Print(utils::truncate_in_place(
                     &current_line,
-                    *prompt_len,
+                    prompt.len(),
                     *win_cols,
                     (*line_col, *cursor_col)
                 )),
@@ -432,7 +441,7 @@ async fn handle_event(
             ..
         }) => {
             // go up one command in history
-            match command_history.get_prev(&current_line[*prompt_len..]) {
+            match command_history.get_prev(&current_line[prompt.len()..]) {
                 Some(line) => {
                     *current_line = format!("{} > {}", our.name, line);
                     *line_col = current_line.len();
@@ -449,7 +458,7 @@ async fn handle_event(
                 terminal::Clear(ClearType::CurrentLine),
                 Print(utils::truncate_rightward(
                     current_line,
-                    *prompt_len,
+                    prompt.len(),
                     *win_cols
                 )),
             )?;
@@ -484,7 +493,7 @@ async fn handle_event(
                 terminal::Clear(ClearType::CurrentLine),
                 Print(utils::truncate_rightward(
                     &current_line,
-                    *prompt_len,
+                    prompt.len(),
                     *win_cols
                 )),
             )?;
@@ -497,14 +506,14 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
-            *line_col = *prompt_len;
-            *cursor_col = *prompt_len as u16;
+            *line_col = prompt.len();
+            *cursor_col = prompt.len() as u16;
             execute!(
                 stdout,
                 cursor::MoveTo(0, *win_rows),
                 Print(utils::truncate_from_left(
                     &current_line,
-                    *prompt_len,
+                    prompt.len(),
                     *win_cols,
                     *line_col
                 )),
@@ -529,7 +538,7 @@ async fn handle_event(
                 cursor::MoveTo(0, *win_rows),
                 Print(utils::truncate_from_right(
                     &current_line,
-                    *prompt_len,
+                    prompt.len(),
                     *win_cols,
                     *line_col
                 )),
@@ -552,7 +561,7 @@ async fn handle_event(
                 &our,
                 &mut stdout,
                 &current_line,
-                *prompt_len,
+                prompt.len(),
                 (*win_cols, *win_rows),
                 (*line_col, *cursor_col),
                 command_history,
@@ -575,8 +584,8 @@ async fn handle_event(
                 cursor::MoveTo(0, *win_rows),
                 terminal::Clear(ClearType::CurrentLine),
                 Print(utils::truncate_in_place(
-                    &format!("{} > {}", our.name, &current_line[*prompt_len..]),
-                    *prompt_len,
+                    &format!("{} > {}", our.name, &current_line[prompt.len()..]),
+                    prompt.len(),
                     *win_cols,
                     (*line_col, *cursor_col)
                 )),
@@ -602,7 +611,7 @@ async fn handle_event(
                             &our,
                             &mut stdout,
                             &current_line,
-                            *prompt_len,
+                            prompt.len(),
                             (*win_cols, *win_rows),
                             (*line_col, *cursor_col),
                             command_history,
@@ -616,7 +625,7 @@ async fn handle_event(
                         terminal::Clear(ClearType::CurrentLine),
                         Print(utils::truncate_in_place(
                             &current_line,
-                            *prompt_len,
+                            prompt.len(),
                             *win_cols,
                             (*line_col, *cursor_col)
                         )),
@@ -627,7 +636,7 @@ async fn handle_event(
                 //  BACKSPACE: delete a single character at cursor
                 //
                 KeyCode::Backspace => {
-                    if line_col == prompt_len {
+                    if *line_col == prompt.len() {
                         return Ok(false);
                     }
                     if *cursor_col as usize == *line_col {
@@ -640,7 +649,7 @@ async fn handle_event(
                             &our,
                             &mut stdout,
                             &current_line,
-                            *prompt_len,
+                            prompt.len(),
                             (*win_cols, *win_rows),
                             (*line_col, *cursor_col),
                             command_history,
@@ -654,7 +663,7 @@ async fn handle_event(
                         terminal::Clear(ClearType::CurrentLine),
                         Print(utils::truncate_in_place(
                             &current_line,
-                            *prompt_len,
+                            prompt.len(),
                             *win_cols,
                             (*line_col, *cursor_col)
                         )),
@@ -674,7 +683,7 @@ async fn handle_event(
                             &our,
                             &mut stdout,
                             &current_line,
-                            *prompt_len,
+                            prompt.len(),
                             (*win_cols, *win_rows),
                             (*line_col, *cursor_col),
                             command_history,
@@ -688,7 +697,7 @@ async fn handle_event(
                         terminal::Clear(ClearType::CurrentLine),
                         Print(utils::truncate_in_place(
                             &current_line,
-                            *prompt_len,
+                            prompt.len(),
                             *win_cols,
                             (*line_col, *cursor_col)
                         )),
@@ -699,8 +708,8 @@ async fn handle_event(
                 //  LEFT: move cursor one spot left
                 //
                 KeyCode::Left => {
-                    if *cursor_col as usize == *prompt_len {
-                        if line_col == prompt_len {
+                    if *cursor_col as usize == prompt.len() {
+                        if *line_col == prompt.len() {
                             // at the very beginning of the current typed line
                             return Ok(false);
                         } else {
@@ -711,7 +720,7 @@ async fn handle_event(
                                 cursor::MoveTo(0, *win_rows),
                                 Print(utils::truncate_from_left(
                                     &current_line,
-                                    *prompt_len,
+                                    prompt.len(),
                                     *win_cols,
                                     *line_col
                                 )),
@@ -746,7 +755,7 @@ async fn handle_event(
                             cursor::MoveTo(0, *win_rows),
                             Print(utils::truncate_from_right(
                                 &current_line,
-                                *prompt_len,
+                                prompt.len(),
                                 *win_cols,
                                 *line_col
                             )),
@@ -759,28 +768,27 @@ async fn handle_event(
                 KeyCode::Enter => {
                     // if we were in search mode, pull command from that
                     let command = if !*search_mode {
-                        current_line[*prompt_len..].to_string()
+                        current_line[prompt.len()..].to_string()
                     } else {
                         command_history
-                            .search(&current_line[*prompt_len..], *search_depth)
+                            .search(&current_line[prompt.len()..], *search_depth)
                             .unwrap_or_default()
                             .to_string()
                     };
-                    let next = format!("{} > ", our.name);
                     execute!(
                         stdout,
                         cursor::MoveTo(0, *win_rows),
                         terminal::Clear(ClearType::CurrentLine),
                         Print(&format!("{} > {}", our.name, command)),
                         Print("\r\n"),
-                        Print(&next),
+                        Print(&prompt),
                     )?;
                     *search_mode = false;
                     *search_depth = 0;
-                    *current_line = next;
+                    *current_line = prompt.to_string();
                     command_history.add(command.clone());
-                    *cursor_col = *prompt_len as u16;
-                    *line_col = *prompt_len;
+                    *cursor_col = prompt.len() as u16;
+                    *line_col = prompt.len();
                     KernelMessage::builder()
                         .id(rand::random())
                         .source((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))
