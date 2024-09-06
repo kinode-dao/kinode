@@ -52,7 +52,7 @@ pub async fn terminal(
 ) -> anyhow::Result<()> {
     let (stdout, _maybe_raw_mode) = utils::startup(&our, version, is_detached)?;
 
-    let (win_cols, win_rows) = crossterm::terminal::size().expect("terminal: couldn't fetch size");
+    let (win_cols, win_rows) = crossterm::terminal::size().unwrap_or_else(|_| (0, 0));
 
     let current_line = format!("{} > ", our.name);
     let prompt_len: usize = our.name.len() + 3;
