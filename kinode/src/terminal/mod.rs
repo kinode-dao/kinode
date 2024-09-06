@@ -380,8 +380,18 @@ async fn handle_event(
         // generally stable way.
         //
         Event::Resize(width, height) => {
-            *win_cols = width;
+            // this is critical at moment of resize not to double-up lines
+            execute!(
+                state.stdout,
+                cursor::MoveTo(0, height),
+                terminal::Clear(ClearType::CurrentLine)
+            )?;
+            *win_cols = width - 1;
             *win_rows = height;
+            if current_line.cursor_col + current_line.prompt_len as u16 > *win_cols {
+                current_line.cursor_col = *win_cols - current_line.prompt_len as u16;
+                current_line.line_col = current_line.cursor_col as usize;
+            }
         }
         //
         // PASTE: handle pasting of text from outside
