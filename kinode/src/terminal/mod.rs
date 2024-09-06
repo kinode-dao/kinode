@@ -45,7 +45,7 @@ struct State {
 }
 
 impl State {
-    fn display_current_input_line(&mut self) -> Result<(), std::io::Error> {
+    fn display_current_input_line(&mut self, show_end: bool) -> Result<(), std::io::Error> {
         execute!(
             self.stdout,
             cursor::MoveTo(0, self.win_rows),
@@ -54,9 +54,10 @@ impl State {
             Print(self.current_line.prompt),
             Print(utils::truncate_in_place(
                 &self.current_line.line,
-                self.win_cols as usize - self.current_line.prompt_len,
+                self.win_cols - self.current_line.prompt_len as u16,
                 self.current_line.line_col,
-                self.current_line.cursor_col
+                self.current_line.cursor_col,
+                show_end
             )),
             cursor::MoveTo(
                 self.current_line.prompt_len as u16 + self.current_line.cursor_col,
@@ -79,9 +80,10 @@ impl State {
                 style::Print(&search_prompt),
                 style::Print(utils::truncate_in_place(
                     &result_underlined,
-                    self.win_cols as usize - self.current_line.prompt_len,
+                    self.win_cols - self.current_line.prompt_len as u16,
                     self.current_line.line_col,
-                    search_cursor_col
+                    search_cursor_col,
+                    false,
                 )),
                 cursor::MoveTo(
                     self.current_line.prompt_len as u16 + search_cursor_col,
@@ -97,9 +99,10 @@ impl State {
                 style::Print(&search_prompt),
                 style::Print(utils::truncate_in_place(
                     &format!("{}: no results", &self.current_line.line),
-                    self.win_cols as usize - self.current_line.prompt_len,
+                    self.win_cols - self.current_line.prompt_len as u16,
                     self.current_line.line_col,
-                    self.current_line.cursor_col
+                    self.current_line.cursor_col,
+                    false,
                 )),
                 cursor::MoveTo(
                     self.current_line.prompt_len as u16 + self.current_line.cursor_col,
@@ -320,7 +323,7 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
         execute!(stdout, Print(format!("{line}\r\n")))?;
     }
     // re-display the current input line
-    state.display_current_input_line()?;
+    state.display_current_input_line(false)?;
     Ok(())
 }
 
@@ -375,7 +378,7 @@ async fn handle_event(
             current_line.line_col = current_line.line_col + pasted.graphemes(true).count();
             current_line.cursor_col = std::cmp::min(
                 current_line.line_col.try_into().unwrap_or(*win_cols),
-                *win_cols,
+                *win_cols - current_line.prompt_len as u16,
             );
         }
         //
@@ -508,6 +511,9 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
+            if state.search_mode {
+                return Ok(false);
+            }
             // go up one command in history
             match command_history.get_prev(&current_line.line) {
                 Some(line) => {
@@ -519,9 +525,11 @@ async fn handle_event(
                     print!("\x07");
                 }
             }
-            current_line.cursor_col =
-                std::cmp::min(current_line.line.graphemes(true).count() as u16, *win_cols);
-            state.display_current_input_line()?;
+            current_line.cursor_col = std::cmp::min(
+                current_line.line.graphemes(true).count() as u16,
+                *win_cols - current_line.prompt_len as u16,
+            );
+            state.display_current_input_line(true)?;
             return Ok(false);
         }
         //
@@ -536,6 +544,9 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
+            if state.search_mode {
+                return Ok(false);
+            }
             // go down one command in history
             match command_history.get_next() {
                 Some(line) => {
@@ -547,9 +558,11 @@ async fn handle_event(
                     print!("\x07");
                 }
             }
-            current_line.cursor_col =
-                std::cmp::min(current_line.line.graphemes(true).count() as u16, *win_cols);
-            state.display_current_input_line()?;
+            current_line.cursor_col = std::cmp::min(
+                current_line.line.graphemes(true).count() as u16,
+                *win_cols - current_line.prompt_len as u16,
+            );
+            state.display_current_input_line(true)?;
             return Ok(false);
         }
         //
@@ -578,8 +591,10 @@ async fn handle_event(
                 return Ok(false);
             }
             current_line.line_col = current_line.line.graphemes(true).count();
-            current_line.cursor_col =
-                std::cmp::min(current_line.line.graphemes(true).count() as u16, *win_cols);
+            current_line.cursor_col = std::cmp::min(
+                current_line.line.graphemes(true).count() as u16,
+                *win_cols - current_line.prompt_len as u16,
+            );
         }
         //
         //  CTRL+R: enter search mode
@@ -617,7 +632,7 @@ async fn handle_event(
                 //
                 KeyCode::Char(c) => {
                     current_line.line.insert(current_line.byte_index(), c);
-                    if current_line.cursor_col < *win_cols {
+                    if (current_line.cursor_col + current_line.prompt_len as u16) < *win_cols {
                         current_line.cursor_col += 1;
                     }
                     current_line.line_col += 1;
@@ -672,7 +687,8 @@ async fn handle_event(
                         // at the very end of the current typed line
                         return Ok(false);
                     };
-                    if current_line.cursor_col < (*win_cols - 1) {
+                    if (current_line.cursor_col + current_line.prompt_len as u16) < (*win_cols - 1)
+                    {
                         // simply move cursor and line position right
                         execute!(stdout, cursor::MoveRight(1))?;
                         current_line.cursor_col += 1;
@@ -738,7 +754,7 @@ async fn handle_event(
     if state.search_mode {
         state.search(&our.name)?;
     } else {
-        state.display_current_input_line()?;
+        state.display_current_input_line(false)?;
     }
     Ok(false)
 }

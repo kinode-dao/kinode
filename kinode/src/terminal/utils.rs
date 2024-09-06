@@ -127,12 +127,7 @@ pub fn splash(
 /// produce command line prompt and its length
 pub fn make_prompt(our_name: &str) -> (&'static str, usize) {
     let prompt = Box::leak(format!("{} > ", our_name).into_boxed_str());
-    (
-        prompt,
-        UnicodeSegmentation::graphemes(prompt, true)
-            .collect::<Vec<_>>()
-            .len(),
-    )
+    (prompt, prompt.graphemes(true).count())
 }
 
 pub fn cleanup(quit_msg: &str) {
@@ -247,23 +242,36 @@ pub fn underline(s: &str, to_underline: &str) -> (String, u16) {
 
 /// if line is wider than the terminal, truncate it intelligently,
 /// keeping the cursor in the same relative position.
-pub fn truncate_in_place(s: &str, term_width: usize, line_col: usize, cursor_col: u16) -> String {
+pub fn truncate_in_place(
+    s: &str,
+    term_width: u16,
+    line_col: usize,
+    cursor_col: u16,
+    show_end: bool,
+) -> String {
     let graphemes_count = s.graphemes(true).count();
-    if graphemes_count <= term_width {
+    if graphemes_count <= term_width as usize {
         // no adjustment to be made
         return s.to_string();
     }
 
     // input line is wider than terminal, clip start/end/both while keeping cursor
     // in same relative position.
-    if (cursor_col as usize) == line_col {
+    if show_end {
+        // show end of line, truncate everything before
+        s.graphemes(true)
+            .skip(graphemes_count - term_width as usize)
+            .collect::<String>()
+    } else if (cursor_col as usize) == line_col {
         // beginning of line is placed at left end, truncate everything past term_width
-        s.graphemes(true).take(term_width).collect::<String>()
+        s.graphemes(true)
+            .take(term_width as usize)
+            .collect::<String>()
     } else if (cursor_col as usize) < line_col {
         // some amount of the line is to the left of the terminal, clip from the right
         s.graphemes(true)
             .skip(line_col - cursor_col as usize)
-            .take(term_width)
+            .take(term_width as usize)
             .collect::<String>()
     } else {
         // this cannot occur
