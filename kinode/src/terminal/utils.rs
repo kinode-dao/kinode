@@ -5,6 +5,7 @@ use std::{
     fs::File,
     io::{BufWriter, Stdout, Write},
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 pub struct RawMode;
 impl RawMode {
@@ -123,6 +124,17 @@ pub fn splash(
     ))
 }
 
+/// produce command line prompt and its length
+pub fn make_prompt(our_name: &str) -> (&'static str, usize) {
+    let prompt = Box::leak(format!("{} > ", our_name).into_boxed_str());
+    (
+        prompt,
+        UnicodeSegmentation::graphemes(prompt, true)
+            .collect::<Vec<_>>()
+            .len(),
+    )
+}
+
 pub fn cleanup(quit_msg: &str) {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
@@ -202,7 +214,6 @@ impl CommandHistory {
 
     /// if depth = 0, find most recent command in history that contains the
     /// provided string. otherwise, skip the first <depth> matches.
-    /// yes this is O(n) to provide desired ordering, can revisit if slow
     pub fn search(&mut self, find: &str, depth: usize) -> Option<&str> {
         let mut skips = 0;
         if find.is_empty() {
@@ -224,104 +235,38 @@ impl CommandHistory {
     }
 }
 
-pub fn execute_search(
-    our: &Identity,
-    stdout: &mut std::io::StdoutLock,
-    current_line: &str,
-    prompt_len: usize,
-    (win_cols, win_rows): (u16, u16),
-    (line_col, cursor_col): (usize, u16),
-    command_history: &mut CommandHistory,
-    search_depth: usize,
-) -> Result<(), std::io::Error> {
-    let search_query = &current_line[prompt_len..];
-    if let Some(result) = command_history.search(search_query, search_depth) {
-        let (result_underlined, u_end) = underline(result, search_query);
-        let search_cursor_col = u_end + prompt_len as u16;
-        crossterm::execute!(
-            stdout,
-            crossterm::cursor::MoveTo(0, win_rows),
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
-            crossterm::style::Print(truncate_in_place(
-                &format!("{} * {}", our.name, result_underlined),
-                prompt_len,
-                win_cols,
-                (line_col, search_cursor_col)
-            )),
-            crossterm::cursor::MoveTo(search_cursor_col, win_rows),
-        )
-    } else {
-        crossterm::execute!(
-            stdout,
-            crossterm::cursor::MoveTo(0, win_rows),
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
-            crossterm::style::Print(truncate_in_place(
-                &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
-                prompt_len,
-                win_cols,
-                (line_col, cursor_col)
-            )),
-            crossterm::cursor::MoveTo(cursor_col, win_rows),
-        )
-    }
-}
-
 pub fn underline(s: &str, to_underline: &str) -> (String, u16) {
     // format result string to have query portion underlined
     let mut result = s.to_string();
     let u_start = s.find(to_underline).unwrap();
-    let u_end = u_start + to_underline.len();
+    let u_end = u_start + to_underline.graphemes(true).count();
     result.insert_str(u_end, "\x1b[24m");
     result.insert_str(u_start, "\x1b[4m");
     (result, u_end as u16)
 }
 
-pub fn truncate_rightward(s: &str, prompt_len: usize, width: u16) -> String {
-    if s.len() <= width as usize {
-        // no adjustment to be made
-        return s.to_string();
-    }
-    let sans_prompt = &s[prompt_len..];
-    s[..prompt_len].to_string() + &sans_prompt[(s.len() - width as usize)..]
-}
-
-/// print prompt, then as many chars as will fit in term starting from line_col
-pub fn truncate_from_left(s: &str, prompt_len: usize, width: u16, line_col: usize) -> String {
-    if s.len() <= width as usize {
-        // no adjustment to be made
-        return s.to_string();
-    }
-    s[..prompt_len].to_string() + &s[line_col..(width as usize - prompt_len + line_col)]
-}
-
-/// print prompt, then as many chars as will fit in term leading up to line_col
-pub fn truncate_from_right(s: &str, prompt_len: usize, width: u16, line_col: usize) -> String {
-    if s.len() <= width as usize {
-        // no adjustment to be made
-        return s.to_string();
-    }
-    s[..prompt_len].to_string() + &s[(prompt_len + (line_col - width as usize))..line_col]
-}
-
 /// if line is wider than the terminal, truncate it intelligently,
 /// keeping the cursor in the same relative position.
-pub fn truncate_in_place(
-    s: &str,
-    prompt_len: usize,
-    width: u16,
-    (line_col, cursor_col): (usize, u16),
-) -> String {
-    if s.len() <= width as usize {
+pub fn truncate_in_place(s: &str, term_width: usize, line_col: usize, cursor_col: u16) -> String {
+    let graphemes_count = s.graphemes(true).count();
+    if graphemes_count <= term_width {
         // no adjustment to be made
         return s.to_string();
     }
-    // always keep prompt at left
-    let prompt = &s[..prompt_len];
-    // print as much of the command fits left of col_in_command before cursor_col,
-    // then fill out the rest up to width
-    let end = width as usize + line_col - cursor_col as usize;
-    if end > s.len() {
-        return s.to_string();
+
+    // input line is wider than terminal, clip start/end/both while keeping cursor
+    // in same relative position.
+    if (cursor_col as usize) == line_col {
+        // beginning of line is placed at left end, truncate everything past term_width
+        s.graphemes(true).take(term_width).collect::<String>()
+    } else if (cursor_col as usize) < line_col {
+        // some amount of the line is to the left of the terminal, clip from the right
+        s.graphemes(true)
+            .skip(line_col - cursor_col as usize)
+            .take(term_width)
+            .collect::<String>()
+    } else {
+        // this cannot occur
+        unreachable!()
     }
-    prompt.to_string() + &s[(prompt_len + line_col - cursor_col as usize)..end]
 }
