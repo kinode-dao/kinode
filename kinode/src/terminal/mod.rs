@@ -131,7 +131,27 @@ impl CurrentLine {
             .grapheme_indices(true)
             .nth(self.line_col)
             .map(|(i, _)| i)
-            .unwrap_or_else(|| self.line.graphemes(true).count())
+            .unwrap_or_else(|| self.line.len())
+    }
+
+    fn insert_char(&mut self, c: char) {
+        let byte_index = self.byte_index();
+        self.line.insert(byte_index, c);
+    }
+
+    fn insert_str(&mut self, s: &str) {
+        let byte_index = self.byte_index();
+        self.line.insert_str(byte_index, s);
+    }
+
+    fn delete_char(&mut self) {
+        let byte_index = self.byte_index();
+        let next_grapheme = self.line[byte_index..]
+            .graphemes(true)
+            .next()
+            .map(|g| g.len())
+            .unwrap_or(0);
+        self.line.drain(byte_index..byte_index + next_grapheme);
     }
 }
 
@@ -372,9 +392,7 @@ async fn handle_event(
                 .chars()
                 .filter(|c| !c.is_control() && !c.is_ascii_control())
                 .collect::<String>();
-            current_line
-                .line
-                .insert_str(current_line.byte_index(), &pasted);
+            current_line.insert_str(&pasted);
             current_line.line_col = current_line.line_col + pasted.graphemes(true).count();
             current_line.cursor_col = std::cmp::min(
                 current_line.line_col.try_into().unwrap_or(*win_cols),
@@ -631,7 +649,7 @@ async fn handle_event(
                 //  CHAR: write a single character
                 //
                 KeyCode::Char(c) => {
-                    current_line.line.insert(current_line.byte_index(), c);
+                    current_line.insert_char(c);
                     if (current_line.cursor_col + current_line.prompt_len as u16) < *win_cols {
                         current_line.cursor_col += 1;
                     }
@@ -648,7 +666,7 @@ async fn handle_event(
                         current_line.cursor_col -= 1;
                     }
                     current_line.line_col -= 1;
-                    current_line.line.remove(current_line.byte_index());
+                    current_line.delete_char();
                 }
                 //
                 //  DELETE: delete a single character at right of cursor
@@ -657,7 +675,7 @@ async fn handle_event(
                     if current_line.line_col == current_line.line.graphemes(true).count() {
                         return Ok(false);
                     }
-                    current_line.line.remove(current_line.byte_index());
+                    current_line.delete_char();
                 }
                 //
                 //  LEFT: move cursor one spot left
