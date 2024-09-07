@@ -198,7 +198,11 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    get_kinode_book(&packages_dir)?;
+    if std::env::var("SKIP_BOOK").is_ok() {
+        p!("skipping book build");
+    } else {
+        get_kinode_book(&packages_dir)?;
+    }
 
     output_reruns(&packages_dir);
 
