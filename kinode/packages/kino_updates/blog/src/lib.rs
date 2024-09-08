@@ -60,7 +60,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     }}
 
     h2 {{
-        font-size: medium;
+        font-size: small;
     }}
 
     p {{
@@ -73,17 +73,14 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         width: 100vw;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: 5rem;
         background: transparent;
     }}
 
     #latest-blog-posts {{
         display: flex;
         flex-direction: column;
-        padding: 0.5rem;
-        gap: 0.5rem;
-        border-radius: 0.75rem;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        padding-left: 1em;
         height: 100vh;
         width: 100vw;
         overflow-y: auto;
@@ -96,8 +93,8 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         width: 100%;
         display: flex;
         gap: 8px;
-        border-radius: 0.5em;
-        padding: 0.5em;
+        padding: 1em 1em 1em 0em;
+        border-bottom: 1px solid rgba(0,0,0,0.1)
     }}
 
     .post-image {{
@@ -106,7 +103,6 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         background-position: center;
         width: 100px;
         height: 100px;
-        border-radius: 4px;
     }}
 
     .post-info {{
