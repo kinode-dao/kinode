@@ -36,7 +36,7 @@ pub fn startup(
         crossterm::terminal::SetTitle(format!("kinode {}", our.name))
     )?;
 
-    let (win_cols, _) = crossterm::terminal::size().expect("terminal: couldn't fetch size");
+    let (win_cols, _) = crossterm::terminal::size().unwrap_or_else(|_| (0, 0));
 
     // print initial splash screen, large if there's room, small otherwise
     if win_cols >= 90 {
@@ -323,5 +323,9 @@ pub fn truncate_in_place(
     if end > s.len() {
         return s.to_string();
     }
-    prompt.to_string() + &s[(prompt_len + line_col - cursor_col as usize)..end]
+    let start = prompt_len + line_col - cursor_col as usize;
+    if start >= end {
+        return prompt.to_string();
+    }
+    prompt.to_string() + &s[start..end]
 }
