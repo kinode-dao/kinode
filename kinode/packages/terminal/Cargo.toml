@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "alias",
+    "cat",
+    "echo",
+    "help",
+    "hi",
+    "kfetch",
+    "kill",
+    "m",
+    "namehash_to_name",
+    "net_diagnostics",
+    "peer",
+    "peers",
+    "terminal",
+    "top",
+]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true
