@@ -83,7 +83,7 @@ fn init(our: Address) {
     loop {
         match await_message() {
             Err(send_error) => {
-                print_to_terminal(1, &format!("got network error: {send_error}"));
+                print_to_terminal(1, &format!("downloads: got network error: {send_error}"));
             }
             Ok(message) => {
                 if let Err(e) = handle_message(
@@ -94,7 +94,7 @@ fn init(our: Address) {
                     &mut tmp,
                     &mut auto_updates,
                 ) {
-                    print_to_terminal(1, &format!("error handling message: {:?}", e));
+                    print_to_terminal(1, &format!("downloads: error handling message: {:?}", e));
                 }
             }
         }

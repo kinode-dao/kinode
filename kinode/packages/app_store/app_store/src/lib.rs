@@ -74,25 +74,11 @@ fn init(our: Address) {
     loop {
         match await_message() {
             Err(send_error) => {
-                // TODO: handle these more gracefully so only real send errors are printed
-                // // for now, these are timer callbacks to already finished ft_workers.
-                // print_to_terminal(1, &format!("got network error: {send_error}"));
-
-                let error_message = format!("got network error: {send_error}");
-                println!("{error_message}");
-                Response::new()
-                    .body(AppStoreResponse::SendError(error_message))
-                    .send()
-                    .unwrap();
+                print_to_terminal(1, &format!("main: got network error: {send_error}"));
             }
             Ok(message) => {
                 if let Err(e) = handle_message(&our, &mut state, &mut http_server, &message) {
-                    let error_message = format!("error handling message: {e:?}");
-                    println!("{error_message}");
-                    Response::new()
-                        .body(AppStoreResponse::HandlingError(error_message))
-                        .send()
-                        .unwrap();
+                    print_to_terminal(1, &format!("main: error handling message: {e:?}"));
                 }
             }
         }
