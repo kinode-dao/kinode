@@ -1556,7 +1556,7 @@ pub struct Erc721Properties {
     pub screenshots: Option<Vec<String>>,
     pub wit_version: Option<u32>,
     pub dependencies: Option<Vec<String>>,
-    pub api_includes: Option<Vec<PathBuf>>,
+    pub api_includes: Option<Vec<std::path::PathBuf>>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`

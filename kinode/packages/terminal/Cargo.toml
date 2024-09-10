@@ -9,7 +9,6 @@ members = [
     "kfetch",
     "kill",
     "m",
-    "namehash_to_name",
     "net_diagnostics",
     "peer",
     "peers",
