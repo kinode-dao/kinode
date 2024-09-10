@@ -1,4 +1,4 @@
-use dashmap::DashMap;
+use dashmap::{mapref::entry::Entry, DashMap};
 use lib::types::core::{
     Address, CapMessage, CapMessageSender, Capability, DirEntry, FileMetadata, FileType,
     KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
@@ -6,6 +6,7 @@ use lib::types::core::{
     KERNEL_PROCESS_ID, VFS_PROCESS_ID,
 };
 use std::{
+    cmp::max,
     collections::{HashMap, VecDeque},
     io::Read,
     path::{Component, Path, PathBuf},
@@ -21,7 +22,8 @@ use tokio::{
 
 // Constants for file cleanup
 const FILE_CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
-const FILE_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+const FILE_IDLE_TIMEOUT: Duration = Duration::from_secs(50);
+const MAX_OPEN_FILES: usize = 180;
 
 /// The main VFS service function.
 ///
@@ -59,86 +61,83 @@ pub async fn vfs(
     let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
         HashMap::default();
 
-    // Start the file cleanup task
-    let cleanup_open_files = open_files.clone();
-    tokio::spawn(async move {
-        let mut interval = interval(FILE_CLEANUP_INTERVAL);
-        loop {
-            interval.tick().await;
-            cleanup_open_files
-                .retain(|_, (_, last_accessed)| last_accessed.elapsed() < FILE_IDLE_TIMEOUT);
-        }
-    });
+    let mut cleanup_interval = interval(FILE_CLEANUP_INTERVAL);
 
-    while let Some(km) = recv_from_loop.recv().await {
-        if *our_node != km.source.node {
-            Printout::new(
-                1,
-                format!(
-                    "vfs: got request from {}, but requests must come from our node {our_node}",
-                    km.source.node
-                ),
-            )
-            .send(&send_to_terminal)
-            .await;
-            continue;
-        }
-
-        let queue = process_queues
-            .get(&km.source.process)
-            .cloned()
-            .unwrap_or_else(|| Arc::new(Mutex::new(VecDeque::new())));
-
-        {
-            let mut queue_lock = queue.lock().await;
-            queue_lock.push_back(km);
-        }
-
-        // Clone Arcs for the new task
-        let our_node = our_node.clone();
-        let send_to_loop = send_to_loop.clone();
-        let send_to_caps_oracle = send_to_caps_oracle.clone();
-        let open_files = open_files.clone();
-        let vfs_path = vfs_path.clone();
-
-        tokio::spawn(async move {
-            let mut queue_lock = queue.lock().await;
-            if let Some(km) = queue_lock.pop_front() {
-                let (km_id, km_rsvp) =
-                    (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
-
-                if let Err(e) = handle_request(
-                    &our_node,
-                    km,
-                    open_files,
-                    &send_to_loop,
-                    &send_to_caps_oracle,
-                    &vfs_path,
-                )
-                .await
-                {
-                    KernelMessage::builder()
-                        .id(km_id)
-                        .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
-                        .target(km_rsvp)
-                        .message(Message::Response((
-                            Response {
-                                inherit: false,
-                                body: serde_json::to_vec(&VfsResponse::Err(e)).unwrap(),
-                                metadata: None,
-                                capabilities: vec![],
-                            },
-                            None,
-                        )))
-                        .build()
-                        .unwrap()
-                        .send(&send_to_loop)
-                        .await;
-                }
+    loop {
+        tokio::select! {
+            _ = cleanup_interval.tick() => {
+                let now = Instant::now();
+                open_files.retain(|_, (_, last_accessed)| now.duration_since(*last_accessed) < FILE_IDLE_TIMEOUT);
             }
-        });
+            Some(km) = recv_from_loop.recv() => {
+                if *our_node != km.source.node {
+                    Printout::new(
+                        1,
+                        format!(
+                            "vfs: got request from {}, but requests must come from our node {our_node}",
+                            km.source.node
+                        ),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
+                    continue;
+                }
+                let queue = process_queues
+                .get(&km.source.process)
+                .cloned()
+                .unwrap_or_else(|| Arc::new(Mutex::new(VecDeque::new())));
+
+            {
+                let mut queue_lock = queue.lock().await;
+                queue_lock.push_back(km);
+            }
+
+            // Clone Arcs for the new task
+            let our_node = our_node.clone();
+            let send_to_loop = send_to_loop.clone();
+            let send_to_caps_oracle = send_to_caps_oracle.clone();
+            let open_files = open_files.clone();
+            let vfs_path = vfs_path.clone();
+
+            tokio::spawn(async move {
+                let mut queue_lock = queue.lock().await;
+                if let Some(km) = queue_lock.pop_front() {
+                    let (km_id, km_rsvp) =
+                        (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
+
+                    if let Err(e) = handle_request(
+                        &our_node,
+                        km,
+                        open_files,
+                        &send_to_loop,
+                        &send_to_caps_oracle,
+                        &vfs_path,
+                    )
+                    .await
+                    {
+                        KernelMessage::builder()
+                            .id(km_id)
+                            .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
+                            .target(km_rsvp)
+                            .message(Message::Response((
+                                Response {
+                                    inherit: false,
+                                    body: serde_json::to_vec(&VfsResponse::Err(e)).unwrap(),
+                                    metadata: None,
+                                    capabilities: vec![],
+                                },
+                                None,
+                            )))
+                            .build()
+                            .unwrap()
+                            .send(&send_to_loop)
+                            .await;
+                    }
+                }
+            });
+            }
+        }
     }
-    Ok(())
 }
 
 /// Handles individual VFS requests.
@@ -594,9 +593,18 @@ async fn open_file<P: AsRef<Path>>(
     truncate: bool,
 ) -> Result<Arc<Mutex<fs::File>>, VfsError> {
     let path = path.as_ref().to_path_buf();
-    Ok(match open_files.get(&path) {
-        Some(file) => file.value().0.clone(),
-        None => {
+
+    if open_files.len() >= MAX_OPEN_FILES {
+        cleanup_files(&open_files);
+    }
+
+    // avoid race conditions
+    match open_files.entry(path.clone()) {
+        Entry::Occupied(mut entry) => {
+            entry.get_mut().1 = Instant::now(); // update last access time
+            Ok(entry.get().0.clone())
+        }
+        Entry::Vacant(entry) => {
             let file = Arc::new(Mutex::new(
                 tokio::fs::OpenOptions::new()
                     .read(true)
@@ -604,16 +612,30 @@ async fn open_file<P: AsRef<Path>>(
                     .create(create)
                     .truncate(truncate)
                     .open(&path)
-                    .await
-                    .map_err(|e| VfsError::IOError {
-                        error: e.to_string(),
-                        path: path.display().to_string(),
-                    })?,
+                    .await?,
             ));
-            open_files.insert(path, (file.clone(), Instant::now()));
-            file
+            entry.insert((file.clone(), Instant::now()));
+            Ok(file)
         }
-    })
+    }
+}
+
+fn cleanup_files(open_files: &DashMap<PathBuf, (Arc<Mutex<fs::File>>, Instant)>) {
+    let current_count = open_files.len();
+    let target_count = max(current_count / 2, MAX_OPEN_FILES / 2);
+
+    // collect all entries, sort by last access time
+    let mut entries: Vec<_> = open_files
+        .iter()
+        .map(|entry| (entry.key().clone(), entry.value().1))
+        .collect();
+    entries.sort_by(|a, b| a.1.cmp(&b.1));
+
+    // remove oldest entries until we reach the target count
+    for (path, _) in entries.into_iter().take(current_count - target_count) {
+        // use remove_if_present to avoid potential race conditions
+        open_files.remove_if(&path, |_, _| true);
+    }
 }
 
 async fn check_caps(
