@@ -78,7 +78,12 @@ fn init(our: Address) {
             }
             Ok(message) => {
                 if let Err(e) = handle_message(&our, &mut state, &mut http_server, &message) {
-                    print_to_terminal(1, &format!("main: error handling message: {e:?}"));
+                    let error_message = format!("error handling message: {e:?}");
+                    print_to_terminal(1, &error_message);
+                    Response::new()
+                        .body(AppStoreResponse::HandlingError(error_message))
+                        .send()
+                        .unwrap();
                 }
             }
         }

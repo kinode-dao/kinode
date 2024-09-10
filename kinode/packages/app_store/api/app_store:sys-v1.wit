@@ -55,6 +55,7 @@ interface downloads {
         http-client-error,
         blob-not-found,
         vfs-error,
+        handling-error(string),
     }
 
     record download-complete-request {
@@ -192,7 +193,6 @@ interface main {
         local(local-response),
         chain-error(chain-error),
         download-error(download-error),
-        send-error(string),
         handling-error(string),
     }
 

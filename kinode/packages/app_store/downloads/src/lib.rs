@@ -94,7 +94,14 @@ fn init(our: Address) {
                     &mut tmp,
                     &mut auto_updates,
                 ) {
-                    print_to_terminal(1, &format!("downloads: error handling message: {:?}", e));
+                    let error_message = format!("error handling message: {e:?}");
+                    print_to_terminal(1, &error_message);
+                    Response::new()
+                        .body(DownloadResponses::Err(DownloadError::HandlingError(
+                            error_message,
+                        )))
+                        .send()
+                        .unwrap();
                 }
             }
         }
