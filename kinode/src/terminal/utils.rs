@@ -261,26 +261,54 @@ pub fn truncate_in_place(
         return s.to_string();
     }
 
+    let graphemes_with_width = s.graphemes(true).map(|g| (g, display_width(g)));
+
+    let adjusted_cursor_col = graphemes_with_width
+        .clone()
+        .take(cursor_col as usize)
+        .map(|(_, w)| w)
+        .sum::<usize>();
+
     // input line is wider than terminal, clip start/end/both while keeping cursor
     // in same relative position.
-    if show_end {
+    if show_end || cursor_col >= term_width {
         // show end of line, truncate everything before
-        s.graphemes(true)
-            .skip(width - term_width as usize)
+        let mut width = 0;
+        graphemes_with_width
+            .rev()
+            .take_while(|(_, w)| {
+                width += w;
+                width <= term_width as usize
+            })
+            .map(|(g, _)| g)
             .collect::<String>()
-    } else if (cursor_col as usize) == line_col {
+            .chars()
+            .rev()
+            .collect::<String>()
+    } else if adjusted_cursor_col as usize == line_col {
         // beginning of line is placed at left end, truncate everything past term_width
-        s.graphemes(true)
-            .take(term_width as usize)
+        let mut width = 0;
+        graphemes_with_width
+            .take_while(|(_, w)| {
+                width += w;
+                width <= term_width as usize
+            })
+            .map(|(g, _)| g)
             .collect::<String>()
-    } else if (cursor_col as usize) < line_col {
+    } else if adjusted_cursor_col < line_col {
         // some amount of the line is to the left of the terminal, clip from the right
-        s.graphemes(true)
-            .skip(line_col - cursor_col as usize)
-            .take(term_width as usize)
+        // skip the difference between line_col and cursor_col *after adjusting for
+        // wide characters
+        let mut width = 0;
+        graphemes_with_width
+            .skip(line_col - adjusted_cursor_col)
+            .take_while(|(_, w)| {
+                width += w;
+                width <= term_width as usize
+            })
+            .map(|(g, _)| g)
             .collect::<String>()
     } else {
-        // this cannot occur
         unreachable!()
     }
 }

@@ -719,7 +719,9 @@ async fn handle_event(
                             as u16;
                         execute!(stdout, cursor::MoveLeft(width))?;
                         current_line.cursor_col -= width;
-                        current_line.line_col -= 1;
+                        if current_line.line_col != 0 {
+                            current_line.line_col -= 1;
+                        }
                         return Ok(false);
                     }
                 }
