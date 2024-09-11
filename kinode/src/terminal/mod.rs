@@ -70,8 +70,7 @@ impl State {
         let search_prompt = format!("{} *", our_name);
         let search_query = &self.current_line.line;
         if let Some(result) = self.command_history.search(search_query, self.search_depth) {
-            let (result_underlined, u_end) = utils::underline(result, search_query);
-            let search_cursor_col = u_end + search_prompt.graphemes(true).count() as u16;
+            let (result_underlined, search_cursor_col) = utils::underline(result, search_query);
             execute!(
                 self.stdout,
                 cursor::MoveTo(0, self.win_rows),
@@ -134,6 +133,18 @@ impl CurrentLine {
             .unwrap_or_else(|| self.line.len())
     }
 
+    fn current_char_left(&self) -> Option<&str> {
+        if self.line_col == 0 {
+            None
+        } else {
+            self.line.graphemes(true).nth(self.line_col - 1)
+        }
+    }
+
+    fn current_char_right(&self) -> Option<&str> {
+        self.line.graphemes(true).nth(self.line_col)
+    }
+
     fn insert_char(&mut self, c: char) {
         let byte_index = self.byte_index();
         self.line.insert(byte_index, c);
@@ -144,14 +155,17 @@ impl CurrentLine {
         self.line.insert_str(byte_index, s);
     }
 
-    fn delete_char(&mut self) {
+    /// returns the deleted character
+    fn delete_char(&mut self) -> String {
         let byte_index = self.byte_index();
         let next_grapheme = self.line[byte_index..]
             .graphemes(true)
             .next()
             .map(|g| g.len())
             .unwrap_or(0);
-        self.line.drain(byte_index..byte_index + next_grapheme);
+        self.line
+            .drain(byte_index..byte_index + next_grapheme)
+            .collect()
     }
 }
 
@@ -403,7 +417,7 @@ async fn handle_event(
                 .filter(|c| !c.is_control() && !c.is_ascii_control())
                 .collect::<String>();
             current_line.insert_str(&pasted);
-            current_line.line_col = current_line.line_col + pasted.graphemes(true).count();
+            current_line.line_col = current_line.line_col + utils::display_width(&pasted);
             current_line.cursor_col = std::cmp::min(
                 current_line.line_col.try_into().unwrap_or(*win_cols),
                 *win_cols - current_line.prompt_len as u16,
@@ -545,18 +559,17 @@ async fn handle_event(
             // go up one command in history
             match command_history.get_prev(&current_line.line) {
                 Some(line) => {
-                    current_line.line_col = line.graphemes(true).count();
+                    let width = utils::display_width(&line);
+                    current_line.line_col = width;
                     current_line.line = line;
+                    current_line.cursor_col =
+                        std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
                 }
                 None => {
                     // the "no-no" ding
                     print!("\x07");
                 }
             }
-            current_line.cursor_col = std::cmp::min(
-                current_line.line.graphemes(true).count() as u16,
-                *win_cols - current_line.prompt_len as u16,
-            );
             state.display_current_input_line(true)?;
             return Ok(false);
         }
@@ -578,18 +591,17 @@ async fn handle_event(
             // go down one command in history
             match command_history.get_next() {
                 Some(line) => {
-                    current_line.line_col = line.graphemes(true).count();
+                    let width = utils::display_width(&line);
+                    current_line.line_col = width;
                     current_line.line = line;
+                    current_line.cursor_col =
+                        std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
                 }
                 None => {
                     // the "no-no" ding
                     print!("\x07");
                 }
             }
-            current_line.cursor_col = std::cmp::min(
-                current_line.line.graphemes(true).count() as u16,
-                *win_cols - current_line.prompt_len as u16,
-            );
             state.display_current_input_line(true)?;
             return Ok(false);
         }
@@ -618,11 +630,10 @@ async fn handle_event(
             if state.search_mode {
                 return Ok(false);
             }
-            current_line.line_col = current_line.line.graphemes(true).count();
-            current_line.cursor_col = std::cmp::min(
-                current_line.line.graphemes(true).count() as u16,
-                *win_cols - current_line.prompt_len as u16,
-            );
+            let width = utils::display_width(&current_line.line);
+            current_line.line_col = width;
+            current_line.cursor_col =
+                std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
         }
         //
         //  CTRL+R: enter search mode
@@ -661,7 +672,7 @@ async fn handle_event(
                 KeyCode::Char(c) => {
                     current_line.insert_char(c);
                     if (current_line.cursor_col + current_line.prompt_len as u16) < *win_cols {
-                        current_line.cursor_col += 1;
+                        current_line.cursor_col += utils::display_width(&c.to_string()) as u16;
                     }
                     current_line.line_col += 1;
                 }
@@ -671,18 +682,17 @@ async fn handle_event(
                 KeyCode::Backspace => {
                     if current_line.line_col == 0 {
                         return Ok(false);
+                    } else {
+                        current_line.line_col -= 1;
+                        let c = current_line.delete_char();
+                        current_line.cursor_col -= utils::display_width(&c) as u16;
                     }
-                    if current_line.cursor_col as usize > 0 {
-                        current_line.cursor_col -= 1;
-                    }
-                    current_line.line_col -= 1;
-                    current_line.delete_char();
                 }
                 //
                 //  DELETE: delete a single character at right of cursor
                 //
                 KeyCode::Delete => {
-                    if current_line.line_col == current_line.line.graphemes(true).count() {
+                    if current_line.line_col == utils::display_width(&current_line.line) {
                         return Ok(false);
                     }
                     current_line.delete_char();
@@ -702,7 +712,10 @@ async fn handle_event(
                     } else {
                         // simply move cursor and line position left
                         execute!(stdout, cursor::MoveLeft(1))?;
-                        current_line.cursor_col -= 1;
+                        current_line.cursor_col -= current_line
+                            .current_char_left()
+                            .map_or_else(|| 1, |c| utils::display_width(&c))
+                            as u16;
                         current_line.line_col -= 1;
                         return Ok(false);
                     }
@@ -711,7 +724,7 @@ async fn handle_event(
                 //  RIGHT: move cursor one spot right
                 //
                 KeyCode::Right => {
-                    if current_line.line_col == current_line.line.graphemes(true).count() {
+                    if current_line.line_col == utils::display_width(&current_line.line) {
                         // at the very end of the current typed line
                         return Ok(false);
                     };
@@ -719,7 +732,10 @@ async fn handle_event(
                     {
                         // simply move cursor and line position right
                         execute!(stdout, cursor::MoveRight(1))?;
-                        current_line.cursor_col += 1;
+                        current_line.cursor_col += current_line
+                            .current_char_right()
+                            .map_or_else(|| 1, |c| utils::display_width(&c))
+                            as u16;
                         current_line.line_col += 1;
                         return Ok(false);
                     } else {

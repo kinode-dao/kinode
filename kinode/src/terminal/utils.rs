@@ -6,6 +6,7 @@ use std::{
     io::{BufWriter, Stdout, Write},
 };
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 pub struct RawMode;
 impl RawMode {
@@ -124,10 +125,14 @@ pub fn splash(
     ))
 }
 
+pub fn display_width(s: &str) -> usize {
+    UnicodeWidthStr::width(s)
+}
+
 /// produce command line prompt and its length
 pub fn make_prompt(our_name: &str) -> (&'static str, usize) {
     let prompt = Box::leak(format!("{} > ", our_name).into_boxed_str());
-    (prompt, prompt.graphemes(true).count())
+    (prompt, display_width(prompt))
 }
 
 pub fn cleanup(quit_msg: &str) {
@@ -234,10 +239,11 @@ pub fn underline(s: &str, to_underline: &str) -> (String, u16) {
     // format result string to have query portion underlined
     let mut result = s.to_string();
     let u_start = s.find(to_underline).unwrap();
-    let u_end = u_start + to_underline.graphemes(true).count();
+    let u_end = u_start + to_underline.len();
     result.insert_str(u_end, "\x1b[24m");
     result.insert_str(u_start, "\x1b[4m");
-    (result, u_end as u16)
+    let cursor_end = display_width(&result[..u_end]);
+    (result, cursor_end as u16)
 }
 
 /// if line is wider than the terminal, truncate it intelligently,
@@ -249,8 +255,8 @@ pub fn truncate_in_place(
     cursor_col: u16,
     show_end: bool,
 ) -> String {
-    let graphemes_count = s.graphemes(true).count();
-    if graphemes_count <= term_width as usize {
+    let width = display_width(s);
+    if width <= term_width as usize {
         // no adjustment to be made
         return s.to_string();
     }
@@ -260,7 +266,7 @@ pub fn truncate_in_place(
     if show_end {
         // show end of line, truncate everything before
         s.graphemes(true)
-            .skip(graphemes_count - term_width as usize)
+            .skip(width - term_width as usize)
             .collect::<String>()
     } else if (cursor_col as usize) == line_col {
         // beginning of line is placed at left end, truncate everything past term_width
