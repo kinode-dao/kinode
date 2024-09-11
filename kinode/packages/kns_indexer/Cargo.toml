@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "get_block",
+    "kns_indexer",
+    "state",
+]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true

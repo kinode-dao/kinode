@@ -114,7 +114,7 @@ pub fn new_package(
 
     let download_resp = serde_json::from_slice::<DownloadResponses>(&resp.body())?;
 
-    if let DownloadResponses::Error(e) = download_resp {
+    if let DownloadResponses::Err(e) = download_resp {
         return Err(anyhow::anyhow!("failed to add download: {:?}", e));
     }
     Ok(())

@@ -318,9 +318,7 @@ fn serve_paths(
                 DownloadResponses::GetFiles(files) => {
                     Ok((StatusCode::OK, None, serde_json::to_vec(&files)?))
                 }
-                DownloadResponses::Error(e) => {
-                    Err(anyhow::anyhow!("Error from downloads: {:?}", e))
-                }
+                DownloadResponses::Err(e) => Err(anyhow::anyhow!("Error from downloads: {:?}", e)),
                 _ => Err(anyhow::anyhow!(
                     "Invalid response from downloads: {:?}",
                     msg
@@ -348,9 +346,7 @@ fn serve_paths(
                 DownloadResponses::GetFiles(files) => {
                     Ok((StatusCode::OK, None, serde_json::to_vec(&files)?))
                 }
-                DownloadResponses::Error(e) => {
-                    Err(anyhow::anyhow!("Error from downloads: {:?}", e))
-                }
+                DownloadResponses::Err(e) => Err(anyhow::anyhow!("Error from downloads: {:?}", e)),
                 _ => Err(anyhow::anyhow!(
                     "Invalid response from downloads: {:?}",
                     msg
@@ -509,7 +505,7 @@ fn serve_paths(
                     let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
                     match msg {
                         DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
-                        DownloadResponses::Error(e) => {
+                        DownloadResponses::Err(e) => {
                             Err(anyhow::anyhow!("Error starting mirroring: {:?}", e))
                         }
                         _ => Err(anyhow::anyhow!(
@@ -529,7 +525,7 @@ fn serve_paths(
                     let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
                     match msg {
                         DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
-                        DownloadResponses::Error(e) => {
+                        DownloadResponses::Err(e) => {
                             Err(anyhow::anyhow!("Error stopping mirroring: {:?}", e))
                         }
                         _ => Err(anyhow::anyhow!(
@@ -574,7 +570,7 @@ fn serve_paths(
             let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
             match msg {
                 DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
-                DownloadResponses::Error(e) => Err(anyhow::anyhow!("Error removing file: {:?}", e)),
+                DownloadResponses::Err(e) => Err(anyhow::anyhow!("Error removing file: {:?}", e)),
                 _ => Err(anyhow::anyhow!(
                     "Invalid response from downloads: {:?}",
                     msg
@@ -610,7 +606,7 @@ fn serve_paths(
             match msg {
                 ChainResponses::AutoUpdateStarted
                 | ChainResponses::AutoUpdateStopped
-                | ChainResponses::Error(_) => Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?)),
+                | ChainResponses::Err(_) => Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?)),
                 _ => Ok((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     None,

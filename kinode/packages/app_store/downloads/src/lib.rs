@@ -23,8 +23,8 @@ use sha2::{Digest, Sha256};
 wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
-    world: "app-store-sys-v0",
-    additional_derives: [serde::Deserialize, serde::Serialize],
+    world: "app-store-sys-v1",
+    additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
 mod ft_worker_lib;
@@ -32,7 +32,7 @@ mod ft_worker_lib;
 pub const VFS_TIMEOUT: u64 = 5; // 5s
 pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     Download(DownloadResponses),
@@ -83,7 +83,7 @@ fn init(our: Address) {
     loop {
         match await_message() {
             Err(send_error) => {
-                print_to_terminal(1, &format!("got network error: {send_error}"));
+                print_to_terminal(1, &format!("downloads: got network error: {send_error}"));
             }
             Ok(message) => {
                 if let Err(e) = handle_message(
@@ -94,7 +94,14 @@ fn init(our: Address) {
                     &mut tmp,
                     &mut auto_updates,
                 ) {
-                    print_to_terminal(1, &format!("error handling message: {:?}", e));
+                    let error_message = format!("error handling message: {e:?}");
+                    print_to_terminal(1, &error_message);
+                    Response::new()
+                        .body(DownloadResponses::Err(DownloadError::HandlingError(
+                            error_message,
+                        )))
+                        .send()
+                        .unwrap();
                 }
             }
         }
@@ -114,7 +121,7 @@ fn handle_message(
     auto_updates: &mut HashSet<(PackageId, String)>,
 ) -> anyhow::Result<()> {
     if message.is_request() {
-        match serde_json::from_slice::<DownloadRequests>(message.body())? {
+        match message.body().try_into()? {
             DownloadRequests::LocalDownload(download_request) => {
                 // we want to download a package.
                 if !message.is_local(our) {
@@ -158,13 +165,11 @@ fn handle_message(
                 )?;
 
                 Request::to((&download_from, "downloads", "app_store", "sys"))
-                    .body(serde_json::to_vec(&DownloadRequests::RemoteDownload(
-                        RemoteDownloadRequest {
-                            package_id,
-                            desired_version_hash,
-                            worker_address: our_worker.to_string(),
-                        },
-                    ))?)
+                    .body(DownloadRequests::RemoteDownload(RemoteDownloadRequest {
+                        package_id,
+                        desired_version_hash,
+                        worker_address: our_worker.to_string(),
+                    }))
                     .send()?;
             }
             DownloadRequests::RemoteDownload(download_request) => {
@@ -187,11 +192,11 @@ fn handle_message(
                     &target_worker,
                 )?;
             }
-            DownloadRequests::Progress(progress) => {
+            DownloadRequests::Progress(ref progress) => {
                 // forward progress to main:app_store:sys,
                 // pushed to UI via websockets
                 let _ = Request::to(("our", "main", "app_store", "sys"))
-                    .body(serde_json::to_vec(&progress)?)
+                    .body(progress)
                     .send();
             }
             DownloadRequests::DownloadComplete(req) => {
@@ -253,7 +258,7 @@ fn handle_message(
 
                 let resp = DownloadResponses::GetFiles(files);
 
-                Response::new().body(serde_json::to_string(&resp)?).send()?;
+                Response::new().body(&resp).send()?;
             }
             DownloadRequests::RemoveFile(remove_req) => {
                 if !message.is_local(our) {
@@ -273,9 +278,7 @@ fn handle_message(
                 let manifest_path = format!("{}/{}.json", package_dir, version_hash);
                 let _ = vfs::remove_file(&manifest_path, None);
                 Response::new()
-                    .body(serde_json::to_vec(&Resp::Download(
-                        DownloadResponses::Success,
-                    ))?)
+                    .body(Resp::Download(DownloadResponses::Success))
                     .send()?;
             }
             DownloadRequests::AddDownload(add_req) => {
@@ -310,9 +313,7 @@ fn handle_message(
                 }
 
                 Response::new()
-                    .body(serde_json::to_vec(&Resp::Download(
-                        DownloadResponses::Success,
-                    ))?)
+                    .body(Resp::Download(DownloadResponses::Success))
                     .send()?;
             }
             DownloadRequests::StartMirroring(package_id) => {
@@ -320,9 +321,7 @@ fn handle_message(
                 state.mirroring.insert(package_id);
                 set_state(&serde_json::to_vec(&state)?);
                 Response::new()
-                    .body(serde_json::to_vec(&Resp::Download(
-                        DownloadResponses::Success,
-                    ))?)
+                    .body(Resp::Download(DownloadResponses::Success))
                     .send()?;
             }
             DownloadRequests::StopMirroring(package_id) => {
@@ -330,9 +329,7 @@ fn handle_message(
                 state.mirroring.remove(&package_id);
                 set_state(&serde_json::to_vec(&state)?);
                 Response::new()
-                    .body(serde_json::to_vec(&Resp::Download(
-                        DownloadResponses::Success,
-                    ))?)
+                    .body(Resp::Download(DownloadResponses::Success))
                     .send()?;
             }
             DownloadRequests::AutoUpdate(auto_update_request) => {
@@ -369,9 +366,7 @@ fn handle_message(
 
                 // kick off local download to ourselves.
                 Request::to(("our", "downloads", "app_store", "sys"))
-                    .body(serde_json::to_vec(&DownloadRequests::LocalDownload(
-                        download_request,
-                    ))?)
+                    .body(DownloadRequests::LocalDownload(download_request))
                     .send()?;
 
                 auto_updates.insert((process_lib_package_id, version_hash));
@@ -379,7 +374,7 @@ fn handle_message(
             _ => {}
         }
     } else {
-        match serde_json::from_slice::<Resp>(message.body())? {
+        match message.body().try_into()? {
             Resp::Download(download_response) => {
                 // these are handled in line.
                 print_to_terminal(
@@ -403,13 +398,13 @@ fn handle_message(
                                 &format!("error handling http_client response: {:?}", e),
                             );
                             Request::to(("our", "main", "app_store", "sys"))
-                                .body(serde_json::to_vec(&DownloadRequests::DownloadComplete(
+                                .body(DownloadRequests::DownloadComplete(
                                     DownloadCompleteRequest {
                                         package_id: download_request.package_id.clone(),
                                         version_hash: download_request.desired_version_hash.clone(),
-                                        error: Some(e),
+                                        err: Some(e),
                                     },
-                                ))?)
+                                ))
                                 .send()?;
                         }
                     }
@@ -462,14 +457,11 @@ fn handle_receive_http_download(
     extract_and_write_manifest(&bytes, &manifest_path).map_err(|_| DownloadError::VfsError)?;
 
     Request::to(("our", "main", "app_store", "sys"))
-        .body(
-            serde_json::to_vec(&DownloadCompleteRequest {
-                package_id: download_request.package_id.clone(),
-                version_hash,
-                error: None,
-            })
-            .unwrap(),
-        )
+        .body(DownloadCompleteRequest {
+            package_id: download_request.package_id.clone(),
+            version_hash,
+            err: None,
+        })
         .send()
         .unwrap();
 
