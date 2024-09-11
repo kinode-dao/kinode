@@ -239,9 +239,16 @@ pub fn underline(s: &str, to_underline: &str) -> (String, u16) {
     // format result string to have query portion underlined
     let mut result = s.to_string();
     let u_start = s.find(to_underline).unwrap();
-    let u_end = u_start + to_underline.len();
+    let mut u_end = u_start + to_underline.len();
     result.insert_str(u_end, "\x1b[24m");
     result.insert_str(u_start, "\x1b[4m");
+    // check if u_end is at a character boundary
+    loop {
+        if u_end == s.len() || s.is_char_boundary(u_end) {
+            break;
+        }
+        u_end += 1;
+    }
     let cursor_end = display_width(&result[..u_end]);
     (result, cursor_end as u16)
 }
@@ -309,6 +316,18 @@ pub fn truncate_in_place(
             .map(|(g, _)| g)
             .collect::<String>()
     } else {
-        unreachable!()
+        // show end of line, truncate everything before
+        let mut width = 0;
+        graphemes_with_width
+            .rev()
+            .take_while(|(_, w)| {
+                width += w;
+                width <= term_width as usize
+            })
+            .map(|(g, _)| g)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>()
     }
 }
