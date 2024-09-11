@@ -622,19 +622,36 @@ async fn open_file<P: AsRef<Path>>(
 
 fn cleanup_files(open_files: &DashMap<PathBuf, (Arc<Mutex<fs::File>>, Instant)>) {
     let current_count = open_files.len();
-    let target_count = max(current_count / 2, MAX_OPEN_FILES / 2);
+    let target_count: usize = max(current_count / 2, MAX_OPEN_FILES / 2);
 
-    // collect all entries, sort by last access time
-    let mut entries: Vec<_> = open_files
+    if current_count <= MAX_OPEN_FILES {
+        return;
+    }
+
+    // calculate average last access time
+    let now = Instant::now();
+    let sum_duration: Duration = open_files
         .iter()
-        .map(|entry| (entry.key().clone(), entry.value().1))
-        .collect();
-    entries.sort_by(|a, b| a.1.cmp(&b.1));
+        .map(|entry| now.duration_since(entry.value().1))
+        .sum();
+    let avg_duration = sum_duration / current_count as u32;
 
-    // remove oldest entries until we reach the target count
-    for (path, _) in entries.into_iter().take(current_count - target_count) {
-        // use remove_if_present to avoid potential race conditions
-        open_files.remove_if(&path, |_, _| true);
+    // first pass: remove files older than average
+    open_files.retain(|_, (file, last_access)| {
+        now.duration_since(*last_access) < avg_duration || Arc::strong_count(file) > 1
+    });
+
+    // second pass: if we're still over target, remove oldest files
+    if open_files.len() > target_count {
+        let mut entries: Vec<_> = open_files
+            .iter()
+            .map(|entry| (entry.key().clone(), entry.value().1))
+            .collect();
+        entries.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by most recent first
+
+        for (path, _) in entries.into_iter().skip(target_count) {
+            open_files.remove_if(&path, |_, (file, _)| Arc::strong_count(file) == 1);
+        }
     }
 }
 
