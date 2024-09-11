@@ -404,7 +404,8 @@ async fn handle_event(
             *win_rows = height;
             if current_line.cursor_col + current_line.prompt_len as u16 > *win_cols {
                 current_line.cursor_col = *win_cols - current_line.prompt_len as u16;
-                current_line.line_col = current_line.cursor_col as usize;
+                // can't do this because of wide graphemes :/
+                // current_line.line_col = current_line.cursor_col as usize;
             }
         }
         //
@@ -417,9 +418,9 @@ async fn handle_event(
                 .filter(|c| !c.is_control() && !c.is_ascii_control())
                 .collect::<String>();
             current_line.insert_str(&pasted);
-            current_line.line_col = current_line.line_col + utils::display_width(&pasted);
+            current_line.line_col = current_line.line_col + pasted.graphemes(true).count();
             current_line.cursor_col = std::cmp::min(
-                current_line.line_col.try_into().unwrap_or(*win_cols),
+                current_line.cursor_col + utils::display_width(&pasted) as u16,
                 *win_cols - current_line.prompt_len as u16,
             );
         }
@@ -560,7 +561,7 @@ async fn handle_event(
             match command_history.get_prev(&current_line.line) {
                 Some(line) => {
                     let width = utils::display_width(&line);
-                    current_line.line_col = width;
+                    current_line.line_col = line.graphemes(true).count();
                     current_line.line = line;
                     current_line.cursor_col =
                         std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
@@ -592,7 +593,7 @@ async fn handle_event(
             match command_history.get_next() {
                 Some(line) => {
                     let width = utils::display_width(&line);
-                    current_line.line_col = width;
+                    current_line.line_col = line.graphemes(true).count();
                     current_line.line = line;
                     current_line.cursor_col =
                         std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
@@ -630,10 +631,11 @@ async fn handle_event(
             if state.search_mode {
                 return Ok(false);
             }
-            let width = utils::display_width(&current_line.line);
-            current_line.line_col = width;
-            current_line.cursor_col =
-                std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
+            current_line.line_col = current_line.line.graphemes(true).count();
+            current_line.cursor_col = std::cmp::min(
+                utils::display_width(&current_line.line) as u16,
+                *win_cols - current_line.prompt_len as u16,
+            );
         }
         //
         //  CTRL+R: enter search mode
@@ -692,7 +694,7 @@ async fn handle_event(
                 //  DELETE: delete a single character at right of cursor
                 //
                 KeyCode::Delete => {
-                    if current_line.line_col == utils::display_width(&current_line.line) {
+                    if current_line.line_col == current_line.line.graphemes(true).count() {
                         return Ok(false);
                     }
                     current_line.delete_char();
@@ -711,11 +713,12 @@ async fn handle_event(
                         }
                     } else {
                         // simply move cursor and line position left
-                        execute!(stdout, cursor::MoveLeft(1))?;
-                        current_line.cursor_col -= current_line
+                        let width = current_line
                             .current_char_left()
                             .map_or_else(|| 1, |c| utils::display_width(&c))
                             as u16;
+                        execute!(stdout, cursor::MoveLeft(width))?;
+                        current_line.cursor_col -= width;
                         current_line.line_col -= 1;
                         return Ok(false);
                     }
@@ -724,18 +727,19 @@ async fn handle_event(
                 //  RIGHT: move cursor one spot right
                 //
                 KeyCode::Right => {
-                    if current_line.line_col == utils::display_width(&current_line.line) {
+                    if current_line.line_col == current_line.line.graphemes(true).count() {
                         // at the very end of the current typed line
                         return Ok(false);
                     };
                     if (current_line.cursor_col + current_line.prompt_len as u16) < (*win_cols - 1)
                     {
                         // simply move cursor and line position right
-                        execute!(stdout, cursor::MoveRight(1))?;
-                        current_line.cursor_col += current_line
+                        let width = current_line
                             .current_char_right()
                             .map_or_else(|| 1, |c| utils::display_width(&c))
                             as u16;
+                        execute!(stdout, cursor::MoveRight(width))?;
+                        current_line.cursor_col += width;
                         current_line.line_col += 1;
                         return Ok(false);
                     } else {
