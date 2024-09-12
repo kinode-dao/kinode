@@ -77,6 +77,9 @@ async fn main() {
     let rpc = matches.get_one::<String>("rpc");
     let password = matches.get_one::<String>("password");
 
+    // logging mode is toggled at runtime by CTRL+L
+    let is_logging = *matches.get_one::<bool>("logging").unwrap();
+
     // detached determines whether terminal is interactive
     let detached = *matches.get_one::<bool>("detached").unwrap();
 
@@ -423,6 +426,7 @@ async fn main() {
             print_receiver,
             detached,
             verbose_mode,
+            is_logging,
         ) => {
             match quit {
                 Ok(()) => {
@@ -630,7 +634,7 @@ fn build_command() -> Command {
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(
-            arg!(--port <PORT> "Port to bind [default: first unbound at or above 8080]")
+            arg!(-p --port <PORT> "Port to bind [default: first unbound at or above 8080]")
                 .value_parser(value_parser!(u16)),
         )
         .arg(
@@ -644,9 +648,13 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
-            arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
+            arg!(-v --verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
                 .default_value("0")
                 .value_parser(value_parser!(u8)),
+        )
+        .arg(
+            arg!(-l --logging <IS_LOGGING> "Run in logging mode (toggled at runtime by CTRL+L): write all terminal output to .terminal_log file")
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
             arg!(--"reveal-ip" "If set to false, as an indirect node, always use routers to connect to other nodes.")
@@ -654,7 +662,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(bool)),
         )
         .arg(
-            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
+            arg!(-d --detached <IS_DETACHED> "Run in detached mode (don't accept input)")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))

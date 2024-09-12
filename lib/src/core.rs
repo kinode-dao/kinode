@@ -1544,6 +1544,7 @@ pub struct Erc721Metadata {
 /// - `screenshots`: An optional field containing a list of URLs to screenshots of the package.
 /// - `wit_version`: An optional field containing the version of the WIT standard that the package adheres to.
 /// - `dependencies`: An optional field containing a list of `PackageId`s: API dependencies.
+/// - `api_includes`: An optional field containing a list of `PathBuf`s: additional files to include in the `api.zip`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Erc721Properties {
     pub package_name: String,
@@ -1555,6 +1556,7 @@ pub struct Erc721Properties {
     pub screenshots: Option<Vec<String>>,
     pub wit_version: Option<u32>,
     pub dependencies: Option<Vec<String>>,
+    pub api_includes: Option<Vec<std::path::PathBuf>>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`

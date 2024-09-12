@@ -26,7 +26,7 @@ window.Buffer = Buffer;
 
 const config = getDefaultConfig({
   appName: 'Kinode Register UI',
-  projectId: 'KINODE_REGISTER',
+  projectId: 'c6da298e8ee4e4b00ea32cd4c20c40af',
   chains: [optimism],
   ssr: false,
   transports: {
@@ -42,7 +42,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider showRecentTransactions={true}>
+        <RainbowKitProvider modalSize="compact" showRecentTransactions={true}>
           <App />
         </RainbowKitProvider>
       </QueryClientProvider>

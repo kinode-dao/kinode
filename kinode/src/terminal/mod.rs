@@ -16,29 +16,161 @@ use std::{
     io::{BufWriter, Write},
 };
 use tokio::signal::unix::{signal, SignalKind};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub mod utils;
 
-pub struct State {
+struct State {
     pub stdout: std::io::Stdout,
+    /// handle for writing to on-disk log (disabled by default, triggered by CTRL+L)
     pub log_writer: BufWriter<std::fs::File>,
+    /// in-memory searchable command history that persists itself on disk (default size: 1000)
     pub command_history: utils::CommandHistory,
+    /// terminal window width, 0 is leftmost column
     pub win_cols: u16,
+    /// terminal window height, 0 is topmost row
     pub win_rows: u16,
-    pub prompt_len: usize,
-    pub line_col: usize,
-    pub cursor_col: u16,
-    pub current_line: String,
+    /// the input line (bottom row)
+    pub current_line: CurrentLine,
+    /// flag representing whether we are in step-through mode (activated by CTRL+J, stepped by CTRL+S)
     pub in_step_through: bool,
+    /// flag representing whether we are in search mode (activated by CTRL+R, exited by CTRL+G)
     pub search_mode: bool,
+    /// depth of search mode (activated by CTRL+R, increased by CTRL+R)
     pub search_depth: usize,
+    /// flag representing whether we are in logging mode (activated by CTRL+L)
     pub logging_mode: bool,
+    /// verbosity mode (increased by CTRL+V)
     pub verbose_mode: u8,
 }
 
-/*
- *  terminal driver
- */
+impl State {
+    fn display_current_input_line(&mut self, show_end: bool) -> Result<(), std::io::Error> {
+        execute!(
+            self.stdout,
+            cursor::MoveTo(0, self.win_rows),
+            terminal::Clear(ClearType::CurrentLine),
+            style::SetForegroundColor(style::Color::Reset),
+            Print(self.current_line.prompt),
+            Print(utils::truncate_in_place(
+                &self.current_line.line,
+                self.win_cols - self.current_line.prompt_len as u16,
+                self.current_line.line_col,
+                self.current_line.cursor_col,
+                show_end
+            )),
+            cursor::MoveTo(
+                self.current_line.prompt_len as u16 + self.current_line.cursor_col,
+                self.win_rows
+            ),
+        )
+    }
+
+    fn search(&mut self, our_name: &str) -> Result<(), std::io::Error> {
+        let search_prompt = format!("{} *", our_name);
+        let search_query = &self.current_line.line;
+        if let Some(result) = self.command_history.search(search_query, self.search_depth) {
+            let (result_underlined, search_cursor_col) = utils::underline(result, search_query);
+            execute!(
+                self.stdout,
+                cursor::MoveTo(0, self.win_rows),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                style::SetForegroundColor(style::Color::Reset),
+                style::Print(&search_prompt),
+                style::Print(utils::truncate_in_place(
+                    &result_underlined,
+                    self.win_cols - self.current_line.prompt_len as u16,
+                    self.current_line.line_col,
+                    search_cursor_col,
+                    false,
+                )),
+                cursor::MoveTo(
+                    self.current_line.prompt_len as u16 + search_cursor_col,
+                    self.win_rows
+                ),
+            )
+        } else {
+            execute!(
+                self.stdout,
+                cursor::MoveTo(0, self.win_rows),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                style::SetForegroundColor(style::Color::Reset),
+                style::Print(&search_prompt),
+                style::Print(utils::truncate_in_place(
+                    &format!("{}: no results", &self.current_line.line),
+                    self.win_cols - self.current_line.prompt_len as u16,
+                    self.current_line.line_col,
+                    self.current_line.cursor_col,
+                    false,
+                )),
+                cursor::MoveTo(
+                    self.current_line.prompt_len as u16 + self.current_line.cursor_col,
+                    self.win_rows
+                ),
+            )
+        }
+    }
+}
+
+struct CurrentLine {
+    /// prompt for user input (e.g. "mynode.os > ")
+    pub prompt: &'static str,
+    pub prompt_len: usize,
+    /// the grapheme index of the cursor in the current line
+    pub line_col: usize,
+    /// the column index of the cursor in the terminal window (not including prompt)
+    pub cursor_col: u16,
+    /// the line itself, which does not include the prompt
+    pub line: String,
+}
+
+impl CurrentLine {
+    fn byte_index(&self) -> usize {
+        self.line
+            .grapheme_indices(true)
+            .nth(self.line_col)
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| self.line.len())
+    }
+
+    fn current_char_left(&self) -> Option<&str> {
+        if self.line_col == 0 {
+            None
+        } else {
+            self.line.graphemes(true).nth(self.line_col - 1)
+        }
+    }
+
+    fn current_char_right(&self) -> Option<&str> {
+        self.line.graphemes(true).nth(self.line_col)
+    }
+
+    fn insert_char(&mut self, c: char) {
+        let byte_index = self.byte_index();
+        self.line.insert(byte_index, c);
+    }
+
+    fn insert_str(&mut self, s: &str) {
+        let byte_index = self.byte_index();
+        self.line.insert_str(byte_index, s);
+    }
+
+    /// returns the deleted character
+    fn delete_char(&mut self) -> String {
+        let byte_index = self.byte_index();
+        let next_grapheme = self.line[byte_index..]
+            .graphemes(true)
+            .next()
+            .map(|g| g.len())
+            .unwrap_or(0);
+        self.line
+            .drain(byte_index..byte_index + next_grapheme)
+            .collect()
+    }
+}
+
+/// main entry point for terminal process
+/// called by main.rs
 pub async fn terminal(
     our: Identity,
     version: &str,
@@ -49,22 +181,22 @@ pub async fn terminal(
     mut print_rx: PrintReceiver,
     is_detached: bool,
     verbose_mode: u8,
+    is_logging: bool,
 ) -> anyhow::Result<()> {
-    let (stdout, _maybe_raw_mode) = utils::startup(&our, version, is_detached)?;
+    let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
-    let (win_cols, win_rows) = crossterm::terminal::size().expect("terminal: couldn't fetch size");
+    let (win_cols, win_rows) = crossterm::terminal::size().unwrap_or_else(|_| (0, 0));
 
-    let current_line = format!("{} > ", our.name);
-    let prompt_len: usize = our.name.len() + 3;
-    let cursor_col: u16 = prompt_len as u16;
-    let line_col: usize = cursor_col as usize;
+    let (prompt, prompt_len) = utils::make_prompt(&our.name);
+    let cursor_col: u16 = 0;
+    let line_col: usize = 0;
 
-    let in_step_through: bool = false;
+    let in_step_through = false;
 
-    let search_mode: bool = false;
+    let search_mode = false;
     let search_depth: usize = 0;
 
-    let logging_mode: bool = false;
+    let logging_mode = is_logging;
 
     // the terminal stores the most recent 1000 lines entered by user
     // in history. TODO should make history size adjustable.
@@ -99,10 +231,13 @@ pub async fn terminal(
         command_history,
         win_cols,
         win_rows,
-        prompt_len,
-        line_col,
-        cursor_col,
-        current_line,
+        current_line: CurrentLine {
+            prompt,
+            prompt_len,
+            line_col,
+            cursor_col,
+            line: "".to_string(),
+        },
         in_step_through,
         search_mode,
         search_depth,
@@ -219,22 +354,10 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
         }),
     )?;
     for line in printout.content.lines() {
-        execute!(stdout, Print(format!("{}\r\n", line)),)?;
+        execute!(stdout, Print(format!("{line}\r\n")))?;
     }
-    // reset color and re-display the current input line
-    // re-place cursor where user had it at input line
-    execute!(
-        stdout,
-        style::ResetColor,
-        cursor::MoveTo(0, state.win_rows),
-        Print(utils::truncate_in_place(
-            &state.current_line,
-            state.prompt_len,
-            state.win_cols,
-            (state.line_col, state.cursor_col)
-        )),
-        cursor::MoveTo(state.cursor_col, state.win_rows),
-    )?;
+    // re-display the current input line
+    state.display_current_input_line(false)?;
     Ok(())
 }
 
@@ -252,12 +375,8 @@ async fn handle_event(
         command_history,
         win_cols,
         win_rows,
-        prompt_len,
-        line_col,
-        cursor_col,
         current_line,
         in_step_through,
-        search_mode,
         search_depth,
         logging_mode,
         verbose_mode,
@@ -275,8 +394,19 @@ async fn handle_event(
         // generally stable way.
         //
         Event::Resize(width, height) => {
-            *win_cols = width;
+            // this is critical at moment of resize not to double-up lines
+            execute!(
+                state.stdout,
+                cursor::MoveTo(0, height),
+                terminal::Clear(ClearType::CurrentLine)
+            )?;
+            *win_cols = width - 1;
             *win_rows = height;
+            if current_line.cursor_col + current_line.prompt_len as u16 > *win_cols {
+                current_line.cursor_col = *win_cols - current_line.prompt_len as u16;
+                // can't do this because of wide graphemes :/
+                // current_line.line_col = current_line.cursor_col as usize;
+            }
         }
         //
         // PASTE: handle pasting of text from outside
@@ -287,23 +417,12 @@ async fn handle_event(
                 .chars()
                 .filter(|c| !c.is_control() && !c.is_ascii_control())
                 .collect::<String>();
-            current_line.insert_str(*line_col, &pasted);
-            *line_col = *line_col + pasted.len();
-            *cursor_col = std::cmp::min(
-                line_col.to_owned().try_into().unwrap_or(*win_cols),
-                *win_cols,
+            current_line.insert_str(&pasted);
+            current_line.line_col = current_line.line_col + pasted.graphemes(true).count();
+            current_line.cursor_col = std::cmp::min(
+                current_line.cursor_col + utils::display_width(&pasted) as u16,
+                *win_cols - current_line.prompt_len as u16,
             );
-            execute!(
-                stdout,
-                cursor::MoveTo(0, *win_rows),
-                Print(utils::truncate_in_place(
-                    &current_line,
-                    *prompt_len,
-                    *win_cols,
-                    (*line_col, *cursor_col)
-                )),
-                cursor::MoveTo(*cursor_col, *win_rows),
-            )?;
         }
         //
         // CTRL+C, CTRL+D: turn off the node
@@ -370,6 +489,7 @@ async fn handle_event(
             )
             .send(&print_tx)
             .await;
+            return Ok(false);
         }
         //
         // CTRL+J: toggle debug mode -- makes system-level event loop step-through
@@ -393,6 +513,7 @@ async fn handle_event(
             )
             .send(&print_tx)
             .await;
+            return Ok(false);
         }
         //
         // CTRL+S: step through system-level event loop (when in step-through mode)
@@ -403,6 +524,7 @@ async fn handle_event(
             ..
         }) => {
             let _ = debug_event_loop.send(DebugCommand::Step).await;
+            return Ok(false);
         }
         //
         //  CTRL+L: toggle logging mode
@@ -419,6 +541,7 @@ async fn handle_event(
             )
             .send(&print_tx)
             .await;
+            return Ok(false);
         }
         //
         //  UP / CTRL+P: go up one command in history
@@ -431,28 +554,25 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
+            if state.search_mode {
+                return Ok(false);
+            }
             // go up one command in history
-            match command_history.get_prev(&current_line[*prompt_len..]) {
+            match command_history.get_prev(&current_line.line) {
                 Some(line) => {
-                    *current_line = format!("{} > {}", our.name, line);
-                    *line_col = current_line.len();
+                    let width = utils::display_width(&line);
+                    current_line.line_col = line.graphemes(true).count();
+                    current_line.line = line;
+                    current_line.cursor_col =
+                        std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
                 }
                 None => {
                     // the "no-no" ding
                     print!("\x07");
                 }
             }
-            *cursor_col = std::cmp::min(current_line.len() as u16, *win_cols);
-            execute!(
-                stdout,
-                cursor::MoveTo(0, *win_rows),
-                terminal::Clear(ClearType::CurrentLine),
-                Print(utils::truncate_rightward(
-                    current_line,
-                    *prompt_len,
-                    *win_cols
-                )),
-            )?;
+            state.display_current_input_line(true)?;
+            return Ok(false);
         }
         //
         //  DOWN / CTRL+N: go down one command in history
@@ -466,28 +586,25 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
+            if state.search_mode {
+                return Ok(false);
+            }
             // go down one command in history
             match command_history.get_next() {
                 Some(line) => {
-                    *current_line = format!("{} > {}", our.name, line);
-                    *line_col = current_line.len();
+                    let width = utils::display_width(&line);
+                    current_line.line_col = line.graphemes(true).count();
+                    current_line.line = line;
+                    current_line.cursor_col =
+                        std::cmp::min(width as u16, *win_cols - current_line.prompt_len as u16);
                 }
                 None => {
                     // the "no-no" ding
                     print!("\x07");
                 }
             }
-            *cursor_col = std::cmp::min(current_line.len() as u16, *win_cols);
-            execute!(
-                stdout,
-                cursor::MoveTo(0, *win_rows),
-                terminal::Clear(ClearType::CurrentLine),
-                Print(utils::truncate_rightward(
-                    &current_line,
-                    *prompt_len,
-                    *win_cols
-                )),
-            )?;
+            state.display_current_input_line(true)?;
+            return Ok(false);
         }
         //
         //  CTRL+A: jump to beginning of line
@@ -497,19 +614,11 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
-            *line_col = *prompt_len;
-            *cursor_col = *prompt_len as u16;
-            execute!(
-                stdout,
-                cursor::MoveTo(0, *win_rows),
-                Print(utils::truncate_from_left(
-                    &current_line,
-                    *prompt_len,
-                    *win_cols,
-                    *line_col
-                )),
-                cursor::MoveTo(*cursor_col, *win_rows),
-            )?;
+            if state.search_mode {
+                return Ok(false);
+            }
+            current_line.line_col = 0;
+            current_line.cursor_col = 0;
         }
         //
         //  CTRL+E: jump to end of line
@@ -519,21 +628,14 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
-            *line_col = current_line.len();
-            *cursor_col = std::cmp::min(
-                line_col.to_owned().try_into().unwrap_or(*win_cols),
-                *win_cols,
+            if state.search_mode {
+                return Ok(false);
+            }
+            current_line.line_col = current_line.line.graphemes(true).count();
+            current_line.cursor_col = std::cmp::min(
+                utils::display_width(&current_line.line) as u16,
+                *win_cols - current_line.prompt_len as u16,
             );
-            execute!(
-                stdout,
-                cursor::MoveTo(0, *win_rows),
-                Print(utils::truncate_from_right(
-                    &current_line,
-                    *prompt_len,
-                    *win_cols,
-                    *line_col
-                )),
-            )?;
         }
         //
         //  CTRL+R: enter search mode
@@ -544,20 +646,10 @@ async fn handle_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         }) => {
-            if *search_mode {
+            if state.search_mode {
                 *search_depth += 1;
             }
-            *search_mode = true;
-            utils::execute_search(
-                &our,
-                &mut stdout,
-                &current_line,
-                *prompt_len,
-                (*win_cols, *win_rows),
-                (*line_col, *cursor_col),
-                command_history,
-                *search_depth,
-            )?;
+            state.search_mode = true;
         }
         //
         //  CTRL+G: exit search mode
@@ -568,20 +660,8 @@ async fn handle_event(
             ..
         }) => {
             // just show true current line as usual
-            *search_mode = false;
+            state.search_mode = false;
             *search_depth = 0;
-            execute!(
-                stdout,
-                cursor::MoveTo(0, *win_rows),
-                terminal::Clear(ClearType::CurrentLine),
-                Print(utils::truncate_in_place(
-                    &format!("{} > {}", our.name, &current_line[*prompt_len..]),
-                    *prompt_len,
-                    *win_cols,
-                    (*line_col, *cursor_col)
-                )),
-                cursor::MoveTo(*cursor_col, *win_rows),
-            )?;
         }
         //
         //  KEY: handle keypress events
@@ -592,165 +672,81 @@ async fn handle_event(
                 //  CHAR: write a single character
                 //
                 KeyCode::Char(c) => {
-                    current_line.insert(*line_col, c);
-                    if cursor_col < win_cols {
-                        *cursor_col += 1;
+                    current_line.insert_char(c);
+                    if (current_line.cursor_col + current_line.prompt_len as u16) < *win_cols {
+                        current_line.cursor_col += utils::display_width(&c.to_string()) as u16;
                     }
-                    *line_col += 1;
-                    if *search_mode {
-                        utils::execute_search(
-                            &our,
-                            &mut stdout,
-                            &current_line,
-                            *prompt_len,
-                            (*win_cols, *win_rows),
-                            (*line_col, *cursor_col),
-                            command_history,
-                            *search_depth,
-                        )?;
-                        return Ok(false);
-                    }
-                    execute!(
-                        stdout,
-                        cursor::MoveTo(0, *win_rows),
-                        terminal::Clear(ClearType::CurrentLine),
-                        Print(utils::truncate_in_place(
-                            &current_line,
-                            *prompt_len,
-                            *win_cols,
-                            (*line_col, *cursor_col)
-                        )),
-                        cursor::MoveTo(*cursor_col, *win_rows),
-                    )?;
+                    current_line.line_col += 1;
                 }
                 //
                 //  BACKSPACE: delete a single character at cursor
                 //
                 KeyCode::Backspace => {
-                    if line_col == prompt_len {
+                    if current_line.line_col == 0 {
                         return Ok(false);
+                    } else {
+                        current_line.line_col -= 1;
+                        let c = current_line.delete_char();
+                        current_line.cursor_col -= utils::display_width(&c) as u16;
                     }
-                    if *cursor_col as usize == *line_col {
-                        *cursor_col -= 1;
-                    }
-                    *line_col -= 1;
-                    current_line.remove(*line_col);
-                    if *search_mode {
-                        utils::execute_search(
-                            &our,
-                            &mut stdout,
-                            &current_line,
-                            *prompt_len,
-                            (*win_cols, *win_rows),
-                            (*line_col, *cursor_col),
-                            command_history,
-                            *search_depth,
-                        )?;
-                        return Ok(false);
-                    }
-                    execute!(
-                        stdout,
-                        cursor::MoveTo(0, *win_rows),
-                        terminal::Clear(ClearType::CurrentLine),
-                        Print(utils::truncate_in_place(
-                            &current_line,
-                            *prompt_len,
-                            *win_cols,
-                            (*line_col, *cursor_col)
-                        )),
-                        cursor::MoveTo(*cursor_col, *win_rows),
-                    )?;
                 }
                 //
                 //  DELETE: delete a single character at right of cursor
                 //
                 KeyCode::Delete => {
-                    if *line_col == current_line.len() {
+                    if current_line.line_col == current_line.line.graphemes(true).count() {
                         return Ok(false);
                     }
-                    current_line.remove(*line_col);
-                    if *search_mode {
-                        utils::execute_search(
-                            &our,
-                            &mut stdout,
-                            &current_line,
-                            *prompt_len,
-                            (*win_cols, *win_rows),
-                            (*line_col, *cursor_col),
-                            command_history,
-                            *search_depth,
-                        )?;
-                        return Ok(false);
-                    }
-                    execute!(
-                        stdout,
-                        cursor::MoveTo(0, *win_rows),
-                        terminal::Clear(ClearType::CurrentLine),
-                        Print(utils::truncate_in_place(
-                            &current_line,
-                            *prompt_len,
-                            *win_cols,
-                            (*line_col, *cursor_col)
-                        )),
-                        cursor::MoveTo(*cursor_col, *win_rows),
-                    )?;
+                    current_line.delete_char();
                 }
                 //
                 //  LEFT: move cursor one spot left
                 //
                 KeyCode::Left => {
-                    if *cursor_col as usize == *prompt_len {
-                        if line_col == prompt_len {
+                    if current_line.cursor_col as usize == 0 {
+                        if current_line.line_col == 0 {
                             // at the very beginning of the current typed line
                             return Ok(false);
                         } else {
                             // virtual scroll leftward through line
-                            *line_col -= 1;
-                            execute!(
-                                stdout,
-                                cursor::MoveTo(0, *win_rows),
-                                Print(utils::truncate_from_left(
-                                    &current_line,
-                                    *prompt_len,
-                                    *win_cols,
-                                    *line_col
-                                )),
-                                cursor::MoveTo(*cursor_col, *win_rows),
-                            )?;
+                            current_line.line_col -= 1;
                         }
                     } else {
                         // simply move cursor and line position left
-                        execute!(stdout, cursor::MoveLeft(1),)?;
-                        *cursor_col -= 1;
-                        *line_col -= 1;
+                        let width = current_line
+                            .current_char_left()
+                            .map_or_else(|| 1, |c| utils::display_width(&c))
+                            as u16;
+                        execute!(stdout, cursor::MoveLeft(width))?;
+                        current_line.cursor_col -= width;
+                        if current_line.line_col != 0 {
+                            current_line.line_col -= 1;
+                        }
+                        return Ok(false);
                     }
                 }
                 //
                 //  RIGHT: move cursor one spot right
                 //
                 KeyCode::Right => {
-                    if *line_col == current_line.len() {
+                    if current_line.line_col == current_line.line.graphemes(true).count() {
                         // at the very end of the current typed line
                         return Ok(false);
                     };
-                    if *cursor_col < (*win_cols - 1) {
+                    if (current_line.cursor_col + current_line.prompt_len as u16) < (*win_cols - 1)
+                    {
                         // simply move cursor and line position right
-                        execute!(stdout, cursor::MoveRight(1))?;
-                        *cursor_col += 1;
-                        *line_col += 1;
+                        let width = current_line
+                            .current_char_right()
+                            .map_or_else(|| 1, |c| utils::display_width(&c))
+                            as u16;
+                        execute!(stdout, cursor::MoveRight(width))?;
+                        current_line.cursor_col += width;
+                        current_line.line_col += 1;
+                        return Ok(false);
                     } else {
                         // virtual scroll rightward through line
-                        *line_col += 1;
-                        execute!(
-                            stdout,
-                            cursor::MoveTo(0, *win_rows),
-                            Print(utils::truncate_from_right(
-                                &current_line,
-                                *prompt_len,
-                                *win_cols,
-                                *line_col
-                            )),
-                        )?;
+                        current_line.line_col += 1;
                     }
                 }
                 //
@@ -758,29 +754,27 @@ async fn handle_event(
                 //
                 KeyCode::Enter => {
                     // if we were in search mode, pull command from that
-                    let command = if !*search_mode {
-                        current_line[*prompt_len..].to_string()
+                    let command = if !state.search_mode {
+                        current_line.line.clone()
                     } else {
                         command_history
-                            .search(&current_line[*prompt_len..], *search_depth)
+                            .search(&current_line.line, *search_depth)
                             .unwrap_or_default()
                             .to_string()
                     };
-                    let next = format!("{} > ", our.name);
                     execute!(
                         stdout,
                         cursor::MoveTo(0, *win_rows),
                         terminal::Clear(ClearType::CurrentLine),
-                        Print(&format!("{} > {}", our.name, command)),
+                        Print(&current_line.prompt),
+                        Print(&command),
                         Print("\r\n"),
-                        Print(&next),
                     )?;
-                    *search_mode = false;
+                    state.search_mode = false;
                     *search_depth = 0;
-                    *current_line = next;
-                    command_history.add(command.clone());
-                    *cursor_col = *prompt_len as u16;
-                    *line_col = *prompt_len;
+                    current_line.cursor_col = 0;
+                    current_line.line_col = 0;
+                    command_history.add(command.to_string());
                     KernelMessage::builder()
                         .id(rand::random())
                         .source((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))
@@ -796,6 +790,7 @@ async fn handle_event(
                         .unwrap()
                         .send(&event_loop)
                         .await;
+                    current_line.line = "".to_string();
                 }
                 _ => {
                     // some keycode we don't care about, yet
@@ -805,6 +800,11 @@ async fn handle_event(
         _ => {
             // some terminal event we don't care about, yet
         }
+    }
+    if state.search_mode {
+        state.search(&our.name)?;
+    } else {
+        state.display_current_input_line(false)?;
     }
     Ok(false)
 }
