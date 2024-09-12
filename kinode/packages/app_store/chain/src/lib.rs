@@ -14,12 +14,11 @@ use kinode_process_lib::{
     await_message, call_init, eth, get_blob, get_state, http, kernel_types as kt, kimap,
     print_to_terminal, println, timer, Address, Message, PackageId, Request, Response,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     str::FromStr,
 };
-
-use serde::{Deserialize, Serialize};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -256,10 +255,7 @@ fn handle_eth_log(our: &Address, state: &mut State, log: eth::Log) -> anyhow::Re
                 _ => Err(e),
             },
         }
-        .map_err(|e| {
-            println!("Couldn't find {hash_note}: {e:?}");
-            anyhow::anyhow!("metadata hash mismatch")
-        })?;
+        .map_err(|e| anyhow::anyhow!("Couldn't find {hash_note}: {e:?}"))?;
 
         match data {
             None => {

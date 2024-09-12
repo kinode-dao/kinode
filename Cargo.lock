@@ -3591,6 +3591,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite 0.21.0",
+ "unicode-segmentation",
+ "unicode-width",
  "url",
  "walkdir",
  "warp",

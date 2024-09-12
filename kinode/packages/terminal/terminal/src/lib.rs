@@ -20,7 +20,7 @@ enum TerminalAction {
 
 #[derive(Debug, Serialize, Deserialize)]
 enum ScriptError {
-    UnknownName,
+    UnknownName(String),
     FailedToReadWasm,
     NoScriptsManifest,
     NoScriptInManifest,
@@ -30,18 +30,16 @@ enum ScriptError {
 
 impl std::fmt::Display for ScriptError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ScriptError::UnknownName => "script not found, either as an alias or process ID",
-                ScriptError::FailedToReadWasm => "failed to read script Wasm from VFS",
-                ScriptError::NoScriptsManifest => "no scripts manifest in package",
-                ScriptError::NoScriptInManifest => "script not in scripts.json file",
-                ScriptError::InvalidScriptsManifest => "could not parse scripts.json file",
-                ScriptError::KernelUnresponsive => "kernel unresponsive",
+        match self {
+            ScriptError::UnknownName(name) => {
+                write!(f, "'{name}' not found, either as an alias or process ID")
             }
-        )
+            ScriptError::FailedToReadWasm => write!(f, "failed to read script Wasm from VFS"),
+            ScriptError::NoScriptsManifest => write!(f, "no scripts manifest in package"),
+            ScriptError::NoScriptInManifest => write!(f, "script not in scripts.json file"),
+            ScriptError::InvalidScriptsManifest => write!(f, "could not parse scripts.json file"),
+            ScriptError::KernelUnresponsive => write!(f, "kernel unresponsive"),
+        }
     }
 }
 
@@ -187,7 +185,7 @@ fn parse_command(state: &mut TerminalState, line: String) -> Result<(), ScriptEr
         Some(process) => handle_run(&state.our, process, args.to_string()),
         None => match head.parse::<ProcessId>() {
             Ok(pid) => handle_run(&state.our, &pid, args.to_string()),
-            Err(_) => Err(ScriptError::UnknownName),
+            Err(_) => Err(ScriptError::UnknownName(head.to_string())),
         },
     }
 }
