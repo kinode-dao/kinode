@@ -244,7 +244,7 @@ pub fn underline(s: &str, to_underline: &str) -> (String, u16) {
     result.insert_str(u_start, "\x1b[4m");
     // check if u_end is at a character boundary
     loop {
-        if s.is_char_boundary(u_end) {
+        if result.is_char_boundary(u_end) {
             break;
         }
         u_end += 1;
