@@ -36,7 +36,7 @@ export default function DownloadPage() {
             fetchData(id);
             clearAllActiveDownloads();
         }
-    }, [id, fetchData, clearAllActiveDownloads, installedApp]);
+    }, [id, fetchData, clearAllActiveDownloads]);
 
     const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
         setSelectedMirror(mirror);
