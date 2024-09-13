@@ -1,6 +1,7 @@
 use crate::eth::*;
 use alloy::pubsub::RawSubscription;
 use alloy::rpc::types::eth::pubsub::SubscriptionResult;
+use alloy::rpc::types::pubsub;
 
 /// cleans itself up when the subscription is closed or fails.
 pub async fn create_new_subscription(
@@ -189,6 +190,11 @@ async fn build_subscription(
     else {
         return Err(EthError::PermissionDenied); // will never hit
     };
+    if *kind == pubsub::SubscriptionKind::NewHeads {
+        Printout::new(0, format!("newHeads subscription requested by {target}!"))
+            .send(print_tx)
+            .await;
+    }
     let mut urls = {
         // in code block to drop providers lock asap to avoid deadlock
         let Some(aps) = providers.get(&chain_id) else {
