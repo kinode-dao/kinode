@@ -5,10 +5,18 @@ wit_bindgen::generate!({
     world: "process-v0",
 });
 
+const MAX_FETCH_ATTEMPTS: usize = 5;
+
 call_init!(init);
 fn init(_our: Address) {
+    let mut attempts = 0;
     // fetch our location with HTTP client
     let location_json = loop {
+        if attempts >= MAX_FETCH_ATTEMPTS {
+            println!("Failed to fetch location after {attempts} attempts");
+            break serde_json::Value::Null;
+        }
+        attempts += 1;
         match http::client::send_request_await_response(
             http::Method::GET,
             url::Url::parse("https://ipapi.co/json/").unwrap(),
@@ -67,6 +75,10 @@ fn create_widget(location_json: serde_json::Value) -> String {
         <script>
             // Get user's location from IP address and display that point
             const data = {};
+            if (data == null) {{
+                document.getElementById('globe').innerHTML = '<p>Failed to fetch node location</p>';
+                return;
+            }}
             const gData = [{{
                 lat: data.latitude,
                 lng: data.longitude,

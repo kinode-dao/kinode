@@ -1,12 +1,11 @@
 use hmac::{Hmac, Mac};
 use jwt::VerifyWithKey;
+use lib::{core::ProcessId, types::http_server};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
 use tokio::net::TcpListener;
 use warp::http::{header::HeaderName, header::HeaderValue, HeaderMap};
-
-use lib::{core::ProcessId, types::http_server::*};
 
 #[derive(Serialize, Deserialize)]
 pub struct RpcMessage {
@@ -27,7 +26,7 @@ pub fn _verify_auth_token(auth_token: &str, jwt_secret: &[u8]) -> Result<String,
         return Err(jwt::Error::Format);
     };
 
-    let claims: Result<JwtClaims, jwt::Error> = auth_token.verify_with_key(&secret);
+    let claims: Result<http_server::JwtClaims, jwt::Error> = auth_token.verify_with_key(&secret);
 
     match claims {
         Ok(data) => Ok(data.username),
@@ -66,7 +65,7 @@ pub fn auth_cookie_valid(
         return false;
     };
 
-    let claims: Result<JwtClaims, _> = auth_token.verify_with_key(&secret);
+    let claims: Result<http_server::JwtClaims, _> = auth_token.verify_with_key(&secret);
 
     match claims {
         Ok(data) => data.username == our_node && data.subdomain == subdomain.map(|s| s.to_string()),

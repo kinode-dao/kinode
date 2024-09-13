@@ -78,7 +78,7 @@ name = "alias"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -97,15 +97,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ba1c79677c9ce51c8d45e20845b05e6fb070ea2c863fba03ad6af2c778474bd"
 dependencies = [
  "alloy-consensus 0.1.4",
+ "alloy-contract 0.1.4",
  "alloy-core",
  "alloy-eips 0.1.4",
  "alloy-genesis 0.1.4",
  "alloy-json-rpc 0.1.4",
+ "alloy-network 0.1.4",
  "alloy-provider 0.1.4",
+ "alloy-pubsub 0.1.4",
  "alloy-rpc-client 0.1.4",
  "alloy-rpc-types 0.1.4",
  "alloy-serde 0.1.4",
+ "alloy-signer 0.1.4",
+ "alloy-signer-ledger",
+ "alloy-signer-local 0.1.4",
+ "alloy-signer-trezor",
+ "alloy-transport 0.1.4",
  "alloy-transport-http 0.1.4",
+ "alloy-transport-ws 0.1.4",
 ]
 
 [[package]]
@@ -114,22 +123,22 @@ version = "0.2.1"
 source = "git+https://github.com/kinode-dao/alloy.git?rev=e672f3e#e672f3e9be2720a76c1f6aba45243db0187cdccb"
 dependencies = [
  "alloy-consensus 0.2.1",
- "alloy-contract",
+ "alloy-contract 0.2.1",
  "alloy-core",
  "alloy-eips 0.2.1",
  "alloy-genesis 0.2.1",
  "alloy-json-rpc 0.2.1",
  "alloy-network 0.2.1",
  "alloy-provider 0.2.1",
- "alloy-pubsub",
+ "alloy-pubsub 0.2.1",
  "alloy-rpc-client 0.2.1",
  "alloy-rpc-types 0.2.1",
  "alloy-serde 0.2.1",
  "alloy-signer 0.2.1",
- "alloy-signer-local",
+ "alloy-signer-local 0.2.1",
  "alloy-transport 0.2.1",
  "alloy-transport-http 0.2.1",
- "alloy-transport-ws",
+ "alloy-transport-ws 0.2.1",
 ]
 
 [[package]]
@@ -140,20 +149,6 @@ checksum = "5b515e82c8468ddb6ff8db21c78a5997442f113fd8471fd5b2261b2602dd0c67"
 dependencies = [
  "num_enum",
  "strum",
-]
-
-[[package]]
-name = "alloy-consensus"
-version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy.git?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
-dependencies = [
- "alloy-eips 0.1.0",
- "alloy-primitives",
- "alloy-rlp",
- "alloy-serde 0.1.0",
- "c-kzg",
- "serde",
- "sha2",
 ]
 
 [[package]]
@@ -185,6 +180,26 @@ dependencies = [
 
 [[package]]
 name = "alloy-contract"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dc6957ff706f9e5f6fd42f52a93e4bce476b726c92d077b348de28c4a76730c"
+dependencies = [
+ "alloy-dyn-abi",
+ "alloy-json-abi",
+ "alloy-network 0.1.4",
+ "alloy-primitives",
+ "alloy-provider 0.1.4",
+ "alloy-pubsub 0.1.4",
+ "alloy-rpc-types-eth 0.1.4",
+ "alloy-sol-types",
+ "alloy-transport 0.1.4",
+ "futures",
+ "futures-util",
+ "thiserror",
+]
+
+[[package]]
+name = "alloy-contract"
 version = "0.2.1"
 source = "git+https://github.com/kinode-dao/alloy.git?rev=e672f3e#e672f3e9be2720a76c1f6aba45243db0187cdccb"
 dependencies = [
@@ -194,7 +209,7 @@ dependencies = [
  "alloy-network-primitives",
  "alloy-primitives",
  "alloy-provider 0.2.1",
- "alloy-pubsub",
+ "alloy-pubsub 0.2.1",
  "alloy-rpc-types-eth 0.2.1",
  "alloy-sol-types",
  "alloy-transport 0.2.1",
@@ -234,19 +249,6 @@ dependencies = [
 
 [[package]]
 name = "alloy-eips"
-version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy.git?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
-dependencies = [
- "alloy-primitives",
- "alloy-rlp",
- "alloy-serde 0.1.0",
- "c-kzg",
- "once_cell",
- "serde",
-]
-
-[[package]]
-name = "alloy-eips"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f76ecab54890cdea1e4808fc0891c7e6cfcf71fe1a9fe26810c7280ef768f4ed"
@@ -272,16 +274,6 @@ dependencies = [
  "once_cell",
  "serde",
  "sha2",
-]
-
-[[package]]
-name = "alloy-genesis"
-version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy.git?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
-dependencies = [
- "alloy-primitives",
- "alloy-serde 0.1.0",
- "serde",
 ]
 
 [[package]]
@@ -315,18 +307,6 @@ dependencies = [
  "alloy-sol-type-parser",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "alloy-json-rpc"
-version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy.git?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
-dependencies = [
- "alloy-primitives",
- "serde",
- "serde_json",
- "thiserror",
- "tracing",
 ]
 
 [[package]]
@@ -439,10 +419,12 @@ dependencies = [
  "alloy-json-rpc 0.1.4",
  "alloy-network 0.1.4",
  "alloy-primitives",
+ "alloy-pubsub 0.1.4",
  "alloy-rpc-client 0.1.4",
  "alloy-rpc-types-eth 0.1.4",
  "alloy-transport 0.1.4",
  "alloy-transport-http 0.1.4",
+ "alloy-transport-ws 0.1.4",
  "async-stream",
  "async-trait",
  "auto_impl",
@@ -451,7 +433,7 @@ dependencies = [
  "futures-utils-wasm",
  "lru",
  "pin-project",
- "reqwest 0.12.5",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
@@ -471,12 +453,12 @@ dependencies = [
  "alloy-network 0.2.1",
  "alloy-network-primitives",
  "alloy-primitives",
- "alloy-pubsub",
+ "alloy-pubsub 0.2.1",
  "alloy-rpc-client 0.2.1",
  "alloy-rpc-types-eth 0.2.1",
  "alloy-transport 0.2.1",
  "alloy-transport-http 0.2.1",
- "alloy-transport-ws",
+ "alloy-transport-ws 0.2.1",
  "async-stream",
  "async-trait",
  "auto_impl",
@@ -485,13 +467,32 @@ dependencies = [
  "futures-utils-wasm",
  "lru",
  "pin-project",
- "reqwest 0.12.5",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "alloy-pubsub"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a7341322d9bc0e49f6e9fd9f2eb8e30f73806f2dd12cbb3d6bab2694c921f87"
+dependencies = [
+ "alloy-json-rpc 0.1.4",
+ "alloy-primitives",
+ "alloy-transport 0.1.4",
+ "bimap",
+ "futures",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -541,11 +542,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ba31bae67773fd5a60020bea900231f8396202b7feca4d0c70c6b59308ab4a8"
 dependencies = [
  "alloy-json-rpc 0.1.4",
+ "alloy-primitives",
+ "alloy-pubsub 0.1.4",
  "alloy-transport 0.1.4",
  "alloy-transport-http 0.1.4",
+ "alloy-transport-ws 0.1.4",
  "futures",
  "pin-project",
- "reqwest 0.12.5",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
@@ -562,13 +566,13 @@ source = "git+https://github.com/kinode-dao/alloy.git?rev=e672f3e#e672f3e9be2720
 dependencies = [
  "alloy-json-rpc 0.2.1",
  "alloy-primitives",
- "alloy-pubsub",
+ "alloy-pubsub 0.2.1",
  "alloy-transport 0.2.1",
  "alloy-transport-http 0.2.1",
- "alloy-transport-ws",
+ "alloy-transport-ws 0.2.1",
  "futures",
  "pin-project",
- "reqwest 0.12.5",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
@@ -576,24 +580,6 @@ dependencies = [
  "tower",
  "tracing",
  "url",
-]
-
-[[package]]
-name = "alloy-rpc-types"
-version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy.git?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
-dependencies = [
- "alloy-consensus 0.1.0",
- "alloy-eips 0.1.0",
- "alloy-genesis 0.1.0",
- "alloy-primitives",
- "alloy-rlp",
- "alloy-serde 0.1.0",
- "alloy-sol-types",
- "itertools 0.12.1",
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -654,16 +640,6 @@ dependencies = [
 
 [[package]]
 name = "alloy-serde"
-version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy.git?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
-dependencies = [
- "alloy-primitives",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "alloy-serde"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9416c52959e66ead795a11f4a86c248410e9e368a0765710e57055b8a1774dd6"
@@ -711,6 +687,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-signer-ledger"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "575e4c924b23132234c75bd1f8f3871c1bc12ba462f76af9b59249515a38253e"
+dependencies = [
+ "alloy-consensus 0.1.4",
+ "alloy-network 0.1.4",
+ "alloy-primitives",
+ "alloy-signer 0.1.4",
+ "async-trait",
+ "coins-ledger",
+ "futures-util",
+ "semver 1.0.23",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
+name = "alloy-signer-local"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dfc9c26fe6c6f1bad818c9a976de9044dd12e1f75f1f156a801ee3e8148c1b6"
+dependencies = [
+ "alloy-consensus 0.1.4",
+ "alloy-network 0.1.4",
+ "alloy-primitives",
+ "alloy-signer 0.1.4",
+ "async-trait",
+ "elliptic-curve",
+ "eth-keystore",
+ "k256",
+ "rand 0.8.5",
+ "thiserror",
+]
+
+[[package]]
 name = "alloy-signer-local"
 version = "0.2.1"
 source = "git+https://github.com/kinode-dao/alloy.git?rev=e672f3e#e672f3e9be2720a76c1f6aba45243db0187cdccb"
@@ -723,6 +735,23 @@ dependencies = [
  "k256",
  "rand 0.8.5",
  "thiserror",
+]
+
+[[package]]
+name = "alloy-signer-trezor"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd82e86e4a6604fd11f84b170638d16dcdac9db6c2b5f5b91a3941b7e7af7f94"
+dependencies = [
+ "alloy-consensus 0.1.4",
+ "alloy-network 0.1.4",
+ "alloy-primitives",
+ "alloy-signer 0.1.4",
+ "async-trait",
+ "semver 1.0.23",
+ "thiserror",
+ "tracing",
+ "trezor-client",
 ]
 
 [[package]]
@@ -800,24 +829,6 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport"
-version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy.git?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
-dependencies = [
- "alloy-json-rpc 0.1.0",
- "base64 0.22.1",
- "futures-util",
- "futures-utils-wasm",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tower",
- "url",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "alloy-transport"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01b51a291f949f755e6165c3ed562883175c97423703703355f4faa4b7d0a57c"
@@ -861,7 +872,7 @@ checksum = "86d65871f9f1cafe1ed25cde2f1303be83e6473e995a2d56c275ae4fcce6119c"
 dependencies = [
  "alloy-json-rpc 0.1.4",
  "alloy-transport 0.1.4",
- "reqwest 0.12.5",
+ "reqwest",
  "serde_json",
  "tower",
  "tracing",
@@ -875,7 +886,7 @@ source = "git+https://github.com/kinode-dao/alloy.git?rev=e672f3e#e672f3e9be2720
 dependencies = [
  "alloy-json-rpc 0.2.1",
  "alloy-transport 0.2.1",
- "reqwest 0.12.5",
+ "reqwest",
  "serde_json",
  "tower",
  "tracing",
@@ -884,10 +895,28 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport-ws"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aec83fd052684556c78c54df111433493267234d82321c2236560c752f595f20"
+dependencies = [
+ "alloy-pubsub 0.1.4",
+ "alloy-transport 0.1.4",
+ "futures",
+ "http 1.1.0",
+ "rustls",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.23.1",
+ "tracing",
+ "ws_stream_wasm",
+]
+
+[[package]]
+name = "alloy-transport-ws"
 version = "0.2.1"
 source = "git+https://github.com/kinode-dao/alloy.git?rev=e672f3e#e672f3e9be2720a76c1f6aba45243db0187cdccb"
 dependencies = [
- "alloy-pubsub",
+ "alloy-pubsub 0.2.1",
  "alloy-transport 0.2.1",
  "futures",
  "http 1.1.0",
@@ -983,7 +1012,8 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
+ "process_macros",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -1353,7 +1383,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "url",
@@ -1435,6 +1465,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "camino"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b96ec4966b5813e2c0507c1f86115c8c5abaadc3980879c3424042a02fd1ad3"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "cap-fs-ext"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1512,11 +1551,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo-platform"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24b1f0365a6c6bb4020cd05806fd0d33c44d38046b8bd7f0e40814b9763cabfc"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "cargo_metadata"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d886547e41f740c616ae73108f6eb70afe6d940c7bc697cb30f13daec073037"
+dependencies = [
+ "camino",
+ "cargo-platform",
+ "semver 1.0.23",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1580,7 +1642,8 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
+ "process_macros",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -1598,7 +1661,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "pleco",
  "serde",
  "serde_json",
@@ -1697,6 +1760,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb1e43aa7fd152b1f968787f7dbcdeb306d1867ff373c69955211876c053f91a"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "coins-ledger"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "166ef757aa936b45f3e5d39c344047f65ef7d25a50067246a498021a816d074b"
+dependencies = [
+ "async-trait",
+ "byteorder",
+ "cfg-if",
+ "const-hex",
+ "getrandom",
+ "hidapi-rusb",
+ "js-sys",
+ "log",
+ "nix 0.26.4",
+ "once_cell",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -2134,7 +2220,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d"
 dependencies = [
- "uuid",
+ "uuid 1.10.0",
 ]
 
 [[package]]
@@ -2329,11 +2415,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "docs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kinode_process_lib 0.9.1",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
+ "process_macros",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2345,6 +2444,7 @@ version = "0.5.0"
 dependencies = [
  "anyhow",
  "kinode_process_lib 0.9.1",
+ "process_macros",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -2380,7 +2480,7 @@ dependencies = [
 name = "echo"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "wit-bindgen",
 ]
 
@@ -2450,6 +2550,28 @@ checksum = "534c5cf6194dfab3db3242765c03bbe257cf92f22b38f6bc0c58d59108a820ba"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "eth-keystore"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fda3bf123be441da5260717e0661c25a2fd9cb2b2c1d20bf2e05580047158ab"
+dependencies = [
+ "aes",
+ "ctr",
+ "digest 0.10.7",
+ "hex",
+ "hmac",
+ "pbkdf2 0.11.0",
+ "rand 0.8.5",
+ "scrypt",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sha3",
+ "thiserror",
+ "uuid 0.8.2",
 ]
 
 [[package]]
@@ -2610,6 +2732,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "kinode_process_lib 0.9.1",
+ "process_macros",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -2762,7 +2885,7 @@ dependencies = [
 name = "get_block"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2775,8 +2898,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4567c8db10ae91089c99af84c68c38da3ec2f087c3f82960bcdbf3656b6f4d7"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2825,7 +2950,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 name = "globe"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "url",
@@ -2952,7 +3077,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 name = "help"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "wit-bindgen",
 ]
 
@@ -2981,10 +3106,22 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 name = "hi"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
+]
+
+[[package]]
+name = "hidapi-rusb"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efdc2ec354929a6e8f3c6b6923a4d97427ec2f764cfee8cd4bfe890946cdf08b"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "rusb",
 ]
 
 [[package]]
@@ -3002,7 +3139,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3149,19 +3286,6 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "hyper-tls"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
-dependencies = [
- "bytes",
- "hyper 0.14.30",
- "native-tls",
- "tokio",
- "tokio-native-tls",
 ]
 
 [[package]]
@@ -3330,7 +3454,8 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
+ "process_macros",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3506,7 +3631,7 @@ name = "kfetch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3518,7 +3643,7 @@ name = "kill"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3526,7 +3651,7 @@ dependencies = [
 
 [[package]]
 name = "kinode"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "aes-gcm",
  "alloy 0.2.1",
@@ -3549,14 +3674,14 @@ dependencies = [
  "http 1.1.0",
  "indexmap",
  "jwt",
- "kit 0.6.10",
+ "kit",
  "lazy_static",
  "lib",
  "nohash-hasher",
  "open",
  "public-ip",
  "rand 0.8.5",
- "reqwest 0.12.5",
+ "reqwest",
  "ring",
  "rmp-serde",
  "rocksdb",
@@ -3573,6 +3698,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite 0.21.0",
+ "unicode-segmentation",
+ "unicode-width",
  "url",
  "walkdir",
  "warp",
@@ -3585,59 +3712,38 @@ dependencies = [
 
 [[package]]
 name = "kinode_lib"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "lib",
 ]
 
 [[package]]
 name = "kinode_process_lib"
-version = "0.8.0"
-source = "git+https://github.com/kinode-dao/process_lib.git?rev=7eb3a04#7eb3a04f9be79d1cc3a52fa460faeea7ba3008ed"
-dependencies = [
- "alloy-json-rpc 0.1.0",
- "alloy-primitives",
- "alloy-rpc-types 0.1.0",
- "alloy-transport 0.1.0",
- "anyhow",
- "bincode",
- "http 1.1.0",
- "mime_guess",
- "rand 0.8.5",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror",
- "url",
- "wit-bindgen",
-]
-
-[[package]]
-name = "kinode_process_lib"
-version = "0.9.0"
-source = "git+https://github.com/kinode-dao/process_lib?tag=v0.9.0#284f202376b3cd3ce0c03aa660a006fc6187f236"
-dependencies = [
- "alloy 0.1.4",
- "alloy-primitives",
- "alloy-sol-macro",
- "alloy-sol-types",
- "anyhow",
- "bincode",
- "http 1.1.0",
- "mime_guess",
- "rand 0.8.5",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror",
- "url",
- "wit-bindgen",
-]
-
-[[package]]
-name = "kinode_process_lib"
 version = "0.9.1"
-source = "git+https://github.com/kinode-dao/process_lib?rev=1c495ad#1c495ad8687dd580aa2aa2222f8e7958679220a6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76c5b69ac1fc0cb457c7714ceb8c0a5bdbee4ee00b837f9f16ea711e902bdfe8"
+dependencies = [
+ "alloy 0.1.4",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http 1.1.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.9.2"
+source = "git+https://github.com/kinode-dao/process_lib.git?rev=9ac9e51#9ac9e513c0228f2dcfe8999ed4ca2c38246ee3db"
 dependencies = [
  "alloy 0.1.4",
  "alloy-primitives",
@@ -3658,53 +3764,26 @@ dependencies = [
 
 [[package]]
 name = "kit"
-version = "0.6.8"
-source = "git+https://github.com/kinode-dao/kit?tag=v0.6.8#7b636305bed2aae6fe36f5ced44181ec7cbdb7a3"
+version = "0.7.3"
+source = "git+https://github.com/kinode-dao/kit?tag=v0.7.3#79aafcea89e72c98aa2af214ce7bc815530dee2d"
 dependencies = [
+ "alloy 0.1.4",
+ "alloy-sol-macro",
+ "alloy-sol-types",
  "anyhow",
  "base64 0.21.7",
+ "cargo_metadata",
  "clap",
  "color-eyre",
  "dirs 5.0.1",
  "fs-err",
  "git2",
  "hex",
- "kinode_process_lib 0.8.0",
- "nix",
+ "kinode_process_lib 0.9.2",
+ "nix 0.27.1",
  "regex",
- "reqwest 0.11.27",
- "semver 1.0.23",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "toml",
- "tracing",
- "tracing-appender",
- "tracing-error",
- "tracing-subscriber",
- "walkdir",
- "wit-bindgen",
- "zip 0.6.6",
-]
-
-[[package]]
-name = "kit"
-version = "0.6.10"
-source = "git+https://github.com/kinode-dao/kit?tag=v0.6.10#9e9f87b399109b824d99475584dd249eda2c1906"
-dependencies = [
- "anyhow",
- "base64 0.21.7",
- "clap",
- "color-eyre",
- "dirs 5.0.1",
- "fs-err",
- "git2",
- "hex",
- "kinode_process_lib 0.8.0",
- "nix",
- "regex",
- "reqwest 0.11.27",
+ "reqwest",
+ "rpassword",
  "semver 1.0.23",
  "serde",
  "serde_json",
@@ -3728,7 +3807,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "hex",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3756,10 +3835,10 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "alloy 0.2.1",
- "kit 0.6.8",
+ "kit",
  "lazy_static",
  "rand 0.8.5",
  "ring",
@@ -3860,6 +3939,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "libusb1-sys"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da050ade7ac4ff1ba5379af847a10a10a8e284181e060105bf8d86960ce9ce0f"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "libz-ng-sys"
 version = "1.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3944,7 +4035,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "regex",
  "serde",
  "serde_json",
@@ -3994,6 +4085,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2cffa4ad52c6f791f4f8b15f0c05f9824b2ced1160e88cc393d64fff9a8ac64"
 dependencies = [
  "rustix",
+]
+
+[[package]]
+name = "memoffset"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
+dependencies = [
+ "autocfg 1.3.0",
 ]
 
 [[package]]
@@ -4105,7 +4205,7 @@ dependencies = [
 name = "net_diagnostics"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4118,6 +4218,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77a5d83df9f36fe23f0c3648c6bbb8b0298bb5f1939c8f2704431371f4b84d43"
 dependencies = [
  "smallvec",
+]
+
+[[package]]
+name = "nix"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "598beaf3cc6fdd9a5dfb1630c2800c7acd31df7aaf0f565796fba2b53ca1af1b"
+dependencies = [
+ "bitflags 1.3.2",
+ "cfg-if",
+ "libc",
+ "memoffset 0.7.1",
+ "pin-utils",
 ]
 
 [[package]]
@@ -4418,7 +4531,7 @@ dependencies = [
 name = "peer"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4428,7 +4541,7 @@ dependencies = [
 name = "peers"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4647,6 +4760,26 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
+]
+
+[[package]]
+name = "protobuf"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b65f4a8ec18723a734e5dc09c173e0abf9690432da5340285d536edcb4dac190"
+dependencies = [
+ "once_cell",
+ "protobuf-support",
+ "thiserror",
+]
+
+[[package]]
+name = "protobuf-support"
+version = "3.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6872f4d4f4b98303239a2b5838f5bbbb77b01ffc892d627957f37a22d7cfe69c"
+dependencies = [
+ "thiserror",
 ]
 
 [[package]]
@@ -4963,46 +5096,6 @@ checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
 
 [[package]]
 name = "reqwest"
-version = "0.11.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd67538700a17451e7cba03ac727fb961abb7607553461627b97de0b89cf4a62"
-dependencies = [
- "base64 0.21.7",
- "bytes",
- "encoding_rs",
- "futures-core",
- "futures-util",
- "h2 0.3.26",
- "http 0.2.12",
- "http-body 0.4.6",
- "hyper 0.14.30",
- "hyper-tls 0.5.0",
- "ipnet",
- "js-sys",
- "log",
- "mime",
- "native-tls",
- "once_cell",
- "percent-encoding",
- "pin-project-lite",
- "rustls-pemfile 1.0.4",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper 0.1.2",
- "system-configuration",
- "tokio",
- "tokio-native-tls",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "winreg 0.50.0",
-]
-
-[[package]]
-name = "reqwest"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7d6d2a27d57148378eb5e111173f4276ad26340ecc5c49a4a2152167a2d6a37"
@@ -5018,7 +5111,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.4.1",
  "hyper-rustls",
- "hyper-tls 0.6.0",
+ "hyper-tls",
  "hyper-util",
  "ipnet",
  "js-sys",
@@ -5028,11 +5121,11 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
- "rustls-pemfile 2.1.3",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "serde_urlencoded",
- "sync_wrapper 1.0.1",
+ "sync_wrapper",
  "system-configuration",
  "tokio",
  "tokio-native-tls",
@@ -5041,7 +5134,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "winreg 0.52.0",
+ "winreg",
 ]
 
 [[package]]
@@ -5118,6 +5211,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 
 [[package]]
+name = "rpassword"
+version = "7.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80472be3c897911d0137b2d2b9055faf6eeac5b14e324073d83bc17b191d7e3f"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c247d24e63230cdb56463ae328478bd5eac8b8faa8c69461a77e8e323afac90e"
+dependencies = [
+ "libc",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "ruint"
 version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5146,6 +5260,16 @@ name = "ruint-macro"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
+
+[[package]]
+name = "rusb"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab9f9ff05b63a786553a4c02943b74b34a988448671001e9a27e2f0565cc05a4"
+dependencies = [
+ "libc",
+ "libusb1-sys",
+]
 
 [[package]]
 name = "rusqlite"
@@ -5228,15 +5352,6 @@ dependencies = [
 
 [[package]]
 name = "rustls-pemfile"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c74cae0a4cf6ccbbf5f359f08efdf8ee7e1dc532573bf0db71968cb56b1448c"
-dependencies = [
- "base64 0.21.7",
-]
-
-[[package]]
-name = "rustls-pemfile"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "196fe16b00e106300d3e45ecfcb764fa292a535d7326a29a5875c579c7417425"
@@ -5287,6 +5402,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
 
 [[package]]
+name = "salsa20"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97a22f5af31f73a954c10289c93e8a50cc23d971e80ee446f1f6f7137a088213"
+dependencies = [
+ "cipher",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5315,6 +5439,18 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "scrypt"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f9e24d2b632954ded8ab2ef9fea0a0c769ea56ea98bddbafbad22caeeadf45d"
+dependencies = [
+ "hmac",
+ "pbkdf2 0.11.0",
+ "salsa20",
+ "sha2",
+]
 
 [[package]]
 name = "sec1"
@@ -5367,6 +5503,9 @@ name = "semver"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "semver-parser"
@@ -5443,7 +5582,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -5661,7 +5800,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -5766,12 +5905,6 @@ dependencies = [
 
 [[package]]
 name = "sync_wrapper"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2047c6ded9c721764247e62cd3b03c09ffc529b2ba5b10ec482ae507a4a70160"
-
-[[package]]
-name = "sync_wrapper"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7065abeca94b6a8a577f9bd45aa0867a2238b74e8eb67cf10d492bc39351394"
@@ -5855,7 +5988,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -5869,7 +6002,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -6126,7 +6259,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6267,6 +6400,20 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "trezor-client"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f62c95b37f6c769bd65a0d0beb8b2b003e72998003b896a616a6777c645c05ed"
+dependencies = [
+ "byteorder",
+ "hex",
+ "protobuf",
+ "rusb",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -6443,7 +6590,8 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.0",
+ "kinode_process_lib 0.9.1",
+ "process_macros",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6499,6 +6647,16 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "uuid"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "getrandom",
+ "serde",
+]
 
 [[package]]
 name = "uuid"
@@ -6971,7 +7129,7 @@ dependencies = [
  "log",
  "mach",
  "memfd",
- "memoffset",
+ "memoffset 0.9.1",
  "paste",
  "psm",
  "rustix",
@@ -7394,16 +7552,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68a9bda4691f099d435ad181000724da8e5899daa10713c2d432552b9ccd3a6f"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "winreg"
-version = "0.50.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
-dependencies = [
- "cfg-if",
- "windows-sys 0.48.0",
 ]
 
 [[package]]

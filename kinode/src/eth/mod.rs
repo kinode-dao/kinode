@@ -1209,7 +1209,7 @@ async fn kernel_message<T: Serialize>(
     // its an Err: handle
     match e {
         tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-            panic!("(eth) kernel message sender: receiver closed");
+            return;
         }
         tokio::sync::mpsc::error::TrySendError::Full(_) => {
             // TODO: implement backpressure
