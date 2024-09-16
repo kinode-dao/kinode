@@ -118,6 +118,7 @@ function MintCustom({
 
     return (
         <div className="container fade-in">
+            <button onClick={() => history.back()} className="button secondary">🔙</button>
             <div className="section">
                 {
                     <form className="form" onSubmit={handleMint}>

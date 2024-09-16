@@ -92,55 +92,58 @@ function ImportKeyfile({
 
   return (
     <div className="container fade-in">
+      <button onClick={() => history.back()} className="button secondary">🔙</button>
       <div className="section">
         {loading ? (
           <Loader msg="Setting up node..." />
         ) : (
-          <form className="form" onSubmit={handleImportKeyfile}>
-            <div className="form-group">
-              <h4 className="form-label">1. Upload Keyfile</h4>
-              <label className="file-input-label">
+          <>
+            <form className="form" onSubmit={handleImportKeyfile}>
+              <div className="form-group">
+                <h4 className="form-label">1. Upload Keyfile</h4>
+                <label className="file-input-label">
+                  <input
+                    type="file"
+                    className="file-input"
+                    onChange={handleKeyfile}
+                  />
+                  <span className="button secondary">
+                    {localKeyFileName ? "Change Keyfile" : "Select Keyfile"}
+                  </span>
+                </label>
+                {localKeyFileName && <p className="mt-2">{localKeyFileName}</p>}
+              </div>            <div className="form-group">
+                <h4 className="form-label">2. Enter Password</h4>
                 <input
-                  type="file"
-                  className="file-input"
-                  onChange={handleKeyfile}
+                  type="password"
+                  id="password"
+                  required
+                  minLength={6}
+                  name="password"
+                  placeholder=""
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
                 />
-                <span className="button secondary">
-                  {localKeyFileName ? "Change Keyfile" : "Select Keyfile"}
-                </span>
-              </label>
-              {localKeyFileName && <p className="mt-2">{localKeyFileName}</p>}
-            </div>            <div className="form-group">
-              <h4 className="form-label">2. Enter Password</h4>
-              <input
-                type="password"
-                id="password"
-                required
-                minLength={6}
-                name="password"
-                placeholder=""
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-              />
-              {pwErr && <p className="error-message">{pwErr}</p>}
-              {pwDebounced && !pwVet && 6 <= pw.length && (
-                <p className="error-message">Password is incorrect!</p>
-              )}
-            </div>
+                {pwErr && <p className="error-message">{pwErr}</p>}
+                {pwDebounced && !pwVet && 6 <= pw.length && (
+                  <p className="error-message">Password is incorrect!</p>
+                )}
+              </div>
 
-            <div className="form-group">
-              {keyErrs.map((x, i) => (
-                <p key={i} className="error-message">{x}</p>
-              ))}
-              <button type="submit" className="button">Boot Node</button>
-            </div>
-            <p className="text-sm mt-2">
-              Please note: if the original node was booted as a direct node
-              (static IP), then you must run this node from the same IP. If not,
-              you will have networking issues. If you need to change the network
-              options, please go back and select "Reset OsName".
-            </p>
-          </form>
+              <div className="form-group">
+                {keyErrs.map((x, i) => (
+                  <p key={i} className="error-message">{x}</p>
+                ))}
+                <button type="submit" className="button">Boot Node</button>
+              </div>
+              <p className="text-sm mt-2">
+                Please note: if the original node was booted as a direct node
+                (static IP), then you must run this node from the same IP. If not,
+                you will have networking issues. If you need to change the network
+                options, please go back and select "Reset OsName".
+              </p>
+            </form>
+          </>
         )}
       </div>
     </div>
