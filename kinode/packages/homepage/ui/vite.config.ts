@@ -38,13 +38,13 @@ export default defineConfig({
           return '/our.js';
         },
       },
-      // '^/kinode\\.css': {
-      //   target: PROXY_URL,
-      //   changeOrigin: true,
-      //   rewrite: (path) => {
-      //     return '/kinode.css';
-      //   },
-      // },
+      '^/kinode\\.css': {
+        target: PROXY_URL,
+        changeOrigin: true,
+        rewrite: (path) => {
+          return '/kinode.css';
+        },
+      },
       '^/version': {
         target: PROXY_URL,
         changeOrigin: true,
