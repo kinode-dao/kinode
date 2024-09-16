@@ -192,10 +192,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             let request = serde_json::from_slice(&body)?;
 
             match request {
-                IndexerRequests::NamehashToName(NamehashToNameRequest {
-                    ref hash,
-                    ref block,
-                }) => {
+                IndexerRequests::NamehashToName(NamehashToNameRequest { ref hash, .. }) => {
                     // TODO: make sure we've seen the whole block, while actually
                     // sending a response to the proper place.
                     Response::new()
@@ -205,14 +202,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         .send()?;
                 }
 
-                IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
+                IndexerRequests::NodeInfo(NodeInfoRequest { ref name, .. }) => {
                     Response::new()
                         .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
                             state.nodes.get(name).cloned(),
                         ))?)
                         .send()?;
                 }
-                IndexerRequests::GetState(GetStateRequest { block }) => {
+                IndexerRequests::GetState(GetStateRequest { .. }) => {
                     Response::new().body(serde_json::to_vec(&state)?).send()?;
                 }
             }
