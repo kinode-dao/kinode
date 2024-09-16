@@ -35,6 +35,8 @@ cargo install wasm-tools
 rustup install nightly
 rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
+rustup target add wasm32-wasip1
+rustup target add wasm32-wasip1 --toolchain nightly
 cargo install cargo-wasi
 
 # Install NPM so we can build frontends for "distro" packages.
