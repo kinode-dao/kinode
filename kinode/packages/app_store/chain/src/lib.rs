@@ -1,7 +1,29 @@
 #![feature(let_chains)]
 //! chain:app_store:sys
-//! manages indexing relevant packages and their versions from the kimap.
-//! keeps eth subscriptions open, keeps data updated.
+//! This process manages the on-chain interactions for the App Store system in the Kinode ecosystem.
+//! It is responsible for indexing and tracking app metadata stored on the blockchain.
+//!
+//! ## Responsibilities:
+//!
+//! 1. Index and track app metadata from the blockchain.
+//! 2. Manage subscriptions to relevant blockchain events.
+//! 3. Provide up-to-date information about available apps and their metadata.
+//! 4. Handle auto-update settings for apps.
+//!
+//! ## Key Components:
+//!
+//! - `handle_eth_log`: Processes blockchain events related to app metadata updates.
+//! - `fetch_and_subscribe_logs`: Initializes and maintains blockchain event subscriptions.
+//!
+//! ## Interaction Flow:
+//!
+//! 1. The process subscribes to relevant blockchain events on startup.
+//! 2. When new events are received, they are processed to update the local state.
+//! 3. Other processes (like main) can request information about apps.
+//! 4. The chain process responds with the most up-to-date information from its local state.
+//!
+//! Note: This process does not handle app binaries or installation. It focuses solely on
+//! metadata management and providing information about available apps.
 //!
 use crate::kinode::process::chain::{
     ChainError, ChainRequests, OnchainApp, OnchainMetadata, OnchainProperties,

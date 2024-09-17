@@ -1,3 +1,12 @@
+//! uninstall:app_store:sys
+//! terminal script for uninstalling apps from the app store.
+//!
+//! Usage:
+//!     uninstall:app_store:sys <package_id>
+//!
+//! Arguments:
+//!     <package_id>    The package ID of the app (e.g., app:publisher.os)
+//!
 use crate::kinode::process::main::{LocalRequest, LocalResponse, UninstallResponse};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, Message, PackageId, Request,

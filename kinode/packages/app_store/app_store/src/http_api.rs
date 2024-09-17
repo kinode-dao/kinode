@@ -1,3 +1,7 @@
+//! http_api for main:app_store:sys
+//! handles http_requests coming in, sending them to relevant processes (main/downloads/chain),
+//! and sends back http_responses.
+//!
 use crate::{
     kinode::process::chain::{ChainRequests, ChainResponses},
     kinode::process::downloads::{
