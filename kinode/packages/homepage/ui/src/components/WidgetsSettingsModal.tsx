@@ -13,11 +13,11 @@ const WidgetsSettingsModal = () => {
     <div className="widget-settings">
       {apps.filter((app) => app.widget).map((app) => {
         return (
-          <div>
+          <div className="widget-settings-item">
             <h4>{app.label}</h4>
             <div>
               <div>
-                <span>Show widget<input
+                <span><input
                   type="checkbox"
                   checked={!widgetSettings[app.id]?.hide}
                   onChange={() => toggleWidgetVisibility(app.id)}

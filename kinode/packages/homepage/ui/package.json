@@ -22,6 +22,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@types/node": "^20.10.4",
     "@types/react": "^18.2.66",
     "@types/react-beautiful-dnd": "^13.1.8",
     "@types/react-dom": "^18.2.22",

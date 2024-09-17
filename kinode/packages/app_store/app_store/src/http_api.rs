@@ -83,37 +83,32 @@ fn make_widget() -> String {
         #latest-apps {
             display: flex;
             flex-wrap: wrap;
-            padding: 0.5rem;
-            gap: 0.5rem;
+            padding-left: 1rem;
             align-items: center;
             border-radius: 1rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             height: 100vh;
             width: 100vw;
             overflow-y: auto;
         }
 
         .app {
-            padding: 0.5rem;
+            padding: 1rem 1rem 1rem 0rem;
             display: flex;
             flex-grow: 1;
-            align-items: stretch;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            align-items: center;
+            border-bottom: 1px solid rgba(0,0,0,0.1)
             cursor: pointer;
             font-family: sans-serif;
             width: 100%;
+            min-height: 100px;
         }
 
         .app-image {
-            border-radius: 0.75rem;
-            margin-right: 0.5rem;
-            flex-grow: 1;
+            margin-right: 1rem;
             background-size: contain;
             background-repeat: no-repeat;
-            background-position: center;
-            height: 92px;
-            width: 92px;
+            height: 48px;
+            width: 48px;
             max-width: 33%;
         }
 
