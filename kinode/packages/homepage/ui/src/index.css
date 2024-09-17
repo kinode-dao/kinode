@@ -1,4 +1,3 @@
-@import url("https://api.fontshare.com/v2/css?f[]=clash-display@400,700,500,600,300&display=swap");
 h1,
 h2,
 h3,
@@ -11,7 +10,7 @@ button,
 input,
 textarea,
 span {
-  font-family: "Clash Display", sans-serif;
+  font-family: "Kode Mono", monospace;
 }
 
 #homepage {
@@ -76,8 +75,7 @@ header button {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-}
+@media (prefers-color-scheme: dark) {}
 
 [data-rfd-droppable-context-id] {
   display: flex;
@@ -205,6 +203,7 @@ footer {
 }
 
 @media (max-width: 768px) {
+
   body,
   html {
     height: 100%;
@@ -237,7 +236,7 @@ footer {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    max-height: none; 
+    max-height: none;
   }
 
   #widgets {
