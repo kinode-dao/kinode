@@ -244,3 +244,10 @@
 button.secondary {
     width: 100%;
 }
+
+button.back {
+    float: left;
+    width: auto !important;
+    padding: 5px !important;
+    border: none !important;
+}
