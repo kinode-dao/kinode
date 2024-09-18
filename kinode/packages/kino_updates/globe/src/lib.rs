@@ -77,22 +77,22 @@ fn create_widget(location_json: serde_json::Value) -> String {
             const data = {};
             if (data == null) {{
                 document.getElementById('globe').innerHTML = '<p>Failed to fetch node location</p>';
-                return;
-            }}
-            const gData = [{{
-                lat: data.latitude,
-                lng: data.longitude,
-                size: 0.3,
-                color: 'red'
-            }}];
+            }} else {{
+                const gData = [{{
+                    lat: data.latitude,
+                    lng: data.longitude,
+                    size: 0.3,
+                    color: 'red'
+                }}];
 
-            Globe()
+                Globe()
                 .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
                 .pointsData(gData)
                 .pointAltitude('size')
                 .pointColor('color')
                 .pointOfView({{ lat: data.latitude, lng: data.longitude, altitude: 2 }}, 1000)
                 (document.getElementById('globe'));
+            }}
         </script>
     </body>
 
