@@ -139,33 +139,41 @@ fn make_widget() -> String {
     <div id="latest-apps"></div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            fetch('/main:app_store:sys/apps', { credentials: 'include' })
-                .then(response => response.json())
-                .then(data => {
-                    const container = document.getElementById('latest-apps');
-                    data.forEach(app => {
-                        if (app.metadata) {
-                            const a = document.createElement('a');
-                            a.className = 'app';
-                            a.href = `/main:app_store:sys/app/${app.package_id.package_name}:${app.package_id.publisher_node}`
-                            a.target = '_blank';
-                            a.rel = 'noopener noreferrer';
-                            const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
-                            a.innerHTML = `<div
-                                class="app-image"
-                                style="
-                                    background-image: url('${app.metadata.image || `/bird-orange.svg`}');
-                                "
-                            ></div>
-                            <div class="app-info">
-                                <h2>${app.metadata.name}</h2>
-                                <p>${app.metadata.description}</p>
-                            </div>`;
+            function fetchApps() {
+                fetch('/main:app_store:sys/apps', { credentials: 'include' })
+                    .then(response => response.json())
+                    .then(data => {
+                        const container = document.getElementById('latest-apps');
+                        container.innerHTML = '';
+                        data.forEach(app => {
+                            if (app.metadata) {
+                                const a = document.createElement('a');
+                                a.className = 'app';
+                                a.href = `/main:app_store:sys/app/${app.package_id.package_name}:${app.package_id.publisher_node}`
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
+                                a.innerHTML = `<div
+                                    class="app-image"
+                                    style="
+                                        background-image: url('${app.metadata.image || `/bird-orange.svg`}');
+                                    "
+                                ></div>
+                                <div class="app-info">
+                                    <h2>${app.metadata.name}</h2>
+                                    <p>${app.metadata.description}</p>
+                                </div>`;
                                 container.appendChild(a);
-                        }
+                            }
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error fetching apps:', error);
+                        setTimeout(fetchApps, 1000); // Retry after a second
                     });
-                })
-                .catch(error => console.error('Error fetching apps:', error));
+            }
+
+            fetchApps();
         });
     </script>
 </body>
