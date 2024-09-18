@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { PackageState, AppListing, MirrorCheckFile, PackageManifest, DownloadItem } from '../types/Apps'
+import { PackageState, AppListing, MirrorCheckFile, PackageManifest, DownloadItem, HomepageApp } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http'
 import KinodeClientApi from "@kinode/client-api"
 import { WEBSOCKET_URL } from '../utils/ws'
@@ -13,6 +13,7 @@ interface AppsStore {
   downloads: Record<string, DownloadItem[]>
   ourApps: AppListing[]
   ws: KinodeClientApi
+  homepageApps: HomepageApp[]
   activeDownloads: Record<string, { downloaded: number, total: number }>
 
   fetchData: (id: string) => Promise<void>
@@ -24,6 +25,9 @@ interface AppsStore {
   fetchOurApps: () => Promise<void>
   fetchDownloadsForApp: (id: string) => Promise<DownloadItem[]>
   checkMirror: (node: string) => Promise<MirrorCheckFile | null>
+
+  fetchHomepageApps: () => Promise<void>
+  getLaunchUrl: (id: string) => string | null
 
   installApp: (id: string, version_hash: string) => Promise<void>
   uninstallApp: (id: string) => Promise<void>
@@ -49,6 +53,8 @@ const useAppsStore = create<AppsStore>()(
       downloads: {},
       ourApps: [],
       activeDownloads: {},
+      homepageApps: [],
+
 
       fetchData: async (id: string) => {
         if (!id) return;
@@ -172,6 +178,26 @@ const useAppsStore = create<AppsStore>()(
           console.error("Error fetching downloads for app:", error);
         }
         return [];
+      },
+
+      fetchHomepageApps: async () => {
+        try {
+          const res = await fetch('/apps');
+          if (res.status === HTTP_STATUS.OK) {
+            const data: HomepageApp[] = await res.json();
+            set({ homepageApps: data });
+          }
+        } catch (error) {
+          console.error("Error fetching homepage apps:", error);
+        }
+      },
+
+      getLaunchUrl: (id: string) => {
+        const app = get().homepageApps.find(app => `${app.package}:${app.publisher}` === id);
+        if (app && app.path) {
+          return app.path;
+        }
+        return null;
       },
 
       checkMirror: async (node: string) => {

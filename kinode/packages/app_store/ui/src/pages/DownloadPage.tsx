@@ -17,6 +17,8 @@ export default function DownloadPage() {
         installApp,
         removeDownload,
         clearAllActiveDownloads,
+        fetchHomepageApps,
+        getLaunchUrl
     } = useAppsStore();
 
     const [showMetadata, setShowMetadata] = useState(false);
@@ -35,8 +37,9 @@ export default function DownloadPage() {
         if (id) {
             fetchData(id);
             clearAllActiveDownloads();
+            fetchHomepageApps();
         }
-    }, [id, fetchData, clearAllActiveDownloads]);
+    }, [id, fetchData, clearAllActiveDownloads, fetchHomepageApps]);
 
     const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
         setSelectedMirror(mirror);
@@ -145,9 +148,17 @@ export default function DownloadPage() {
 
     const handleLaunch = useCallback(() => {
         if (app) {
-            navigate(`/${app.package_id.package_name}:${app.package_id.package_name}:${app.package_id.publisher_node}/`);
+            const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+            if (launchUrl) {
+                window.location.href = launchUrl;
+            }
         }
-    }, [app, navigate]);
+    }, [app, getLaunchUrl]);
+
+    const canLaunch = useMemo(() => {
+        if (!app) return false;
+        return !!getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+    }, [app, getLaunchUrl]);
 
     if (!app) {
         return <div className="downloads-page"><h4>Loading app details...</h4></div>;
@@ -156,36 +167,48 @@ export default function DownloadPage() {
     return (
         <div className="downloads-page">
             <div className="app-header">
-                <h2>{app.metadata?.name || app.package_id.package_name}</h2>
+                <div className="app-title-container">
+                    {app.metadata?.image && (
+                        <img src={app.metadata.image} alt={app.metadata?.name || app.package_id.package_name} className="app-icon" />
+                    )}
+                    <div className="app-title">
+                        <h2>{app.metadata?.name || app.package_id.package_name}</h2>
+                        <p className="app-id">{`${app.package_id.package_name}.${app.package_id.publisher_node}`}</p>
+                    </div>
+                </div>
                 {installedApp && (
-                    <button onClick={handleLaunch} className="launch-button">
-                        <FaPlay /> Launch
+                    <button
+                        onClick={handleLaunch}
+                        className="launch-button"
+                        disabled={!canLaunch}
+                    >
+                        <FaPlay /> {canLaunch ? 'Launch' : 'No UI found for app'}
                     </button>
                 )}
             </div>
-            <p>{app.metadata?.description}</p>
+            <p className="app-description">{app.metadata?.description}</p>
 
-            <div className="version-selector">
+            <div className="download-section">
                 <select
                     value={selectedVersion}
                     onChange={(e) => setSelectedVersion(e.target.value)}
+                    className="version-selector"
                 >
-                    {sortedVersions.map(({ version }, index) => (
-                        <option key={version} value={version}>
-                            {version} {index === 0 ? "(newest)" : ""}
-                            {installedApp && installedApp.our_version_hash === sortedVersions[index].hash ? " (installed)" : ""}
+                    <option value="">Select version</option>
+                    {sortedVersions.map((version) => (
+                        <option key={version.version} value={version.version}>
+                            {version.version}
                         </option>
                     ))}
                 </select>
-            </div>
 
-            <div className="download-section">
                 <MirrorSelector
                     packageId={id}
                     onMirrorSelect={handleMirrorSelect}
                 />
+
                 {isCurrentVersionInstalled ? (
-                    <button className="installed-button" disabled>
+                    <button className="action-button installed-button" disabled>
                         <FaRocket /> Installed
                     </button>
                 ) : isDownloaded ? (
@@ -196,7 +219,7 @@ export default function DownloadPage() {
                                 handleInstall(versionData.version, versionData.hash);
                             }
                         }}
-                        className="install-button"
+                        className="action-button install-button"
                     >
                         <FaRocket /> Install
                     </button>
@@ -204,12 +227,11 @@ export default function DownloadPage() {
                     <button
                         onClick={handleDownload}
                         disabled={!canDownload}
-                        className="download-button"
+                        className="action-button download-button"
                     >
                         {isDownloading ? (
                             <>
-                                <FaSpinner className="fa-spin" />
-                                Downloading... {downloadProgress}%
+                                <FaSpinner className="fa-spin" /> Downloading... {downloadProgress}%
                             </>
                         ) : (
                             <>
