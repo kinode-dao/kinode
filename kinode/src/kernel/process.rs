@@ -89,33 +89,36 @@ async fn make_table_and_wasi(
 ) -> (Table, WasiCtx, MemoryOutputPipe) {
     let table = Table::new();
     let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
+    let mut wasi = WasiCtxBuilder::new();
 
-    let tmp_path = format!(
-        "{}/vfs/{}:{}/tmp",
+    let path_prefix = format!(
+        "{}/vfs/{}:{}",
         home_directory_path,
         process_state.metadata.our.process.package(),
         process_state.metadata.our.process.publisher()
     );
-
-    let mut wasi = WasiCtxBuilder::new();
-
-    // TODO make guarantees about this
-    if let Ok(Ok(())) = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        fs::create_dir_all(&tmp_path),
-    )
-    .await
-    {
-        if let Ok(wasi_tempdir) =
-            Dir::open_ambient_dir(tmp_path.clone(), wasi_common::sync::ambient_authority())
+    for (env, path) in [
+        ("TMPDIR", format!("{}/tmp", path_prefix)),
+        ("LOGDIR", format!("{}/log", path_prefix)),
+    ] {
+        // TODO make guarantees about this
+        if let Ok(Ok(())) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            fs::create_dir_all(&path),
+        )
+        .await
         {
-            wasi.preopened_dir(
-                wasi_tempdir,
-                DirPerms::all(),
-                FilePerms::all(),
-                tmp_path.clone(),
-            )
-            .env("TEMP_DIR", tmp_path);
+            if let Ok(wasi_tempdir) =
+                Dir::open_ambient_dir(path.clone(), wasi_common::sync::ambient_authority())
+            {
+                wasi.preopened_dir(
+                    wasi_tempdir,
+                    DirPerms::all(),
+                    FilePerms::all(),
+                    path.clone(),
+                )
+                .env(env, path);
+            }
         }
     }
 
