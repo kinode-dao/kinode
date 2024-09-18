@@ -102,11 +102,8 @@ async fn make_table_and_wasi(
         ("LOGDIR", format!("{}/log", path_prefix)),
     ] {
         // TODO make guarantees about this
-        if let Ok(Ok(())) = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            fs::create_dir_all(&path),
-        )
-        .await
+        if let Ok(Ok(())) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), fs::create_dir_all(&path)).await
         {
             if let Ok(wasi_tempdir) =
                 Dir::open_ambient_dir(path.clone(), wasi_common::sync::ambient_authority())
