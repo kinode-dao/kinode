@@ -17,6 +17,8 @@ export default function DownloadPage() {
         installApp,
         removeDownload,
         clearAllActiveDownloads,
+        fetchHomepageApps,
+        getLaunchUrl
     } = useAppsStore();
 
     const [showMetadata, setShowMetadata] = useState(false);
@@ -35,8 +37,9 @@ export default function DownloadPage() {
         if (id) {
             fetchData(id);
             clearAllActiveDownloads();
+            fetchHomepageApps();
         }
-    }, [id, fetchData, clearAllActiveDownloads]);
+    }, [id, fetchData, clearAllActiveDownloads, fetchHomepageApps]);
 
     const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
         setSelectedMirror(mirror);
@@ -145,9 +148,17 @@ export default function DownloadPage() {
 
     const handleLaunch = useCallback(() => {
         if (app) {
-            navigate(`/${app.package_id.package_name}:${app.package_id.package_name}:${app.package_id.publisher_node}/`);
+            const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+            if (launchUrl) {
+                window.location.href = launchUrl;
+            }
         }
-    }, [app, navigate]);
+    }, [app, getLaunchUrl]);
+
+    const canLaunch = useMemo(() => {
+        if (!app) return false;
+        return !!getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+    }, [app, getLaunchUrl]);
 
     if (!app) {
         return <div className="downloads-page"><h4>Loading app details...</h4></div>;
@@ -158,8 +169,12 @@ export default function DownloadPage() {
             <div className="app-header">
                 <h2>{app.metadata?.name || app.package_id.package_name}</h2>
                 {installedApp && (
-                    <button onClick={handleLaunch} className="launch-button">
-                        <FaPlay /> Launch
+                    <button
+                        onClick={handleLaunch}
+                        className="launch-button"
+                        disabled={!canLaunch}
+                    >
+                        <FaPlay /> {canLaunch ? 'Launch' : 'No UI found for app'}
                     </button>
                 )}
             </div>
