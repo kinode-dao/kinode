@@ -1,9 +1,17 @@
+//! Helper functions for spawning file transfer workers.
+//! These functions are used to initiate send and receive operations
+//! for file transfers in the App Store system
+//!
 use crate::kinode::process::downloads::{
     DownloadRequests, LocalDownloadRequest, PackageId, RemoteDownloadRequest,
 };
 
 use kinode_process_lib::*;
 
+/// Spawns a worker process to send a file transfer.
+///
+/// This function creates a new worker process, configures it for sending a file,
+/// and initiates the transfer to the specified address.
 #[allow(dead_code)]
 pub fn spawn_send_transfer(
     our: &Address,
@@ -40,6 +48,10 @@ pub fn spawn_send_transfer(
     Ok(())
 }
 
+/// Spawns a worker process to receive a file transfer.
+///
+/// This function creates a new worker process, configures it to receive a file
+/// from the specified node, and prepares it to handle the incoming transfer.
 #[allow(dead_code)]
 pub fn spawn_receive_transfer(
     our: &Address,

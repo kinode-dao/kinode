@@ -1,6 +1,45 @@
 #![feature(let_chains)]
 //! downloads:app_store:sys
-//! manages downloading and sharing of versioned packages.
+//! This process manages the downloading and sharing of app packages in the Kinode ecosystem.
+//! It handles both local and remote download requests, as well as file management.
+//!
+//! ## Responsibilities:
+//!
+//! 1. Handle local and remote download requests for app zip packages.
+//! 2. Manage the local storage of downloaded app zip packages.
+//! 3. Coordinate file transfers between nodes using the File Transfer (FT) worker.
+//! 4. Handle mirroring settings for apps.
+//! 5. Manage auto-updates for installed apps.
+//!
+//! ## Key Components:
+//!
+//! - `State`: Manages information about which packages are being mirrored.
+//! - `handle_message`: Routes incoming messages to appropriate handlers.
+//! - `handle_local_request`: Processes local requests for downloads and file management.
+//! - `handle_receive_http_download`: Handles the receipt of app zip packages via HTTP.
+//!
+//! ## File Transfer (FT) Worker:
+//!
+//! The downloads process utilizes a separate File Transfer worker for handling the actual
+//! transfer of files between nodes. This worker:
+//!
+//! - Implements chunked file transfers for efficient and reliable data transmission.
+//! - Handles both sending and receiving of file chunks.
+//! - Verifies file integrity using SHA256 hashing.
+//! - Extracts and saves package manifests separately.
+//!
+//! The FT worker is spawned by this process when needed for file transfers.
+//!
+//! ## Interaction Flow:
+//!
+//! 1. Download requests are received from the main process or other nodes.
+//! 2. For remote downloads, the process spawns an FT worker to handle the transfer.
+//! 3. For HTTP downloads, the process handles the download directly.
+//! 4. Downloaded files are stored locally and their integrity is verified.
+//! 5. Progress and completion status are reported back to the requester.
+//!
+//! Note: While this process coordinates file transfers, the actual chunked transfer
+//! mechanism is implemented in the FT worker for improved modularity and performance.
 //!
 use crate::kinode::process::downloads::{
     AutoUpdateRequest, DirEntry, DownloadCompleteRequest, DownloadError, DownloadRequests,
