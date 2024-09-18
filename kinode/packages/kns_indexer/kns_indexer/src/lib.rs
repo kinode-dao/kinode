@@ -275,10 +275,10 @@ fn handle_pending_notes(
             for (note, attempt) in notes.drain(..) {
                 if attempt >= MAX_PENDING_ATTEMPTS {
                     // skip notes that have exceeded max attempts
-                    print_to_terminal(
-                        1,
-                        &format!("dropping note from block {block} after {attempt} attempts"),
-                    );
+                    // print_to_terminal(
+                    //     1,
+                    //     &format!("dropping note from block {block} after {attempt} attempts"),
+                    // );
                     continue;
                 }
                 if let Err(e) = handle_note(state, &note) {
@@ -288,10 +288,10 @@ fn handle_pending_notes(
                         }
                         Some(ee) => match ee {
                             KnsError::NoParentError => {
-                                print_to_terminal(
-                                    1,
-                                    &format!("note still awaiting mint; attempt {attempt}"),
-                                );
+                                // print_to_terminal(
+                                //     1,
+                                //     &format!("note still awaiting mint; attempt {attempt}"),
+                                // );
                                 keep_notes.push((note, attempt + 1));
                             }
                         },
@@ -439,10 +439,10 @@ fn handle_log(
             if let Err(e) = handle_note(state, &decoded) {
                 if let Some(KnsError::NoParentError) = e.downcast_ref::<KnsError>() {
                     if let Some(block_number) = log.block_number {
-                        print_to_terminal(
-                            1,
-                            &format!("adding note to pending_notes for block {block_number}"),
-                        );
+                        // print_to_terminal(
+                        //     1,
+                        //     &format!("adding note to pending_notes for block {block_number}"),
+                        // );
                         pending_notes
                             .entry(block_number)
                             .or_default()
