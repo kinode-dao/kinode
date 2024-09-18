@@ -285,12 +285,17 @@ pub async fn make_process_loop(
                         .send(&send_to_terminal)
                         .await;
                 }
-                Err(_) => {
+                Err(e) => {
                     let stderr = wasi_stderr.contents().into();
                     let stderr = String::from_utf8(stderr)?;
+                    let output = if stderr != String::new() {
+                        stderr
+                    } else {
+                        format!("{}", e.root_cause())
+                    };
                     t::Printout::new(
                         0,
-                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{stderr}",),
+                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{output}"),
                     )
                     .send(&send_to_terminal)
                     .await;
@@ -313,12 +318,17 @@ pub async fn make_process_loop(
                         .send(&send_to_terminal)
                         .await;
                 }
-                Err(_) => {
+                Err(e) => {
                     let stderr = wasi_stderr.contents().into();
                     let stderr = String::from_utf8(stderr)?;
+                    let output = if stderr != String::new() {
+                        stderr
+                    } else {
+                        format!("{}", e.root_cause())
+                    };
                     t::Printout::new(
                         0,
-                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{stderr}",),
+                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{output}"),
                     )
                     .send(&send_to_terminal)
                     .await;
