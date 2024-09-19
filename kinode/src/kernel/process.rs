@@ -288,7 +288,7 @@ pub async fn make_process_loop(
                 Err(e) => {
                     let stderr = wasi_stderr.contents().into();
                     let stderr = String::from_utf8(stderr)?;
-                    let output = if stderr != String::new() {
+                    let output = if !stderr.is_empty() {
                         stderr
                     } else {
                         format!("{}", e.root_cause())
