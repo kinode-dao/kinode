@@ -243,8 +243,10 @@ fn handle_eth_log(
     let block_number: u64 = log
         .block_number
         .ok_or(anyhow::anyhow!("log missing block number"))?;
-    let note: kimap::Note =
-        kimap::decode_note_log(&log).map_err(|e| anyhow::anyhow!("decode log error: {e:?}"))?;
+    let Ok(note) = kimap::decode_note_log(&log) else {
+        // ignore invalid logs here -- they're not actionable
+        return Ok(());
+    };
 
     let package_id = note
         .parent_path
@@ -265,7 +267,7 @@ fn handle_eth_log(
     let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
     let is_our_package = &package_id.publisher() == &our.node();
 
-    let (tba, metadata_hash) = {
+    let (tba, metadata_hash) = if !startup {
         // generate ~metadata-hash full-path
         let hash_note = format!("~metadata-hash.{}", note.parent_path);
 
@@ -294,10 +296,14 @@ fn handle_eth_log(
                     state.listings.remove(&package_id);
                     return Ok(());
                 }
-                return Err(anyhow::anyhow!("metadata hash not found"));
+                return Err(anyhow::anyhow!(
+                    "metadata hash not found: {package_id}, {metadata_uri}"
+                ));
             }
             Some(hash_note) => (tba, String::from_utf8_lossy(&hash_note).to_string()),
         }
+    } else {
+        (eth::Address::ZERO, String::new())
     };
 
     if is_our_package {
@@ -360,7 +366,46 @@ fn handle_eth_log(
 /// we do this as a separate step to not repeatedly fetch outdated metadata
 /// as we process logs.
 fn update_all_metadata(state: &mut State) {
-    for (package_id, listing) in state.listings.iter_mut() {
+    state.listings.retain(|package_id, listing| {
+        let (tba, metadata_hash) = {
+            // generate ~metadata-hash full-path
+            let hash_note = format!(
+                "~metadata-hash.{}.{}",
+                package_id.package(),
+                package_id.publisher()
+            );
+
+            // owner can change which we don't track (yet?) so don't save, need to get when desired
+            let Ok((tba, _owner, data)) = (match state.kimap.get(&hash_note) {
+                Ok(gr) => Ok(gr),
+                Err(e) => match e {
+                    eth::EthError::RpcError(_) => {
+                        // retry on RpcError after DELAY_MS sleep
+                        // sleep here rather than with, e.g., a message to
+                        //  `timer:distro:sys` so that events are processed in
+                        //  order of receipt
+                        std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
+                        state.kimap.get(&hash_note)
+                    }
+                    _ => Err(e),
+                },
+            }) else {
+                return false;
+            };
+
+            match data {
+                None => {
+                    // if ~metadata-uri is also empty, this is an unpublish action!
+                    if listing.metadata_uri.is_empty() {
+                        state.published.remove(package_id);
+                    }
+                    return false;
+                }
+                Some(hash_note) => (tba, String::from_utf8_lossy(&hash_note).to_string()),
+            }
+        };
+        listing.tba = tba;
+        listing.metadata_hash = metadata_hash;
         let metadata =
             fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30).ok();
         listing.metadata = metadata.clone();
@@ -376,7 +421,8 @@ fn update_all_metadata(state: &mut State) {
                 .send()
                 .unwrap();
         }
-    }
+        true
+    });
 }
 
 /// create the filter used for app store getLogs and subscription.
