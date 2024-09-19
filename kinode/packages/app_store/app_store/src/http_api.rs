@@ -45,12 +45,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
             .expect("failed to bind http path");
     }
     http_server
-        .serve_ui(
-            &our,
-            "ui",
-            vec!["/", "/app/:id", "/publish", "/download/:id", "my-downloads"],
-            config.clone(),
-        )
+        .serve_ui(&our, "ui", vec!["/"], config.clone())
         .expect("failed to serve static UI");
 
     http_server
