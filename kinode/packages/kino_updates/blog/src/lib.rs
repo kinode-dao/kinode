@@ -75,7 +75,6 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         flex-direction: column;
         gap: 5rem;
         background: transparent;
-        margin-bottom: 30px;
     }}
 
     #latest-blog-posts {{
@@ -88,6 +87,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         scrollbar-color: transparent transparent;
         scrollbar-width: none;
         align-self: stretch;
+        padding-bottom: 30px;
     }}
 
     .post {{

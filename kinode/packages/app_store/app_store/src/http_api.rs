@@ -77,7 +77,6 @@ fn make_widget() -> String {
         body {
             overflow: hidden;
             background: transparent;
-            margin-bottom: 30px;
         }
 
         #latest-apps {
@@ -89,6 +88,7 @@ fn make_widget() -> String {
             height: 100vh;
             width: 100vw;
             overflow-y: auto;
+            padding-bottom: 30px;
         }
 
         .app {
