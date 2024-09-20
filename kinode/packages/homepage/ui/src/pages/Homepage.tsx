@@ -48,10 +48,10 @@ function Homepage() {
             {new Date().getHours() < 4
               ? "Good evening"
               : new Date().getHours() < 12
-              ? "Good morning"
-              : new Date().getHours() < 18
-              ? "Good afternoon"
-              : "Good evening"}
+                ? "Good morning"
+                : new Date().getHours() < 18
+                  ? "Good afternoon"
+                  : "Good evening"}
             , {our}
           </h2>
           <a
@@ -60,21 +60,18 @@ function Homepage() {
           >
             [kinode v{version}]
           </a>
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              setShowWidgetsSettings(true);
+            }}
+          >
+            [⚙]
+          </a>
         </header>
 
         <div id="widgets-container">
-          <header id="widgets-header">
-            <h2>Widgets</h2>
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                setShowWidgetsSettings(true);
-              }}
-            >
-              [⚙]
-            </a>
-          </header>
           <Widgets />
         </div>
         <footer>

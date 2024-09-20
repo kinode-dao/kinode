@@ -75,6 +75,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         flex-direction: column;
         gap: 5rem;
         background: transparent;
+        margin-bottom: 30px;
     }}
 
     #latest-blog-posts {{

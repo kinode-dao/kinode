@@ -77,6 +77,7 @@ fn make_widget() -> String {
         body {
             overflow: hidden;
             background: transparent;
+            margin-bottom: 30px;
         }
 
         #latest-apps {
