@@ -1,0 +1,43 @@
+FROM ubuntu:22.04
+
+# Set environment variables to avoid interactive dialog from APT
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NVM_DIR=/root/.nvm
+
+# Install all necessary packages in one layer and clean up in the same layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        ca-certificates \
+        libssl-dev \
+        cmake \
+        llvm-dev \
+        libclang-dev \
+        clang \
+        curl \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust and wasm tools
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
+    && . $HOME/.cargo/env \
+    && rustup install nightly \
+    && rustup target add wasm32-wasi \
+    && rustup target add wasm32-wasi --toolchain nightly \
+    && cargo install wasm-tools \
+    && cargo install cargo-wasi \
+    && rm -rf ~/.cargo/git \
+    && rm -rf ~/.cargo/registry
+
+# Install NVM, Node.js
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash \
+    && . "$NVM_DIR/nvm.sh" \
+    && nvm install node \
+    && nvm use node
+
+# Set up environment variables
+ENV DEBIAN_FRONTEND=dialog \
+    PATH="/root/.nvm/versions/node/$(node -v)/bin:${PATH}"
+
+# Set the default command to bash
+CMD ["bash"]

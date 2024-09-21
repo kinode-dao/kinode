@@ -1,0 +1,18 @@
+FROM nick1udwig/buildbase:latest
+
+ENV NVM_DIR=/root/.nvm \
+    PATH="/root/.nvm/versions/node/$(node -v)/bin:${PATH}"
+
+# Install Git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone the repository and prepare for build
+WORKDIR /usr/src
+RUN git clone https://github.com/kinode-dao/kinode.git
+WORKDIR /usr/src/kinode
+
+# Set the default command to run the build script
+CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && ./scripts/build-release.py"]
