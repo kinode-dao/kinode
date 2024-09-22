@@ -1,10 +1,9 @@
-#![feature(let_chains)]
 use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, http::server, println, Address, LazyLoadBlob,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Fetching OS version from main package
 const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
@@ -26,8 +25,10 @@ struct HomepageApp {
     base64_icon: Option<String>,
     widget: Option<String>,
     order: u32,
-    favorite: bool,
+    favorite: bool, // **not currently used on frontend**
 }
+
+type PersistedAppOrder = HashMap<String, u32>;
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -162,6 +163,11 @@ fn init(our: Address) {
         .bind_http_path("/order", http_config)
         .expect("failed to bind /order");
 
+    // load persisted app order
+    let mut persisted_app_order =
+        kinode_process_lib::get_typed_state(|bytes| serde_json::from_slice(bytes))
+            .unwrap_or(PersistedAppOrder::new());
+
     loop {
         let Ok(ref message) = await_message() else {
             // we never send requests, so this will never happen
@@ -238,11 +244,16 @@ fn init(our: Address) {
                                         None,
                                     );
                                 };
-                                for (app_id, order) in order_list {
-                                    if let Some(app) = app_data.get_mut(&app_id) {
-                                        app.order = order;
+                                for (app_id, order) in &order_list {
+                                    if let Some(app) = app_data.get_mut(app_id) {
+                                        app.order = *order;
                                     }
                                 }
+                                persisted_app_order = order_list.into_iter().collect();
+                                println!("updated order of apps: {:?}", persisted_app_order);
+                                kinode_process_lib::set_state(
+                                    &serde_json::to_vec(&persisted_app_order).unwrap(),
+                                );
                                 (server::HttpResponse::new(http::StatusCode::OK), None)
                             }
                             _ => (server::HttpResponse::new(http::StatusCode::NOT_FOUND), None),
@@ -264,10 +275,11 @@ fn init(our: Address) {
                         path,
                         widget,
                     }) => {
+                        let id = message.source().process.to_string();
                         app_data.insert(
-                            message.source().process.to_string(),
+                            id.clone(),
                             HomepageApp {
-                                id: message.source().process.to_string(),
+                                id: id.clone(),
                                 process: message.source().process().to_string(),
                                 package: message.source().package().to_string(),
                                 publisher: message.source().publisher().to_string(),
@@ -281,14 +293,20 @@ fn init(our: Address) {
                                 label,
                                 base64_icon: icon,
                                 widget,
-                                order: app_data.len() as u32,
+                                order: if let Some(order) = persisted_app_order.get(&id) {
+                                    *order
+                                } else {
+                                    app_data.len() as u32
+                                },
                                 favorite: DEFAULT_FAVES
                                     .contains(&message.source().process.to_string().as_str()),
                             },
                         );
                     }
                     HomepageRequest::Remove => {
-                        app_data.remove(&message.source().process.to_string());
+                        let id = message.source().process.to_string();
+                        app_data.remove(&id);
+                        persisted_app_order.remove(&id);
                     }
                     HomepageRequest::SetStylesheet(new_stylesheet_string) => {
                         // ONLY settings:settings:sys may call this request

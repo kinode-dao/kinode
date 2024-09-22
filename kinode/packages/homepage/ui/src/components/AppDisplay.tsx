@@ -14,10 +14,10 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
       style={
         !app?.path
           ? {
-              pointerEvents: "none",
-              textDecoration: "none !important",
-              filter: "grayscale(100%)",
-            }
+            pointerEvents: "none",
+            textDecoration: "none !important",
+            filter: "grayscale(100%)",
+          }
           : {}
       }
     >

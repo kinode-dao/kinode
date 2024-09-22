@@ -174,7 +174,7 @@ footer {
   border-radius: 0 0 1em 1em;
   border: 0.5px solid rgba(255, 255, 255, 0.2);
   padding: 1em;
-  color: light-dark(var(--white), var(--tasteful-dark));
+  color: var(--white);
 }
 
 @media (max-width: 1024px) {

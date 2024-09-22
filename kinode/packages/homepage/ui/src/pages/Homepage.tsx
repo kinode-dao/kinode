@@ -46,13 +46,13 @@ function Homepage() {
           <KinodeBird />
           <h2>
             {new Date().getHours() < 4
-              ? "Good evening"
+              ? "Good evening" // midnight to 4am
               : new Date().getHours() < 12
-                ? "Good morning"
+                ? "Good morning" // 4am to 11am
                 : new Date().getHours() < 18
-                  ? "Good afternoon"
-                  : "Good evening"}
-            , {our}
+                  ? "Good afternoon" // 12pm to 5pm
+                  : "Good evening" // 5pm to midnight
+            }, {our}
           </h2>
           <a
             href="https://github.com/kinode-dao/kinode/releases"
