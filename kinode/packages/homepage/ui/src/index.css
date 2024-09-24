@@ -159,7 +159,6 @@ footer {
 
 .apps-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
   width: 100%;
   color: var(--off-white);
 }
