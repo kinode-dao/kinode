@@ -14,7 +14,7 @@ RUN . ~/.bashrc \
     && . $NVM_DIR/nvm.sh \
     && cargo install --git https://github.com/kinode-dao/kit --locked
 
-WORKDIR /usr/src/package
+WORKDIR /input
 
 # Set the default command to run the build script
-CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && kit build /usr/src/package && find /usr/src/package -type d -exec chmod 775 {} + && find /usr/src/package -type f -exec chmod 664 {} +"]
+CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && kit build /input && find /input -type d -exec chmod 775 {} + && find /input -type f -exec chmod 664 {} +"]
