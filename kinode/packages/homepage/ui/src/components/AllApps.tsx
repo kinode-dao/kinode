@@ -31,7 +31,7 @@ const AllApps: React.FC = () => {
     const o = [...orderedApps].sort((a, b) => {
       return a.order - b.order;
     });
-    return o;
+    return o.filter(app => app.path !== null);
   }, [orderedApps, apps]);
 
   const displayedApps = expanded
@@ -92,6 +92,7 @@ const AllApps: React.FC = () => {
       <div
         className={`apps-grid ${expanded ? "expanded" : ""} ${isMobile ? "mobile" : ""
           }`}
+        style={{ gridTemplateColumns: `repeat(${Math.min(displayedApps.length, 5)}, 1fr)` }}
       >
         {displayedApps.map((app, index) => (
           <div
