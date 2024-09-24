@@ -1,0 +1,20 @@
+FROM nick1udwig/buildbase:latest
+
+ENV NVM_DIR=/root/.nvm \
+    PATH="/root/.nvm/versions/node/$(node -v)/bin:${PATH}"
+
+# Install Git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN . ~/.bashrc \
+    && . ~/.cargo/env \
+    && . $NVM_DIR/nvm.sh \
+    && cargo install --git https://github.com/kinode-dao/kit --locked
+
+WORKDIR /usr/src/package
+
+# Set the default command to run the build script
+CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && kit build /usr/src/package && find /usr/src/package -type d -exec chmod 775 {} + && find /usr/src/package -type f -exec chmod 664 {} +"]

@@ -24,6 +24,8 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
     && rustup install nightly \
     && rustup target add wasm32-wasi \
     && rustup target add wasm32-wasi --toolchain nightly \
+    && rustup target add wasm32-wasip1 \
+    && rustup target add wasm32-wasip1 --toolchain nightly \
     && cargo install wasm-tools \
     && cargo install cargo-wasi \
     && rm -rf ~/.cargo/git \

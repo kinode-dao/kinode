@@ -42,11 +42,13 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
     source_path = f"target/release/{binary_name}"
     dest_path = os.path.join(tmp_dir, binary_name)
     shutil.move(source_path, dest_path)
+    os.chmod(dest_path, 0o664)
 
     # Create a zip archive of the binary
     zip_path = os.path.join(tmp_dir, zip_name)
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(dest_path, os.path.basename(dest_path))
+    os.chmod(zip_path, 0o664)
 
     # Remove the original binary
     os.remove(dest_path)
