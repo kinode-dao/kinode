@@ -88,6 +88,7 @@ fn make_widget() -> String {
             height: 100vh;
             width: 100vw;
             overflow-y: auto;
+            padding-bottom: 30px;
         }
 
         .app {
