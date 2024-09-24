@@ -2,8 +2,9 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use lib::types::core::Identity;
 use std::{
     collections::VecDeque,
-    fs::File,
+    fs::{File, OpenOptions},
     io::{BufWriter, Stdout, Write},
+    path::{Path, PathBuf},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -332,7 +333,7 @@ pub fn truncate_in_place(
     }
 }
 
-struct Logger {
+pub struct Logger {
     pub log_dir_path: PathBuf,
     pub strategy: LoggerStrategy,
     log_writer: BufWriter<std::fs::File>,
@@ -340,7 +341,7 @@ struct Logger {
 
 enum LoggerStrategy {
     Rotating {
-        max_log_dir_size: u64,
+        max_log_dir_bytes: u64,
         number_log_files: u64,
     },
     Infinite,
@@ -356,7 +357,7 @@ impl LoggerStrategy {
 }
 
 impl Logger {
-    fn new(log_dir_path: PathBuf) -> Self {
+    pub fn new(log_dir_path: PathBuf) -> Self {
         let log_writer = make_log_writer(&log_dir_path).unwrap();
         Self {
             log_dir_path,
@@ -365,7 +366,7 @@ impl Logger {
         }
     }
 
-    fn write(&mut self, line: &str) -> anyhow::Result<()> {
+    pub fn write(&mut self, line: &str) -> anyhow::Result<()> {
         match self.strategy {
             LoggerStrategy::Infinite => {}
             LoggerStrategy::Rotating {
@@ -374,13 +375,13 @@ impl Logger {
             } => {
                 // check whether to rotate
                 let line_bytes = line.len();
-                let file_bytes = log_writer.get_ref().metadata()?.len();
-                if line_bytes + file_bytes >= max_log_dir_bytes / number_log_files {
+                let file_bytes = self.log_writer.get_ref().metadata()?.len() as usize;
+                if line_bytes + file_bytes >= (max_log_dir_bytes / number_log_files) as usize {
                     // rotate
-                    self.log_writer = make_log_writer(self.log_dir_path)?;
+                    self.log_writer = make_log_writer(&self.log_dir_path)?;
 
                     // clean up oldest if necessary
-                    remove_oldest_if_exceeds(self.log_dir_path, self.number_log_files)?;
+                    remove_oldest_if_exceeds(&self.log_dir_path, number_log_files as usize)?;
                 }
             }
         }
@@ -393,7 +394,9 @@ impl Logger {
 }
 
 fn make_log_writer(log_dir_path: &Path) -> anyhow::Result<BufWriter<std::fs::File>> {
-    std::fs::create_dir(log_dir_path)?;
+    if !log_dir_path.exists() {
+        std::fs::create_dir(log_dir_path)?;
+    }
     let now = chrono::Local::now();
     let log_name = format!("{}.log", now.format("%Y-%m-%d-%H:%M:%S"));
     let log_path = log_dir_path.join(log_name);
@@ -408,7 +411,7 @@ fn remove_oldest_if_exceeds<P: AsRef<Path>>(path: P, max_items: usize) -> anyhow
     let mut entries = Vec::new();
 
     // Collect all entries and their modification times
-    for entry in fs::read_dir(path)? {
+    for entry in std::fs::read_dir(path)? {
         let entry = entry?;
         if let Ok(metadata) = entry.metadata() {
             if let Ok(modified) = metadata.modified() {
@@ -422,9 +425,8 @@ fn remove_oldest_if_exceeds<P: AsRef<Path>>(path: P, max_items: usize) -> anyhow
         // Sort entries by modification time (oldest first)
         entries.sort_by_key(|e| e.0);
 
-        if let Some((_, path)) = entries.remove(0) {
-            fs::remove_file(&path)?;
-        }
+        let (_, path) = entries.remove(0);
+        std::fs::remove_file(&path)?;
     }
 
     Ok(())

@@ -13,7 +13,7 @@ use lib::types::core::{
 };
 use std::{
     fs::{read_to_string, OpenOptions},
-    io::{BufWriter, Write},
+    io::BufWriter,
 };
 use tokio::signal::unix::{signal, SignalKind};
 use unicode_segmentation::UnicodeSegmentation;
@@ -23,7 +23,7 @@ pub mod utils;
 struct State {
     pub stdout: std::io::Stdout,
     /// handle and settings for on-disk log (disabled by default, triggered by CTRL+L)
-    pub logger: Logger,
+    pub logger: utils::Logger,
     /// in-memory searchable command history that persists itself on disk (default size: 1000)
     pub command_history: utils::CommandHistory,
     /// terminal window width, 0 is leftmost column
@@ -218,7 +218,7 @@ pub async fn terminal(
     let log_dir_path = std::fs::canonicalize(&home_directory_path)
         .expect("terminal: could not get path for .terminal_logs dir")
         .join(".terminal_logs");
-    let logger = Logger::new();
+    let logger = utils::Logger::new(log_dir_path);
 
     let mut state = State {
         stdout,
@@ -317,13 +317,14 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     let mut stdout = state.stdout.lock();
     // always write print to log if in logging mode
     if state.logging_mode {
-        state.logger.write(printout.content)?;
+        state.logger.write(&printout.content)?;
     }
     // skip writing print to terminal if it's of a greater
     // verbosity level than our current mode
     if printout.verbosity > state.verbose_mode {
         return Ok(());
     }
+    let now = Local::now();
     execute!(
         stdout,
         // print goes immediately above the dedicated input line at bottom
