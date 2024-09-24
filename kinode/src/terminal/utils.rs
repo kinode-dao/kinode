@@ -331,3 +331,101 @@ pub fn truncate_in_place(
             .collect::<String>()
     }
 }
+
+struct Logger {
+    pub log_dir_path: PathBuf,
+    pub strategy: LoggerStrategy,
+    log_writer: BufWriter<std::fs::File>,
+}
+
+enum LoggerStrategy {
+    Rotating {
+        max_log_dir_size: u64,
+        number_log_files: u64,
+    },
+    Infinite,
+}
+
+impl LoggerStrategy {
+    fn default() -> Self {
+        LoggerStrategy::Rotating {
+            max_log_dir_bytes: 1_000_000_000,
+            number_log_files: 4,
+        }
+    }
+}
+
+impl Logger {
+    fn new(log_dir_path: PathBuf) -> Self {
+        let log_writer = make_log_writer(&log_dir_path).unwrap();
+        Self {
+            log_dir_path,
+            log_writer,
+            strategy: LoggerStrategy::default(),
+        }
+    }
+
+    fn write(&mut self, line: &str) -> anyhow::Result<()> {
+        match self.strategy {
+            LoggerStrategy::Infinite => {}
+            LoggerStrategy::Rotating {
+                max_log_dir_bytes,
+                number_log_files,
+            } => {
+                // check whether to rotate
+                let line_bytes = line.len();
+                let file_bytes = log_writer.get_ref().metadata()?.len();
+                if line_bytes + file_bytes >= max_log_dir_bytes / number_log_files {
+                    // rotate
+                    self.log_writer = make_log_writer(self.log_dir_path)?;
+
+                    // clean up oldest if necessary
+                    remove_oldest_if_exceeds(self.log_dir_path, self.number_log_files)?;
+                }
+            }
+        }
+
+        let now = chrono::Local::now();
+        writeln!(self.log_writer, "[{}] {}", now.to_rfc2822(), line)?;
+
+        Ok(())
+    }
+}
+
+fn make_log_writer(log_dir_path: &Path) -> anyhow::Result<BufWriter<std::fs::File>> {
+    std::fs::create_dir(log_dir_path)?;
+    let now = chrono::Local::now();
+    let log_name = format!("{}.log", now.format("%Y-%m-%d-%H:%M:%S"));
+    let log_path = log_dir_path.join(log_name);
+    let log_handle = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&log_path)?;
+    Ok(BufWriter::new(log_handle))
+}
+
+fn remove_oldest_if_exceeds<P: AsRef<Path>>(path: P, max_items: usize) -> anyhow::Result<()> {
+    let mut entries = Vec::new();
+
+    // Collect all entries and their modification times
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        if let Ok(metadata) = entry.metadata() {
+            if let Ok(modified) = metadata.modified() {
+                entries.push((modified, entry.path()));
+            }
+        }
+    }
+
+    // If the number of entries exceeds the max_items, remove the oldest
+    while entries.len() > max_items {
+        // Sort entries by modification time (oldest first)
+        entries.sort_by_key(|e| e.0);
+
+        if let Some((_, path)) = entries.remove(0) {
+            fs::remove_file(&path)?;
+        }
+    }
+
+    Ok(())
+}
