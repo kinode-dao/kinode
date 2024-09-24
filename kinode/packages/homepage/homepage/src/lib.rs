@@ -250,7 +250,6 @@ fn init(our: Address) {
                                     }
                                 }
                                 persisted_app_order = order_list.into_iter().collect();
-                                println!("updated order of apps: {:?}", persisted_app_order);
                                 kinode_process_lib::set_state(
                                     &serde_json::to_vec(&persisted_app_order).unwrap(),
                                 );
