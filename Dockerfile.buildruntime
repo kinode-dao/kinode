@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Bind readonly & copy files in to avoid modifying host files
-WORKDIR /usr/src/kinode
+WORKDIR /input
 
 # Set the default command to run the build script
 # TODO: once build is idempotent, remove the `rm -rf` line

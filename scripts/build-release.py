@@ -48,7 +48,6 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
     zip_path = os.path.join(tmp_dir, zip_name)
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(dest_path, os.path.basename(dest_path))
-    os.chmod(zip_path, 0o664)
 
     # Remove the original binary
     os.remove(dest_path)
