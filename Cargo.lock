@@ -3753,7 +3753,7 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.7.6"
-source = "git+https://github.com/kinode-dao/kit?rev=561a9df#561a9df81781370848019bac0a93e155531a6f62"
+source = "git+https://github.com/kinode-dao/kit?tag=v0.7.6#da6676d79dfdaf47c00ce1d24874fd52de44f717"
 dependencies = [
  "alloy 0.1.4",
  "alloy-sol-macro",
