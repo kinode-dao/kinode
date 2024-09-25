@@ -2,11 +2,15 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use lib::types::core::Identity;
 use std::{
     collections::VecDeque,
-    fs::File,
+    fs::{File, OpenOptions},
     io::{BufWriter, Stdout, Write},
+    path::{Path, PathBuf},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
+
+const DEFAULT_MAX_LOGS_BYTES: u64 = 16_000_000;
+const DEFAULT_NUMBER_LOG_FILES: u64 = 4;
 
 pub struct RawMode;
 impl RawMode {
@@ -330,4 +334,114 @@ pub fn truncate_in_place(
             .rev()
             .collect::<String>()
     }
+}
+
+pub struct Logger {
+    pub log_dir_path: PathBuf,
+    pub strategy: LoggerStrategy,
+    log_writer: BufWriter<std::fs::File>,
+}
+
+pub enum LoggerStrategy {
+    Rotating {
+        max_log_dir_bytes: u64,
+        number_log_files: u64,
+    },
+    Infinite,
+}
+
+impl LoggerStrategy {
+    fn new(max_log_size: Option<u64>, number_log_files: Option<u64>) -> Self {
+        let max_log_size = max_log_size.unwrap_or_else(|| DEFAULT_MAX_LOGS_BYTES);
+        let number_log_files = number_log_files.unwrap_or_else(|| DEFAULT_NUMBER_LOG_FILES);
+        if max_log_size == 0 {
+            LoggerStrategy::Infinite
+        } else {
+            LoggerStrategy::Rotating {
+                max_log_dir_bytes: max_log_size,
+                number_log_files,
+            }
+        }
+    }
+}
+
+impl Logger {
+    pub fn new(
+        log_dir_path: PathBuf,
+        max_log_size: Option<u64>,
+        number_log_files: Option<u64>,
+    ) -> Self {
+        let log_writer = make_log_writer(&log_dir_path).unwrap();
+        Self {
+            log_dir_path,
+            log_writer,
+            strategy: LoggerStrategy::new(max_log_size, number_log_files),
+        }
+    }
+
+    pub fn write(&mut self, line: &str) -> anyhow::Result<()> {
+        let now = chrono::Local::now();
+        let line = &format!("[{}] {}", now.to_rfc2822(), line);
+        match self.strategy {
+            LoggerStrategy::Infinite => {}
+            LoggerStrategy::Rotating {
+                max_log_dir_bytes,
+                number_log_files,
+            } => {
+                // check whether to rotate
+                let line_bytes = line.len();
+                let file_bytes = self.log_writer.get_ref().metadata()?.len() as usize;
+                if line_bytes + file_bytes >= (max_log_dir_bytes / number_log_files) as usize {
+                    // rotate
+                    self.log_writer = make_log_writer(&self.log_dir_path)?;
+
+                    // clean up oldest if necessary
+                    remove_oldest_if_exceeds(&self.log_dir_path, number_log_files as usize)?;
+                }
+            }
+        }
+
+        writeln!(self.log_writer, "{}", line)?;
+
+        Ok(())
+    }
+}
+
+fn make_log_writer(log_dir_path: &Path) -> anyhow::Result<BufWriter<std::fs::File>> {
+    if !log_dir_path.exists() {
+        std::fs::create_dir(log_dir_path)?;
+    }
+    let now = chrono::Local::now();
+    let log_name = format!("{}.log", now.format("%Y-%m-%d-%H:%M:%S"));
+    let log_path = log_dir_path.join(log_name);
+    let log_handle = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&log_path)?;
+    Ok(BufWriter::new(log_handle))
+}
+
+fn remove_oldest_if_exceeds<P: AsRef<Path>>(path: P, max_items: usize) -> anyhow::Result<()> {
+    let mut entries = Vec::new();
+
+    // Collect all entries and their modification times
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        if let Ok(metadata) = entry.metadata() {
+            if let Ok(modified) = metadata.modified() {
+                entries.push((modified, entry.path()));
+            }
+        }
+    }
+
+    // If the number of entries exceeds the max_items, remove the oldest
+    while entries.len() > max_items {
+        // Sort entries by modification time (oldest first)
+        entries.sort_by_key(|e| e.0);
+
+        let (_, path) = entries.remove(0);
+        std::fs::remove_file(&path)?;
+    }
+
+    Ok(())
 }
