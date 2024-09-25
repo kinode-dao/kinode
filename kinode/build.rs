@@ -80,7 +80,7 @@ fn get_kinode_book(packages_dir: &Path) -> anyhow::Result<()> {
     p!("fetching kinode book .tar.gz");
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let releases = kit::boot_fake_node::fetch_releases("kinode-dao", "kinode-book")
+        let releases = kit::build::fetch_releases("kinode-dao", "kinode-book")
             .await
             .map_err(|e| anyhow::anyhow!("{e:?}"))?;
         if releases.is_empty() {
