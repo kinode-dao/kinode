@@ -79,6 +79,8 @@ async fn main() {
 
     // logging mode is toggled at runtime by CTRL+L
     let is_logging = !*matches.get_one::<bool>("logging-off").unwrap();
+    let max_log_size = matches.get_one::<u64>("max-log-size");
+    let number_log_files = matches.get_one::<u64>("number-log-files");
 
     // detached determines whether terminal is interactive
     let detached = *matches.get_one::<bool>("detached").unwrap();
@@ -427,6 +429,8 @@ async fn main() {
             detached,
             verbose_mode,
             is_logging,
+            max_log_size.copied(),
+            number_log_files.copied(),
         ) => {
             match quit {
                 Ok(()) => {
@@ -666,7 +670,15 @@ fn build_command() -> Command {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
-        .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"));
+        .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"))
+        .arg(
+            arg!(--"max-log-size" <MAX_LOG_SIZE_BYTES> "Max size of all logs in bytes; setting to 0 -> no size limit (default 16MB)")
+                .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"number-log-files" <NUMBER_LOG_FILES> "Number of logs to rotate (default 4)")
+                .value_parser(value_parser!(u64)),
+        );
 
     #[cfg(feature = "simulation-mode")]
     let app = app

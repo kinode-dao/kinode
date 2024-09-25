@@ -182,6 +182,8 @@ pub async fn terminal(
     is_detached: bool,
     verbose_mode: u8,
     is_logging: bool,
+    max_log_size: Option<u64>,
+    number_log_files: Option<u64>,
 ) -> anyhow::Result<()> {
     let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
@@ -214,11 +216,11 @@ pub async fn terminal(
 
     // if CTRL+L is used to turn on logging, all prints to terminal
     // will also be written with their full timestamp to the .terminal_log file.
-    // logging mode is always off by default. TODO add a boot flag to change this.
+    // logging mode is always on by default
     let log_dir_path = std::fs::canonicalize(&home_directory_path)
         .expect("terminal: could not get path for .terminal_logs dir")
         .join(".terminal_logs");
-    let logger = utils::Logger::new(log_dir_path);
+    let logger = utils::Logger::new(log_dir_path, max_log_size, number_log_files);
 
     let mut state = State {
         stdout,

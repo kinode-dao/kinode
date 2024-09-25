@@ -351,25 +351,37 @@ pub enum LoggerStrategy {
 }
 
 impl LoggerStrategy {
-    fn default() -> Self {
-        LoggerStrategy::Rotating {
-            max_log_dir_bytes: DEFAULT_MAX_LOGS_BYTES,
-            number_log_files: DEFAULT_NUMBER_LOG_FILES,
+    fn new(max_log_size: Option<u64>, number_log_files: Option<u64>) -> Self {
+        let max_log_size = max_log_size.unwrap_or_else(|| DEFAULT_MAX_LOGS_BYTES);
+        let number_log_files = number_log_files.unwrap_or_else(|| DEFAULT_NUMBER_LOG_FILES);
+        if max_log_size == 0 {
+            LoggerStrategy::Infinite
+        } else {
+            LoggerStrategy::Rotating {
+                max_log_dir_bytes: max_log_size,
+                number_log_files,
+            }
         }
     }
 }
 
 impl Logger {
-    pub fn new(log_dir_path: PathBuf) -> Self {
+    pub fn new(
+        log_dir_path: PathBuf,
+        max_log_size: Option<u64>,
+        number_log_files: Option<u64>,
+    ) -> Self {
         let log_writer = make_log_writer(&log_dir_path).unwrap();
         Self {
             log_dir_path,
             log_writer,
-            strategy: LoggerStrategy::default(),
+            strategy: LoggerStrategy::new(max_log_size, number_log_files),
         }
     }
 
     pub fn write(&mut self, line: &str) -> anyhow::Result<()> {
+        let now = chrono::Local::now();
+        let line = &format!("[{}] {}", now.to_rfc2822(), line);
         match self.strategy {
             LoggerStrategy::Infinite => {}
             LoggerStrategy::Rotating {
@@ -389,8 +401,7 @@ impl Logger {
             }
         }
 
-        let now = chrono::Local::now();
-        writeln!(self.log_writer, "[{}] {}", now.to_rfc2822(), line)?;
+        writeln!(self.log_writer, "{}", line)?;
 
         Ok(())
     }
