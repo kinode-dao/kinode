@@ -78,7 +78,7 @@ async fn main() {
     let password = matches.get_one::<String>("password");
 
     // logging mode is toggled at runtime by CTRL+L
-    let is_logging = *matches.get_one::<bool>("logging").unwrap();
+    let is_logging = !*matches.get_one::<bool>("logging-off").unwrap();
 
     // detached determines whether terminal is interactive
     let detached = *matches.get_one::<bool>("detached").unwrap();
@@ -653,7 +653,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u8)),
         )
         .arg(
-            arg!(-l --logging <IS_LOGGING> "Run in logging mode (toggled at runtime by CTRL+L): write all terminal output to .terminal_log file")
+            arg!(-l --"logging-off" <IS_NOT_LOGGING> "Run in non-logging mode (toggled at runtime by CTRL+L): do not write all terminal output to file in .terminal_logs directory")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
