@@ -9,6 +9,9 @@ use std::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+const DEFAULT_MAX_LOGS_BYTES: u64 = 16_000_000;
+const DEFAULT_NUMBER_LOG_FILES: u64 = 4;
+
 pub struct RawMode;
 impl RawMode {
     fn new() -> std::io::Result<Self> {
@@ -339,7 +342,7 @@ pub struct Logger {
     log_writer: BufWriter<std::fs::File>,
 }
 
-enum LoggerStrategy {
+pub enum LoggerStrategy {
     Rotating {
         max_log_dir_bytes: u64,
         number_log_files: u64,
@@ -350,8 +353,8 @@ enum LoggerStrategy {
 impl LoggerStrategy {
     fn default() -> Self {
         LoggerStrategy::Rotating {
-            max_log_dir_bytes: 1_000_000_000,
-            number_log_files: 4,
+            max_log_dir_bytes: DEFAULT_MAX_LOGS_BYTES,
+            number_log_files: DEFAULT_NUMBER_LOG_FILES,
         }
     }
 }
