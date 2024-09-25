@@ -11,7 +11,7 @@ license = "Apache-2.0"
 [lib]
 
 [build-dependencies]
-kit = { git = "https://github.com/kinode-dao/kit", tag = "v0.7.4" }
+kit = { git = "https://github.com/kinode-dao/kit", tag = "v0.7.6" }
 tokio = "1.28"
 
 [dependencies]

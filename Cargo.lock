@@ -2415,18 +2415,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "docs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "kinode_process_lib 0.9.1",
- "process_macros",
- "serde",
- "serde_json",
- "wit-bindgen",
-]
-
-[[package]]
 name = "download"
 version = "0.1.0"
 dependencies = [
@@ -3764,8 +3752,8 @@ dependencies = [
 
 [[package]]
 name = "kit"
-version = "0.7.4"
-source = "git+https://github.com/kinode-dao/kit?tag=v0.7.4#a995659fd1a41501d893cacf032175f343796096"
+version = "0.7.6"
+source = "git+https://github.com/kinode-dao/kit?rev=561a9df#561a9df81781370848019bac0a93e155531a6f62"
 dependencies = [
  "alloy 0.1.4",
  "alloy-sol-macro",
