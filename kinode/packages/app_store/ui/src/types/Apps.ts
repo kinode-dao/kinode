@@ -70,3 +70,16 @@ export interface PackageManifest {
     grant_capabilities: any[]
     public: boolean
 }
+
+export interface HomepageApp {
+    id: string;
+    process: string;
+    package: string;
+    publisher: string;
+    path?: string;
+    label: string;
+    base64_icon?: string;
+    widget?: string;
+    order: number;
+    favorite: boolean;
+}

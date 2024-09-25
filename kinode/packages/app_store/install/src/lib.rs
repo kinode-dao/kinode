@@ -1,3 +1,13 @@
+//! install:app_store:sys
+//! terminal script for installing apps from the app store.
+//!
+//! Usage:
+//!     install:app_store:sys <package_id> <version_hash>
+//!
+//! Arguments:
+//!     <package_id>    The package ID of the app (e.g., app:publisher.os)
+//!     <version_hash>  The version hash of the app to install
+//!
 use crate::kinode::process::main::{
     InstallPackageRequest, InstallResponse, LocalRequest, LocalResponse,
 };

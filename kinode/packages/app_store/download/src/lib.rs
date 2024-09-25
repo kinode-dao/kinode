@@ -1,3 +1,17 @@
+//! download:app_store:sys
+//! terminal script for downloading apps from the app store.
+//!
+//! Usage:
+//!     download:app_store:sys <node_id> <package_id> <version_hash>
+//!
+//! Arguments:
+//!     <node_id>       The node ID to download from (e.g., my-friend.os)
+//!     <package_id>    The package ID of the app (e.g., app:publisher.os)
+//!     <version_hash>  The version hash of the app to download
+//!
+//! Example:
+//!     download:app_store:sys my-friend.os app:publisher.os f5d374ab50e66888a7c2332b22d0f909f2e3115040725cfab98dcae488916990
+//!
 use crate::kinode::process::downloads::{DownloadRequests, LocalDownloadRequest};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, PackageId, Request,

@@ -402,6 +402,12 @@ async fn send_and_await_response(
             process.process.metadata.our.process
         ));
     }
+    if t::Address::de_wit(target.clone()) == process.process.metadata.our {
+        return Err(anyhow::anyhow!(
+            "kernel: got invalid send_and_await_response() Request from and to {}: cannot await a Request to `our`: will deadlock",
+            process.process.metadata.our,
+        ));
+    }
     let id = process
         .process
         .send_request(source, target, request, None, blob)

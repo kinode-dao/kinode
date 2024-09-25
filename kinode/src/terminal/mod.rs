@@ -13,7 +13,7 @@ use lib::types::core::{
 };
 use std::{
     fs::{read_to_string, OpenOptions},
-    io::{BufWriter, Write},
+    io::BufWriter,
 };
 use tokio::signal::unix::{signal, SignalKind};
 use unicode_segmentation::UnicodeSegmentation;
@@ -22,8 +22,8 @@ pub mod utils;
 
 struct State {
     pub stdout: std::io::Stdout,
-    /// handle for writing to on-disk log (disabled by default, triggered by CTRL+L)
-    pub log_writer: BufWriter<std::fs::File>,
+    /// handle and settings for on-disk log (disabled by default, triggered by CTRL+L)
+    pub logger: utils::Logger,
     /// in-memory searchable command history that persists itself on disk (default size: 1000)
     pub command_history: utils::CommandHistory,
     /// terminal window width, 0 is leftmost column
@@ -182,6 +182,8 @@ pub async fn terminal(
     is_detached: bool,
     verbose_mode: u8,
     is_logging: bool,
+    max_log_size: Option<u64>,
+    number_log_files: Option<u64>,
 ) -> anyhow::Result<()> {
     let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
@@ -214,20 +216,15 @@ pub async fn terminal(
 
     // if CTRL+L is used to turn on logging, all prints to terminal
     // will also be written with their full timestamp to the .terminal_log file.
-    // logging mode is always off by default. TODO add a boot flag to change this.
-    let log_path = std::fs::canonicalize(&home_directory_path)
-        .expect("terminal: could not get path for .terminal_log file")
-        .join(".terminal_log");
-    let log_handle = OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(&log_path)
-        .expect("terminal: could not open/create .terminal_log");
-    let log_writer = BufWriter::new(log_handle);
+    // logging mode is always on by default
+    let log_dir_path = std::fs::canonicalize(&home_directory_path)
+        .expect("terminal: could not get path for .terminal_logs dir")
+        .join(".terminal_logs");
+    let logger = utils::Logger::new(log_dir_path, max_log_size, number_log_files);
 
     let mut state = State {
         stdout,
-        log_writer,
+        logger,
         command_history,
         win_cols,
         win_rows,
@@ -320,21 +317,16 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     // lock here so that runtime can still use println! without freezing..
     // can lock before loop later if we want to reduce overhead
     let mut stdout = state.stdout.lock();
-    let now = Local::now();
     // always write print to log if in logging mode
     if state.logging_mode {
-        writeln!(
-            state.log_writer,
-            "[{}] {}",
-            now.to_rfc2822(),
-            printout.content
-        )?;
+        state.logger.write(&printout.content)?;
     }
     // skip writing print to terminal if it's of a greater
     // verbosity level than our current mode
     if printout.verbosity > state.verbose_mode {
         return Ok(());
     }
+    let now = Local::now();
     execute!(
         stdout,
         // print goes immediately above the dedicated input line at bottom

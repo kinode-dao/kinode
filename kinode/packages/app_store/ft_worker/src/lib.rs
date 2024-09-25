@@ -1,3 +1,43 @@
+//! {ft_worker_id}:app_store:sys
+//! This process implements the file transfer functionality for the App Store system in the Kinode ecosystem.
+//! It handles the chunked transfer of app package files between nodes, including download initiation,
+//! progress tracking, and integrity verification.
+//!
+//! ## Key Components:
+//!
+//! - `init`: The entry point for the worker process, handling both local and remote download requests.
+//! - `handle_sender`: Manages the sending of file chunks to a target worker.
+//! - `handle_receiver`: Manages the receiving of file chunks and assembles the complete file.
+//! - `send_chunk`: Sends individual chunks of a file to the target.
+//! - `handle_chunk`: Processes received chunks, updates progress, and verifies file integrity.
+//!
+//! ## Workflow:
+//!
+//! 1. The worker is initialized with either a local or remote download request.
+//! 2. For sending:
+//!    - The file is opened and its size is determined.
+//!    - The file is split into chunks and sent sequentially.
+//!    - Progress updates are sent after each chunk.
+//! 3. For receiving:
+//!    - A new file is created to store the incoming data.
+//!    - Chunks are received and written to the file.
+//!    - The file's integrity is verified using a SHA256 hash.
+//!    - The manifest is extracted and saved separately.
+//! 4. Upon completion or error, a status message is sent to the parent process.
+//!
+//! ## Error Handling:
+//!
+//! - Hash mismatches between the received file and the expected hash are detected and reported.
+//! - Various I/O errors are caught and propagated.
+//!
+//! ## Integration with App Store:
+//!
+//! This worker process is spawned by the main downloads process of the App Store system.
+//! It uses the `DownloadRequests` and related types from the app store's API to communicate
+//! with other components of the system.
+//!
+//! Note: This implementation uses a fixed chunk size of 256KB for file transfers.
+//!
 use crate::kinode::process::downloads::{
     ChunkRequest, DownloadCompleteRequest, DownloadError, DownloadRequests, HashMismatch,
     LocalDownloadRequest, ProgressUpdate, RemoteDownloadRequest, SizeUpdate,

@@ -35,6 +35,8 @@ cargo install wasm-tools
 rustup install nightly
 rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
+rustup target add wasm32-wasip1
+rustup target add wasm32-wasip1 --toolchain nightly
 cargo install cargo-wasi
 
 # Install NPM so we can build frontends for "distro" packages.
@@ -118,7 +120,7 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - CTRL+J to toggle debug mode
 - CTRL+S to step through events in debug mode
 
-- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file. Off by default, this will write all events and verbose prints with timestamps.
+- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file. On by default, this will write all events and verbose prints with timestamps.
 
 - CTRL+A to jump to beginning of input
 - CTRL+E to jump to end of input

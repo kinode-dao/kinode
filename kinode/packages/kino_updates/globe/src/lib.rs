@@ -24,7 +24,7 @@ fn init(_our: Address) {
                 "User-Agent".to_string(),
                 "ipapi.co/#rust-v1.5".to_string(),
             )])),
-            60,
+            10,
             vec![],
         ) {
             Ok(response) => match serde_json::from_slice::<serde_json::Value>(response.body()) {
@@ -39,8 +39,40 @@ fn init(_our: Address) {
                     println!("Failed to parse location: {e:?}");
                 }
             },
-            Err(e) => {
-                println!("Failed to fetch location: {e:?}");
+            Err(_) => {
+                // try other API
+                match http::client::send_request_await_response(
+                    http::Method::GET,
+                    url::Url::parse("http://ip-api.com/json/").unwrap(),
+                    Some(std::collections::HashMap::from([(
+                        "User-Agent".to_string(),
+                        "curl/7.54.1".to_string(),
+                    )])),
+                    10,
+                    vec![],
+                ) {
+                    Ok(response) => {
+                        match serde_json::from_slice::<serde_json::Value>(response.body()) {
+                            Ok(location) => {
+                                if location.get("lat").is_some() && location.get("lon").is_some() {
+                                    let location_json = serde_json::json!({
+                                        "latitude": location.get("lat").unwrap(),
+                                        "longitude": location.get("lon").unwrap(),
+                                    });
+                                    break location_json;
+                                } else {
+                                    println!("Failed to parse location: {location:?}");
+                                }
+                            }
+                            Err(e) => {
+                                println!("Failed to parse location: {e:?}");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Failed to fetch location: {e:?}");
+                    }
+                }
             }
         };
         std::thread::sleep(std::time::Duration::from_secs(5));
@@ -77,22 +109,22 @@ fn create_widget(location_json: serde_json::Value) -> String {
             const data = {};
             if (data == null) {{
                 document.getElementById('globe').innerHTML = '<p>Failed to fetch node location</p>';
-                return;
-            }}
-            const gData = [{{
-                lat: data.latitude,
-                lng: data.longitude,
-                size: 0.3,
-                color: 'red'
-            }}];
+            }} else {{
+                const gData = [{{
+                    lat: data.latitude,
+                    lng: data.longitude,
+                    size: 0.3,
+                    color: 'red'
+                }}];
 
-            Globe()
+                Globe()
                 .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
                 .pointsData(gData)
                 .pointAltitude('size')
                 .pointColor('color')
                 .pointOfView({{ lat: data.latitude, lng: data.longitude, altitude: 2 }}, 1000)
                 (document.getElementById('globe'));
+            }}
         </script>
     </body>
 
