@@ -62,7 +62,7 @@ export default function AppPage() {
     if (app) {
       const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
       if (launchUrl) {
-        window.location.href = launchUrl;
+        window.open(launchUrl, "_blank");
       }
     }
   }, [app, getLaunchUrl]);

@@ -9,6 +9,7 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
     <a
       id={app?.package_name}
       href={app?.path || undefined}
+      target="_blank"
       className="app-display"
       title={app?.label}
       style={
