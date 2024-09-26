@@ -2073,11 +2073,17 @@ impl KnsUpdate {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FdManagerRequest {
     /// other process -> fd_manager
-    OpenFds { number_opened: u64 },
-    CloseFds { number_closed: u64 },
+    OpenFds {
+        number_opened: u64,
+    },
+    CloseFds {
+        number_closed: u64,
+    },
 
     /// fd_manager -> other process
-    Cull { cull_fraction_denominator: u64 },
+    Cull {
+        cull_fraction_denominator: u64,
+    },
 
     /// administrative
     UpdateMaxFdsAsFractionOfUlimitPercentage(u64),

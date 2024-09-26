@@ -1,11 +1,8 @@
 use lib::types::core::{
-    KernelMessage, Message, MessageReceiver, MessageSender, PrintSender,
-    Printout, ProcessId, Request, FdManagerRequest, FdManagerError, FD_MANAGER_PROCESS_ID,
+    FdManagerError, FdManagerRequest, KernelMessage, Message, MessageReceiver, MessageSender,
+    PrintSender, Printout, ProcessId, Request, FD_MANAGER_PROCESS_ID,
 };
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 const DEFAULT_MAX_OPEN_FDS: u64 = 180;
 const DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE: u64 = 60;
@@ -27,7 +24,7 @@ enum Mode {
     DynamicMax {
         max_fds_as_fraction_of_ulimit_percentage: u64,
         update_ulimit_secs: u64,
-    }
+    },
 }
 
 impl State {
@@ -46,7 +43,11 @@ impl State {
     }
 
     fn update_max_fds_from_ulimit(&mut self, ulimit_max_fds: u64) {
-        let Mode::DynamicMax { ref max_fds_as_fraction_of_ulimit_percentage, .. } = self.mode else {
+        let Mode::DynamicMax {
+            ref max_fds_as_fraction_of_ulimit_percentage,
+            ..
+        } = self.mode
+        else {
             return;
         };
         self.max_fds = ulimit_max_fds * max_fds_as_fraction_of_ulimit_percentage / 100;
@@ -72,12 +73,14 @@ pub async fn fd_manager(
     let mut state = State::new();
     let mut interval = {
         // in code block to release the reference into state
-        let Mode::DynamicMax { ref update_ulimit_secs, .. } = state.mode else {
-            return Ok(())
+        let Mode::DynamicMax {
+            ref update_ulimit_secs,
+            ..
+        } = state.mode
+        else {
+            return Ok(());
         };
-        tokio::time::interval(tokio::time::Duration::from_secs(
-            update_ulimit_secs.clone()
-        ))
+        tokio::time::interval(tokio::time::Duration::from_secs(update_ulimit_secs.clone()))
     };
     let our_node = our_node.as_str();
     loop {
@@ -96,19 +99,21 @@ pub async fn fd_manager(
     }
 }
 
-fn handle_message(km: KernelMessage, _interval: &mut tokio::time::Interval, state: &mut State) -> anyhow::Result<()> {
-    let Message::Request(Request {
-        body,
-        ..
-    }) = km.message else {
+fn handle_message(
+    km: KernelMessage,
+    _interval: &mut tokio::time::Interval,
+    state: &mut State,
+) -> anyhow::Result<()> {
+    let Message::Request(Request { body, .. }) = km.message else {
         return Err(FdManagerError::NotARequest.into());
     };
-    let request: FdManagerRequest = serde_json::from_slice(&body)
-        .map_err(|_e| FdManagerError::BadRequest)?;
+    let request: FdManagerRequest =
+        serde_json::from_slice(&body).map_err(|_e| FdManagerError::BadRequest)?;
     match request {
         FdManagerRequest::OpenFds { number_opened } => {
             state.total_fds += number_opened;
-            state.fds
+            state
+                .fds
                 .entry(km.source.process)
                 .and_modify(|e| *e += number_opened)
                 .or_insert(number_opened);
@@ -116,7 +121,8 @@ fn handle_message(km: KernelMessage, _interval: &mut tokio::time::Interval, stat
         FdManagerRequest::CloseFds { mut number_closed } => {
             assert!(state.total_fds >= number_closed);
             state.total_fds -= number_closed;
-            state.fds
+            state
+                .fds
                 .entry(km.source.process)
                 .and_modify(|e| {
                     assert!(e >= &mut number_closed);
@@ -145,7 +151,8 @@ async fn update_max_fds(send_to_terminal: &PrintSender, state: &mut State) -> an
         Ok(ulimit_max_fds) => ulimit_max_fds,
         Err(_) => {
             Printout::new(1, "Couldn't update max fd limit: ulimit failed")
-                .send(send_to_terminal).await;
+                .send(send_to_terminal)
+                .await;
             return Ok(());
         }
     };
@@ -153,13 +160,18 @@ async fn update_max_fds(send_to_terminal: &PrintSender, state: &mut State) -> an
     Ok(())
 }
 
-async fn send_cull(our_node: &str, send_to_loop: &MessageSender, state: &State) -> anyhow::Result<()> {
+async fn send_cull(
+    our_node: &str,
+    send_to_loop: &MessageSender,
+    state: &State,
+) -> anyhow::Result<()> {
     let message = Message::Request(Request {
         inherit: false,
         expects_response: None,
         body: serde_json::to_vec(&FdManagerRequest::Cull {
             cull_fraction_denominator: state.cull_fraction_denominator.clone(),
-        }).unwrap(),
+        })
+        .unwrap(),
         metadata: None,
         capabilities: vec![],
     });
