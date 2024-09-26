@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 mod eth;
 #[cfg(feature = "simulation-mode")]
 mod fakenet;
+mod fd_manager;
 mod http;
 mod kernel;
 mod keygen;
@@ -42,6 +43,7 @@ const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
+const FD_MANAGER_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WS_MIN_PORT: u16 = 9_000;
 const TCP_MIN_PORT: u16 = 10_000;
@@ -175,6 +177,9 @@ async fn main() {
     // vfs maintains metadata about files in fs for processes
     let (vfs_message_sender, vfs_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(VFS_CHANNEL_CAPACITY);
+    // fd_manager makes sure we don't overrun the `ulimit -n`: max number of file descriptors
+    let (fd_manager_sender, fd_manager_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(FD_MANAGER_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
@@ -282,6 +287,12 @@ async fn main() {
             None,
             false,
         ),
+        (
+            ProcessId::new(Some("fd_manager"), "distro", "sys"),
+            fd_manager_sender,
+            None,
+            false,
+        ),
     ];
 
     /*
@@ -350,6 +361,12 @@ async fn main() {
         state_receiver,
         db,
         home_directory_path.clone(),
+    ));
+    tasks.spawn(fd_manager::fd_manager(
+        our_name_arc.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        fd_manager_receiver,
     ));
     tasks.spawn(kv::kv(
         our_name_arc.clone(),

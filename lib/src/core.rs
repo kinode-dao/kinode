@@ -17,6 +17,7 @@ lazy_static::lazy_static! {
     pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
     pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
     pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd_manager"), "distro", "sys");
 }
 
 //
@@ -2067,4 +2068,29 @@ impl KnsUpdate {
     pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
         self.ports.get(protocol)
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum FdManagerRequest {
+    /// other process -> fd_manager
+    OpenFds { number_opened: u64 },
+    CloseFds { number_closed: u64 },
+
+    /// fd_manager -> other process
+    Cull { cull_fraction_denominator: u64 },
+
+    /// administrative
+    UpdateMaxFdsAsFractionOfUlimitPercentage(u64),
+    UpdateUpdateUlimitSecs(u64),
+    UpdateCullFractionDenominator(u64),
+}
+
+#[derive(Debug, Error)]
+pub enum FdManagerError {
+    #[error("fd_manager: received a non-Request message")]
+    NotARequest,
+    #[error("fd_manager: received a non-FdManangerRequest")]
+    BadRequest,
+    #[error("fd_manager: received a FdManagerRequest::Cull, but I am the one who culls")]
+    FdManagerWasSentCull,
 }
