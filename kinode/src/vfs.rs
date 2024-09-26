@@ -1,9 +1,9 @@
 use dashmap::DashMap;
 use lib::types::core::{
-    Address, CapMessage, CapMessageSender, Capability, DirEntry, FdManagerRequest, FileMetadata, FileType,
-    KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
-    Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest, VfsResponse,
-    FD_MANAGER_PROCESS_ID, KERNEL_PROCESS_ID, VFS_PROCESS_ID,
+    Address, CapMessage, CapMessageSender, Capability, DirEntry, FdManagerRequest, FileMetadata,
+    FileType, KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId,
+    PrintSender, Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest,
+    VfsResponse, FD_MANAGER_PROCESS_ID, KERNEL_PROCESS_ID, VFS_PROCESS_ID,
 };
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -205,7 +205,9 @@ impl Files {
         self.update_access_order(&path).await;
         crate::fd_manager::send_fd_manager_open(&self.our, 1, &self.send_to_loop)
             .await
-            .map_err(|e| VfsError::Other { error: e.to_string() })?;
+            .map_err(|e| VfsError::Other {
+                error: e.to_string(),
+            })?;
         Ok(file)
     }
 
@@ -213,7 +215,9 @@ impl Files {
         if self.open_files.remove(path).is_some() {
             crate::fd_manager::send_fd_manager_close(&self.our, 1, &self.send_to_loop)
                 .await
-                .map_err(|e| VfsError::Other { error: e.to_string() })?;
+                .map_err(|e| VfsError::Other {
+                    error: e.to_string(),
+                })?;
         }
         Ok(())
     }
@@ -250,7 +254,9 @@ impl Files {
         }
         crate::fd_manager::send_fd_manager_close(&self.our, closed, &self.send_to_loop)
             .await
-            .map_err(|e| VfsError::Other { error: e.to_string() })?;
+            .map_err(|e| VfsError::Other {
+                error: e.to_string(),
+            })?;
         Ok(())
     }
 
@@ -1028,20 +1034,20 @@ fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
 }
 
 async fn handle_fd_request(km: KernelMessage, files: Files) -> anyhow::Result<()> {
-    let Message::Request(Request {
-        body,
-        ..
-    }) = km.message
-    else {
+    let Message::Request(Request { body, .. }) = km.message else {
         return Err(anyhow::anyhow!("not a request"));
     };
 
     let request: FdManagerRequest = serde_json::from_slice(&body)?;
 
     match request {
-        FdManagerRequest::Cull { cull_fraction_denominator } => {
+        FdManagerRequest::Cull {
+            cull_fraction_denominator,
+        } => {
             let fraction_to_close = files.open_files.len() as u64 / cull_fraction_denominator;
-            files.close_least_recently_used_files(fraction_to_close).await?;
+            files
+                .close_least_recently_used_files(fraction_to_close)
+                .await?;
         }
         _ => {
             return Err(anyhow::anyhow!("non-Cull FdManagerRequest"));

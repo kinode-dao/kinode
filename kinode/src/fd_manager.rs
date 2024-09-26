@@ -104,9 +104,8 @@ pub async fn fd_manager(
                 2,
                 format!(
                     "Have {} open >= {} max fds; sending Cull Request...",
-                    state.total_fds,
-                    state.max_fds,
-                )
+                    state.total_fds, state.max_fds,
+                ),
             )
             .send(&send_to_terminal)
             .await;
@@ -139,9 +138,7 @@ fn handle_message(
             assert!(state.total_fds >= number_closed);
             let return_value = Some(format!(
                 "{} closed {} of {}",
-                km.source.process,
-                number_closed,
-                state.total_fds,
+                km.source.process, number_closed, state.total_fds,
             ));
             state.total_fds -= number_closed;
             state
