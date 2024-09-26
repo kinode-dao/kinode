@@ -1,5 +1,5 @@
 use lib::types::core::{
-    FdManagerError, FdManagerRequest, KernelMessage, Message, MessageReceiver, MessageSender,
+    Address, FdManagerError, FdManagerRequest, KernelMessage, Message, MessageReceiver, MessageSender,
     PrintSender, Printout, ProcessId, Request, FD_MANAGER_PROCESS_ID,
 };
 use std::{collections::HashMap, sync::Arc};
@@ -178,8 +178,8 @@ async fn send_cull(
     for process_id in state.fds.keys() {
         KernelMessage::builder()
             .id(rand::random())
-            .source((our_node.clone(), FD_MANAGER_PROCESS_ID.clone()))
-            .target((our_node.clone(), process_id.clone()))
+            .source((our_node, FD_MANAGER_PROCESS_ID.clone()))
+            .target((our_node, process_id.clone()))
             .message(message.clone())
             .build()
             .unwrap()
@@ -201,4 +201,41 @@ fn get_max_fd_limit() -> anyhow::Result<u64> {
     } else {
         Err(anyhow::anyhow!("Failed to get the resource limit."))
     }
+}
+
+pub async fn send_fd_manager_open(our: &Address, number_opened: u64, send_to_loop: &MessageSender) -> anyhow::Result<()> {
+    let message = Message::Request(Request {
+        inherit: false,
+        expects_response: None,
+        body: serde_json::to_vec(&FdManagerRequest::OpenFds { number_opened }).unwrap(),
+        metadata: None,
+        capabilities: vec![],
+    });
+    send_to_fd_manager(our, message, send_to_loop).await?;
+    Ok(())
+}
+
+pub async fn send_fd_manager_close(our: &Address, number_closed: u64, send_to_loop: &MessageSender) -> anyhow::Result<()> {
+    let message = Message::Request(Request {
+        inherit: false,
+        expects_response: None,
+        body: serde_json::to_vec(&FdManagerRequest::CloseFds { number_closed }).unwrap(),
+        metadata: None,
+        capabilities: vec![],
+    });
+    send_to_fd_manager(our, message, send_to_loop).await?;
+    Ok(())
+}
+
+async fn send_to_fd_manager(our: &Address, message: Message, send_to_loop: &MessageSender) -> anyhow::Result<()> {
+    KernelMessage::builder()
+        .id(rand::random())
+        .source(our.clone())
+        .target((our.node.clone(), FD_MANAGER_PROCESS_ID.clone()))
+        .message(message)
+        .build()
+        .unwrap()
+        .send(send_to_loop)
+        .await;
+    Ok(())
 }
