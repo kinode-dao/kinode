@@ -1,137 +1,116 @@
-interface downloads {
-    //
-    // download API as presented by download:app_store:sys-v1
-    //
+/// The App Store manages the discovery, download, and installation of packages (apps) 
+/// in the Kinode ecosystem. It consists of three main processes: main, chain, and downloads.
 
+/// main:app_store:sys
+interface main {
     use standard.{package-id};
-    use chain.{onchain-metadata};
+    use chain.{onchain-metadata, chain-error};
+    use downloads.{download-error};
 
-    variant download-requests {
-        // remote only
-        remote-download(remote-download-request),
-        chunk(chunk-request),
-        progress(progress-update),
-        size(size-update),
-        // local only
-        local-download(local-download-request),
-        auto-update(auto-update-request),
-        download-complete(download-complete-request),
-        get-files(option<package-id>),
-        remove-file(remove-file-request),
-        add-download(add-download-request),
-        start-mirroring(package-id),
-        stop-mirroring(package-id),
+    /// Represents various requests that can be made to the main App Store interface
+    variant request {
+        local(local-request),
     }
 
-    variant download-responses {
-        success,
-        err(download-error),
-        get-files(list<entry>),
-    }
-
-    record local-download-request {
-        package-id: package-id,
-        download-from: string,
-        desired-version-hash: string,
-    }
-
-    record auto-update-request {
-        package-id: package-id,
-        metadata: onchain-metadata,
-    }
-
-    record remote-download-request {
-        package-id: package-id,
-        worker-address: string,
-        desired-version-hash: string,
-    }
-
-    variant download-error {
-        no-package,
-        not-mirroring,
-        hash-mismatch(hash-mismatch),
-        file-not-found,
-        worker-spawn-failed,
-        http-client-error,
-        blob-not-found,
-        vfs-error,
+    /// Represents various responses from the main App Store interface
+    variant response {
+        local(local-response),
+        chain-error(chain-error),
+        download-error(download-error),
         handling-error(string),
     }
 
-    record download-complete-request {
+    /// Local requests that can be made to the App Store
+    variant local-request {
+        /// Request to add a new package to app_store. Includes zip and an optional onchain-metadata.
+        /// This is used by kit start
+        new-package(new-package-request),
+        /// Request to install a package
+        install(install-package-request),
+        /// Request to uninstall a package
+        uninstall(package-id),
+        /// Request to list all available APIs
+        apis,
+        /// Request to get a specific API
+        get-api(package-id),
+    }
+
+    /// Local responses from the App Store
+    variant local-response {
+        new-package-response(new-package-response),
+        install-response(install-response),
+        uninstall-response(uninstall-response),
+        apis-response(apis-response),
+        get-api-response(get-api-response),
+    }
+
+    /// Request to add a new package
+    record new-package-request {
         package-id: package-id,
-        version-hash: string,
-        err: option<download-error>,
-    }
-
-    record hash-mismatch {
-        desired: string,
-        actual: string,
-    }
-
-    record chunk-request {
-        package-id: package-id,
-        version-hash: string,
-        offset: u64,
-        length: u64,
-    }
-
-    variant entry {
-        file(file-entry),
-        dir(dir-entry),
-    }
-
-    record file-entry {
-        name: string,
-        size: u64,
-        manifest: string,
-    }
-
-    record dir-entry {
-        name: string,
-        mirroring: bool,
-    }
-
-    record remove-file-request {
-        package-id: package-id,
-        version-hash: string,
-    }
-
-    // part of new-package-request local-only flow.
-    record add-download-request {
-        package-id: package-id,
-        version-hash: string,
         mirror: bool,
     }
 
-    record progress-update {
+    /// Request to install a package
+    record install-package-request {
         package-id: package-id,
+        metadata: option<onchain-metadata>, // if None, local sideloaded package.
         version-hash: string,
-        downloaded: u64,
-        total: u64,
     }
 
-    record size-update {
-        package-id: package-id,
-        size: u64,
+    /// Response for a new package request
+    enum new-package-response {
+        success,
+        no-blob,
+        install-failed,
+        already-exists,
+    }
+
+    /// Response for an install request
+    enum install-response {
+        success,
+        failure,
+    }
+
+    /// Response for an uninstall request
+    enum uninstall-response {
+        success,
+        failure,
+    }
+
+    /// Response containing a list of available APIs
+    record apis-response {
+        apis: list<package-id>,
+    }
+
+    /// Response for a get-api request
+    /// The API itself will be in the response blob if successful
+    enum get-api-response {
+        success,
+        failure,
     }
 }
 
+/// chain:app_store:sys 
+/// This process holds information about on-chain ~uri and ~hash notes,
+/// and fetches the metadata with the http_client:distro:sys when necessary.
 interface chain {
-    //
-    // on-chain API as presented by chain:app_store:sys-v1
-    //
-
     use standard.{package-id};
 
+    /// Requests that can be made to the chain component
     variant chain-requests {
+        /// Get information about a specific app
         get-app(package-id),
+        /// Get information about all apps
         get-apps,
+        /// Get information about apps published by the current node
         get-our-apps,
+        /// Start auto-updating an app
         start-auto-update(package-id),
+        /// Stop auto-updating an app
         stop-auto-update(package-id),
     }
 
+    /// Responses from the chain component
     variant chain-responses {
         get-app(option<onchain-app>),
         get-apps(list<onchain-app>),
@@ -141,10 +120,12 @@ interface chain {
         err(chain-error),
     }
 
+    /// Possible errors from the chain component
     variant chain-error {
         no-package,
     }
 
+    /// Represents an app as stored on-chain
     record onchain-app {
         package-id: package-id,
         tba: string,
@@ -154,6 +135,7 @@ interface chain {
         auto-update: bool,
     }
 
+    /// Metadata associated with an on-chain app
     record onchain-metadata {
         name: option<string>,
         description: option<string>,
@@ -163,6 +145,7 @@ interface chain {
         properties: onchain-properties,
     }
 
+    /// Properties associated with an on-chain app
     record onchain-properties {
         package-name: string,
         publisher: string,
@@ -176,82 +159,152 @@ interface chain {
     }
 }
 
-interface main {
-    //
-    // app store API as presented by main:app_store:sys-v1
-    //
-
+/// downloads:app_store:sys 
+/// This process is responsible for downloading app packages from remote mirrors, 
+/// spawning ft_workers, and serves the files to the main:app_store:sys process.
+/// It also manages the local storage of downloaded app zip packages.
+/// 
+interface downloads {
     use standard.{package-id};
-    use chain.{onchain-metadata, chain-error};
-    use downloads.{download-error};
+    use chain.{onchain-metadata};
 
-    variant request {
-        local(local-request),
+    /// Requests that can be made to the downloads component
+    variant download-requests {
+        /// Request a remote download
+        remote-download(remote-download-request),
+        /// Request a chunk of a file
+        chunk(chunk-request),
+        /// Update download progress
+        progress(progress-update),
+        /// Update file size information
+        size(size-update),
+        /// Request a local download
+        local-download(local-download-request),
+        /// Request an auto-update
+        auto-update(auto-update-request),
+        /// Notify that a download is complete
+        download-complete(download-complete-request),
+        /// Get files for a package
+        get-files(option<package-id>),
+        /// Remove a file
+        remove-file(remove-file-request),
+        /// Add a download
+        add-download(add-download-request),
+        /// Start mirroring a package
+        start-mirroring(package-id),
+        /// Stop mirroring a package
+        stop-mirroring(package-id),
     }
 
-    variant response {
-        local(local-response),
-        chain-error(chain-error),
-        download-error(download-error),
+    /// Responses from the downloads component
+    variant download-responses {
+        success,
+        err(download-error),
+        get-files(list<entry>),
+    }
+
+    /// Request for a local download
+    record local-download-request {
+        package-id: package-id,
+        download-from: string,
+        desired-version-hash: string,
+    }
+
+    /// Request for an auto-update
+    record auto-update-request {
+        package-id: package-id,
+        metadata: onchain-metadata,
+    }
+
+    /// Request for a remote download
+    record remote-download-request {
+        package-id: package-id,
+        worker-address: string,
+        desired-version-hash: string,
+    }
+
+    /// Possible errors during download operations
+    variant download-error {
+        no-package,
+        not-mirroring,
+        hash-mismatch(hash-mismatch),
+        file-not-found,
+        worker-spawn-failed,
+        http-client-error,
+        blob-not-found,
+        vfs-error,
         handling-error(string),
     }
 
-    variant local-request {
-        new-package(new-package-request),
-        install(install-package-request),
-        uninstall(package-id),
-        apis,
-        get-api(package-id),
-    }
-
-    variant local-response {
-        new-package-response(new-package-response),
-        install-response(install-response),
-        uninstall-response(uninstall-response),
-        apis-response(apis-response),
-        get-api-response(get-api-response),
-    }
-
-
-    record new-package-request {
+    /// Notification that a download is complete
+    record download-complete-request {
         package-id: package-id,
-        mirror: bool,
+        version-hash: string,
+        err: option<download-error>,
     }
 
-    record install-package-request {
+    /// Represents a hash mismatch error
+    record hash-mismatch {
+        desired: string,
+        actual: string,
+    }
+
+    /// Request for a specific chunk of a file
+    record chunk-request {
         package-id: package-id,
-        metadata: option<onchain-metadata>, // if None == local sideload package.
+        version-hash: string,
+        offset: u64,
+        length: u64,
+    }
+
+    /// Represents an entry in the file system (either a file or a directory)
+    variant entry {
+        file(file-entry),
+        dir(dir-entry),
+    }
+
+    /// Represents a file entry
+    record file-entry {
+        name: string,
+        size: u64,
+        manifest: string,
+    }
+
+    /// Represents a directory entry
+    record dir-entry {
+        name: string,
+        mirroring: bool,
+    }
+
+    /// Request to remove a file
+    record remove-file-request {
+        package-id: package-id,
         version-hash: string,
     }
 
-    enum new-package-response {
-        success,
-        no-blob,
-        install-failed,
-        already-exists,
+    /// Request to add a download
+    record add-download-request {
+        package-id: package-id,
+        version-hash: string,
+        mirror: bool,
     }
 
-    enum install-response {
-        success,
-        failure,
+    /// Update on the progress of a download
+    record progress-update {
+        package-id: package-id,
+        version-hash: string,
+        downloaded: u64,
+        total: u64,
     }
 
-    enum uninstall-response {
-        success,
-        failure,
-    }
-
-    record apis-response {
-        apis: list<package-id>,
-    }
-
-    // the API itself will be in response blob if success!
-    enum get-api-response {
-        success,
-        failure,
+    /// Update on the size of a file
+    record size-update {
+        package-id: package-id,
+        size: u64,
     }
 }
 
+/// The app-store-sys-v1 world, which includes the main, downloads, and chain interfaces
 world app-store-sys-v1 {
     import main;
     import downloads;

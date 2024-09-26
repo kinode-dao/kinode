@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash, FaSync } from "react-icons/fa";
 import useAppsStore from "../store";
@@ -8,7 +8,7 @@ import { compareVersions } from "../utils/compareVersions";
 export default function AppPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { fetchListing, fetchInstalledApp, uninstallApp, setAutoUpdate } = useAppsStore();
+  const { fetchListing, fetchInstalledApp, uninstallApp, setAutoUpdate, getLaunchUrl, fetchHomepageApps } = useAppsStore();
   const [app, setApp] = useState<AppListing | null>(null);
   const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
@@ -57,6 +57,21 @@ export default function AppPage() {
     }
   }, [id, fetchListing, fetchInstalledApp]);
 
+
+  const handleLaunch = useCallback(() => {
+    if (app) {
+      const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+      if (launchUrl) {
+        window.location.href = launchUrl;
+      }
+    }
+  }, [app, getLaunchUrl]);
+
+  const canLaunch = useMemo(() => {
+    if (!app) return false;
+    return !!getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+  }, [app, getLaunchUrl]);
+
   const handleUninstall = async () => {
     if (!app) return;
     setIsUninstalling(true);
@@ -88,14 +103,11 @@ export default function AppPage() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    fetchHomepageApps();
+  }, [loadData, fetchHomepageApps]);
 
   const handleDownload = () => {
     navigate(`/download/${id}`);
-  };
-
-  const handleLaunch = () => {
-    window.location.href = `/${app?.package_id.package_name}:${app?.package_id.package_name}:${app?.package_id.publisher_node}/`;
   };
 
   if (isLoading) {
@@ -150,8 +162,12 @@ export default function AppPage() {
       <div className="app-actions">
         {installedApp && (
           <>
-            <button onClick={handleLaunch} className="primary">
-              <FaPlay /> Launch
+            <button
+              onClick={handleLaunch}
+              className="primary"
+              disabled={!canLaunch}
+            >
+              <FaPlay /> {canLaunch ? 'Launch' : 'No UI found for app'}
             </button>
             <button onClick={handleUninstall} className="secondary" disabled={isUninstalling}>
               {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />} Uninstall

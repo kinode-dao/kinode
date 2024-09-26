@@ -16,7 +16,7 @@ The format is "/" + "process_name:package_name:publisher_node"
 const BASE_URL = `/`;
 
 // This is the proxy URL, it must match the node you are developing against
-const PROXY_URL = ('http://127.0.0.1:8080').replace('localhost', '127.0.0.1');
+const PROXY_URL = (process.env.VITE_NODE_URL || 'http://127.0.0.1:8080').replace('localhost', '127.0.0.1');
 
 export default defineConfig({
   plugins: [

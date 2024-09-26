@@ -127,7 +127,7 @@ function SetPassword({
   return (
     <>
       {loading ? (
-        <Loader msg="Setting up node..." />
+        <Loader msg="Please sign the structured message in your wallet to set your password." />
       ) : (
         <form className="form" onSubmit={handleSubmit}>
           <div className="form-group">

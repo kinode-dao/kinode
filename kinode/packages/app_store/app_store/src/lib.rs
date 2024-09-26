@@ -1,21 +1,34 @@
 #![feature(let_chains)]
-//! main:app_store:
-//! acts as a manager for installed apps, and coordinator for http requests.
+//! main:app_store:sys
 //!
-//! the chain:app_store process takes care of on-chain indexing, while
-//! the downloads:app_store process takes care of sharing and versioning.
+//! This process serves as the primary interface for the App Store system in the Kinode ecosystem.
+//! It coordinates between the http user interface, the chain process, and the downloads process.
 //!
-//! packages are apps; apps are packages. chain:app_store uses the kimap contract to determine
-//! what apps are available to download and what node(s) to download them from.
+//! ## Responsibilities:
 //!
-//! once we know that list, we can request a package from a node and download it locally.
-//! (we can also manually download an "untracked" package if we know its name and distributor node)
-//! packages that are downloaded can then be installed!
+//! 1. Handle user requests for app installation, uninstallation, and management.
+//! 2. Coordinate with the chain process to get updated app metadata.
+//! 3. Interact with the downloads process to manage app zip packages.
+//! 4. Manage the local state of installed apps and their permissions & capabilities.
+//! 5. Provide an HTTP API for frontend interactions.
 //!
-//! installed packages can be managed:
-//! - given permissions (necessary to complete install)
-//! - uninstalled + deleted
-//! - set to automatically update if a new version is available
+//! ## Key Components:
+//!
+//! - `state.rs`: Manages the local state of installed packages and their metadata.
+//! - `http_api.rs`: Provides HTTP endpoints for frontend interactions.
+//! - `utils.rs`: Utility functions for app management.
+//!
+//! ## Interaction Flow:
+//!
+//! 1. User initiates an action through the frontend (or terminal/other remote kinode).
+//! 2. The HTTP API receives the request and translates it into an internal message.
+//! 3. `handle_message` routes the message to the appropriate handler.
+//! 4. The handler processes the request, often involving communication with the chain or downloads process.
+//! 5. Results are sent back to the user through the HTTP API.
+//!
+//! Note: This process does not directly handle file transfers or on-chain operations.
+//! It delegates these responsibilities to the downloads and chain processes respectively.
+//!
 use crate::kinode::process::downloads::{
     DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
 };

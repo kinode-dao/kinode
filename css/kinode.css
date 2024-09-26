@@ -23,6 +23,8 @@ select {
     font-family: var(--font-family-main);
 }
 
+@import url('https://fonts.googleapis.com/css2?family=Kode+Mono:wght@700&display=swap');
+
 /* Variables */
 :root {
     color-scheme: light dark;

@@ -21,16 +21,24 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSele
         if (!appData) return;
         const mirrors = [appData.package_id.publisher_node, ...(appData.metadata?.properties?.mirrors || [])];
         setAvailableMirrors(mirrors);
-        setSelectedMirror(appData.package_id.publisher_node);
 
-        mirrors.forEach(mirror => {
+        // Start with the publisher node
+        setSelectedMirror(appData.package_id.publisher_node);
+        setMirrorStatuses(prev => ({ ...prev, [appData.package_id.publisher_node]: null }));
+
+        for (const mirror of mirrors) {
             if (mirror.startsWith('http')) {
                 setMirrorStatuses(prev => ({ ...prev, [mirror]: 'http' }));
+                setSelectedMirror(mirror);
+                break;
             } else {
-                setMirrorStatuses(prev => ({ ...prev, [mirror]: null }));
-                checkMirrorStatus(mirror);
+                const status = await checkMirrorStatus(mirror);
+                if (status) {
+                    setSelectedMirror(mirror);
+                    break;
+                }
             }
-        });
+        }
     }, [packageId, fetchListing, checkMirror]);
 
     useEffect(() => {
@@ -41,8 +49,10 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSele
         try {
             const status = await checkMirror(mirror);
             setMirrorStatuses(prev => ({ ...prev, [mirror]: status?.is_online ?? false }));
+            return status?.is_online ?? false;
         } catch {
             setMirrorStatuses(prev => ({ ...prev, [mirror]: false }));
+            return false;
         }
     }, [checkMirror]);
 
@@ -62,7 +72,6 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSele
             setIsCustomMirrorSelected(false);
             setCustomMirror("");
             if (!value.startsWith('http')) {
-                // Recheck the status when a non-HTTP mirror is selected
                 setMirrorStatuses(prev => ({ ...prev, [value]: null }));
                 await checkMirrorStatus(value);
             }
@@ -92,7 +101,6 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSele
     return (
         <div className="mirror-selector">
             <select value={selectedMirror || ""} onChange={handleMirrorChange}>
-                <option value="">Select a mirror</option>
                 {availableMirrors.map((mirror, index) => (
                     <option key={`${mirror}-${index}`} value={mirror}>
                         {mirror} {getMirrorStatus(mirror, mirrorStatuses[mirror])}

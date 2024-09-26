@@ -26,7 +26,7 @@ export const Modal: React.FC<Props> = ({ title, onClose, children }) => {
       <div className="modal-inner">
         <div className="modal-header">
           <h1>{title}</h1>
-          <button onClick={onClose}>
+          <button className="secondary" onClick={onClose}>
             <FaX />
           </button>
         </div>

@@ -1,3 +1,7 @@
+//! http_api for main:app_store:sys
+//! handles http_requests coming in, sending them to relevant processes (main/downloads/chain),
+//! and sends back http_responses.
+//!
 use crate::{
     kinode::process::chain::{ChainRequests, ChainResponses},
     kinode::process::downloads::{
@@ -41,12 +45,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
             .expect("failed to bind http path");
     }
     http_server
-        .serve_ui(
-            &our,
-            "ui",
-            vec!["/", "/app/:id", "/publish", "/download/:id", "my-downloads"],
-            config.clone(),
-        )
+        .serve_ui(&our, "ui", vec!["/"], config.clone())
         .expect("failed to serve static UI");
 
     http_server
@@ -83,37 +82,33 @@ fn make_widget() -> String {
         #latest-apps {
             display: flex;
             flex-wrap: wrap;
-            padding: 0.5rem;
-            gap: 0.5rem;
+            padding-left: 1rem;
             align-items: center;
             border-radius: 1rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             height: 100vh;
             width: 100vw;
             overflow-y: auto;
+            padding-bottom: 30px;
         }
 
         .app {
-            padding: 0.5rem;
+            padding: 1rem 1rem 1rem 0rem;
             display: flex;
             flex-grow: 1;
-            align-items: stretch;
-            border-radius: 0.5rem;
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            align-items: center;
+            border-bottom: 1px solid rgba(0,0,0,0.1)
             cursor: pointer;
             font-family: sans-serif;
             width: 100%;
+            min-height: 100px;
         }
 
         .app-image {
-            border-radius: 0.75rem;
-            margin-right: 0.5rem;
-            flex-grow: 1;
+            margin-right: 1rem;
             background-size: contain;
             background-repeat: no-repeat;
-            background-position: center;
-            height: 92px;
-            width: 92px;
+            height: 48px;
+            width: 48px;
             max-width: 33%;
         }
 
@@ -140,33 +135,41 @@ fn make_widget() -> String {
     <div id="latest-apps"></div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            fetch('/main:app_store:sys/apps', { credentials: 'include' })
-                .then(response => response.json())
-                .then(data => {
-                    const container = document.getElementById('latest-apps');
-                    data.forEach(app => {
-                        if (app.metadata) {
-                            const a = document.createElement('a');
-                            a.className = 'app';
-                            a.href = `/main:app_store:sys/app/${app.package_id.package_name}:${app.package_id.publisher_node}`
-                            a.target = '_blank';
-                            a.rel = 'noopener noreferrer';
-                            const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
-                            a.innerHTML = `<div
-                                class="app-image"
-                                style="
-                                    background-image: url('${app.metadata.image || `/bird-orange.svg`}');
-                                "
-                            ></div>
-                            <div class="app-info">
-                                <h2>${app.metadata.name}</h2>
-                                <p>${app.metadata.description}</p>
-                            </div>`;
+            function fetchApps() {
+                fetch('/main:app_store:sys/apps', { credentials: 'include' })
+                    .then(response => response.json())
+                    .then(data => {
+                        const container = document.getElementById('latest-apps');
+                        container.innerHTML = '';
+                        data.forEach(app => {
+                            if (app.metadata) {
+                                const a = document.createElement('a');
+                                a.className = 'app';
+                                a.href = `/main:app_store:sys/app/${app.package_id.package_name}:${app.package_id.publisher_node}`
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
+                                a.innerHTML = `<div
+                                    class="app-image"
+                                    style="
+                                        background-image: url('${app.metadata.image || `/bird-orange.svg`}');
+                                    "
+                                ></div>
+                                <div class="app-info">
+                                    <h2>${app.metadata.name}</h2>
+                                    <p>${app.metadata.description}</p>
+                                </div>`;
                                 container.appendChild(a);
-                        }
+                            }
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error fetching apps:', error);
+                        setTimeout(fetchApps, 1000); // Retry after a second
                     });
-                })
-                .catch(error => console.error('Error fetching apps:', error));
+            }
+
+            fetchApps();
         });
     </script>
 </body>
