@@ -1,6 +1,6 @@
 use lib::types::core::{
-    Address, FdManagerError, FdManagerRequest, KernelMessage, Message, MessageReceiver, MessageSender,
-    PrintSender, Printout, ProcessId, Request, FD_MANAGER_PROCESS_ID,
+    Address, FdManagerError, FdManagerRequest, KernelMessage, Message, MessageReceiver,
+    MessageSender, PrintSender, Printout, ProcessId, Request, FD_MANAGER_PROCESS_ID,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -203,7 +203,11 @@ fn get_max_fd_limit() -> anyhow::Result<u64> {
     }
 }
 
-pub async fn send_fd_manager_open(our: &Address, number_opened: u64, send_to_loop: &MessageSender) -> anyhow::Result<()> {
+pub async fn send_fd_manager_open(
+    our: &Address,
+    number_opened: u64,
+    send_to_loop: &MessageSender,
+) -> anyhow::Result<()> {
     let message = Message::Request(Request {
         inherit: false,
         expects_response: None,
@@ -215,7 +219,11 @@ pub async fn send_fd_manager_open(our: &Address, number_opened: u64, send_to_loo
     Ok(())
 }
 
-pub async fn send_fd_manager_close(our: &Address, number_closed: u64, send_to_loop: &MessageSender) -> anyhow::Result<()> {
+pub async fn send_fd_manager_close(
+    our: &Address,
+    number_closed: u64,
+    send_to_loop: &MessageSender,
+) -> anyhow::Result<()> {
     let message = Message::Request(Request {
         inherit: false,
         expects_response: None,
@@ -227,7 +235,11 @@ pub async fn send_fd_manager_close(our: &Address, number_closed: u64, send_to_lo
     Ok(())
 }
 
-async fn send_to_fd_manager(our: &Address, message: Message, send_to_loop: &MessageSender) -> anyhow::Result<()> {
+async fn send_to_fd_manager(
+    our: &Address,
+    message: Message,
+    send_to_loop: &MessageSender,
+) -> anyhow::Result<()> {
     KernelMessage::builder()
         .id(rand::random())
         .source(our.clone())
