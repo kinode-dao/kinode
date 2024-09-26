@@ -1720,6 +1720,8 @@ pub enum VfsError {
     NotFound { path: String },
     #[error("Creating directory failed at path: {path}: {error}")]
     CreateDirError { path: String, error: String },
+    #[error("Other error: {error}")]
+    Other { error: String },
 }
 
 impl VfsError {
@@ -1734,6 +1736,7 @@ impl VfsError {
             VfsError::BadJson { .. } => "NoJson",
             VfsError::NotFound { .. } => "NotFound",
             VfsError::CreateDirError { .. } => "CreateDirError",
+            VfsError::Other { .. } => "Other",
         }
     }
 }

@@ -86,7 +86,13 @@ pub async fn fd_manager(
     loop {
         tokio::select! {
             Some(message) = recv_from_loop.recv() => {
-                handle_message(message, &mut interval, &mut state)?;
+                if let Some(to_print) = handle_message(
+                    message,
+                    &mut interval,
+                    &mut state,
+                )? {
+                    Printout::new(2, to_print).send(&send_to_terminal).await;
+                }
             }
             _ = interval.tick() => {
                 update_max_fds(&send_to_terminal, &mut state).await?;
@@ -94,6 +100,16 @@ pub async fn fd_manager(
         }
 
         if state.total_fds >= state.max_fds {
+            Printout::new(
+                2,
+                format!(
+                    "Have {} open >= {} max fds; sending Cull Request...",
+                    state.total_fds,
+                    state.max_fds,
+                )
+            )
+            .send(&send_to_terminal)
+            .await;
             send_cull(our_node, &send_to_loop, &state).await?;
         }
     }
@@ -103,13 +119,13 @@ fn handle_message(
     km: KernelMessage,
     _interval: &mut tokio::time::Interval,
     state: &mut State,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<String>> {
     let Message::Request(Request { body, .. }) = km.message else {
         return Err(FdManagerError::NotARequest.into());
     };
     let request: FdManagerRequest =
         serde_json::from_slice(&body).map_err(|_e| FdManagerError::BadRequest)?;
-    match request {
+    let return_value = match request {
         FdManagerRequest::OpenFds { number_opened } => {
             state.total_fds += number_opened;
             state
@@ -117,9 +133,16 @@ fn handle_message(
                 .entry(km.source.process)
                 .and_modify(|e| *e += number_opened)
                 .or_insert(number_opened);
+            None
         }
         FdManagerRequest::CloseFds { mut number_closed } => {
             assert!(state.total_fds >= number_closed);
+            let return_value = Some(format!(
+                "{} closed {} of {}",
+                km.source.process,
+                number_closed,
+                state.total_fds,
+            ));
             state.total_fds -= number_closed;
             state
                 .fds
@@ -129,6 +152,7 @@ fn handle_message(
                     *e -= number_closed
                 })
                 .or_insert(number_closed);
+            return_value
         }
         FdManagerRequest::Cull { .. } => {
             return Err(FdManagerError::FdManagerWasSentCull.into());
@@ -142,8 +166,8 @@ fn handle_message(
         FdManagerRequest::UpdateCullFractionDenominator(_new) => {
             unimplemented!();
         }
-    }
-    Ok(())
+    };
+    Ok(return_value)
 }
 
 async fn update_max_fds(send_to_terminal: &PrintSender, state: &mut State) -> anyhow::Result<()> {

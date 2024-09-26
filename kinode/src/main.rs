@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 mod eth;
 #[cfg(feature = "simulation-mode")]
 mod fakenet;
-mod fd_manager;
+pub mod fd_manager;
 mod http;
 mod kernel;
 mod keygen;

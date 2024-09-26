@@ -1,9 +1,9 @@
 use dashmap::DashMap;
 use lib::types::core::{
-    Address, CapMessage, CapMessageSender, Capability, DirEntry, FileMetadata, FileType,
+    Address, CapMessage, CapMessageSender, Capability, DirEntry, FdManagerRequest, FileMetadata, FileType,
     KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
     Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest, VfsResponse,
-    KERNEL_PROCESS_ID, VFS_PROCESS_ID,
+    FD_MANAGER_PROCESS_ID, KERNEL_PROCESS_ID, VFS_PROCESS_ID,
 };
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -52,7 +52,10 @@ pub async fn vfs(
         .map_err(|e| anyhow::anyhow!("failed creating vfs dir! {e:?}"))?;
     let vfs_path = Arc::new(fs::canonicalize(&vfs_path).await?);
 
-    let files = Files::new();
+    let files = Files::new(
+        Address::new(our_node.as_str(), VFS_PROCESS_ID.clone()),
+        send_to_loop.clone(),
+    );
 
     let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
         HashMap::default();
@@ -68,6 +71,22 @@ pub async fn vfs(
             )
             .send(&send_to_terminal)
             .await;
+            continue;
+        }
+
+        if km.source.process == *FD_MANAGER_PROCESS_ID {
+            let files = files.clone();
+            let send_to_terminal = send_to_terminal.clone();
+            tokio::spawn(async move {
+                if let Err(e) = handle_fd_request(km, files).await {
+                    Printout::new(
+                        1,
+                        format!("vfs: got request from fd_manager that errored: {e:?}"),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
+                };
+            });
             continue;
         }
 
@@ -137,6 +156,8 @@ struct Files {
     cursor_positions: Arc<DashMap<PathBuf, u64>>,
     /// access order of files
     access_order: Arc<Mutex<UniqueQueue<PathBuf>>>,
+    our: Address,
+    send_to_loop: MessageSender,
 }
 
 struct FileEntry {
@@ -145,11 +166,13 @@ struct FileEntry {
 }
 
 impl Files {
-    pub fn new() -> Self {
+    pub fn new(our: Address, send_to_loop: MessageSender) -> Self {
         Self {
             open_files: Arc::new(DashMap::new()),
             cursor_positions: Arc::new(DashMap::new()),
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
+            our,
+            send_to_loop,
         }
     }
 
@@ -167,10 +190,6 @@ impl Files {
             return Ok(entry.value().file.clone());
         }
 
-        if self.open_files.len() >= MAX_OPEN_FILES {
-            self.close_least_recently_used_files().await?;
-        }
-
         let mut file = self.try_open_file(&path, create, truncate).await?;
         if let Some(position) = self.cursor_positions.get(&path) {
             file.seek(SeekFrom::Start(*position)).await?;
@@ -184,7 +203,19 @@ impl Files {
             },
         );
         self.update_access_order(&path).await;
+        crate::fd_manager::send_fd_manager_open(&self.our, 1, &self.send_to_loop)
+            .await
+            .map_err(|e| VfsError::Other { error: e.to_string() })?;
         Ok(file)
+    }
+
+    async fn remove_file(&self, path: &Path) -> Result<(), VfsError> {
+        if self.open_files.remove(path).is_some() {
+            crate::fd_manager::send_fd_manager_close(&self.our, 1, &self.send_to_loop)
+                .await
+                .map_err(|e| VfsError::Other { error: e.to_string() })?;
+        }
+        Ok(())
     }
 
     async fn update_access_order(&self, path: &Path) {
@@ -192,10 +223,9 @@ impl Files {
         access_order.push_back(path.to_path_buf());
     }
 
-    async fn close_least_recently_used_files(&self) -> Result<(), VfsError> {
+    async fn close_least_recently_used_files(&self, to_close: u64) -> Result<(), VfsError> {
         let mut access_order = self.access_order.lock().await;
         let mut closed = 0;
-        let to_close = MAX_OPEN_FILES / 3; // close 33% of max open files
 
         while closed < to_close {
             if let Some(path) = access_order.pop_front() {
@@ -218,6 +248,9 @@ impl Files {
                 break; // no more files to close
             }
         }
+        crate::fd_manager::send_fd_manager_close(&self.our, closed, &self.send_to_loop)
+            .await
+            .map_err(|e| VfsError::Other { error: e.to_string() })?;
         Ok(())
     }
 
@@ -361,7 +394,7 @@ async fn handle_request(
         }
         VfsAction::CreateFile => {
             // create truncates any file that might've existed before
-            files.open_files.remove(&path);
+            files.remove_file(&path).await?;
             let _file = files.open_file(&path, true, true).await?;
             (VfsResponse::Ok, None)
         }
@@ -373,7 +406,7 @@ async fn handle_request(
         }
         VfsAction::CloseFile => {
             // removes file from scope, resets file_handle and cursor.
-            files.open_files.remove(&path);
+            files.remove_file(&path).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::WriteAll => {
@@ -470,7 +503,7 @@ async fn handle_request(
         }
         VfsAction::RemoveFile => {
             fs::remove_file(&path).await?;
-            files.open_files.remove(&path);
+            files.remove_file(&path).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::RemoveDir => {
@@ -992,4 +1025,28 @@ fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
 
     let extension_path = Path::new(extension_str);
     base.join(extension_path)
+}
+
+async fn handle_fd_request(km: KernelMessage, files: Files) -> anyhow::Result<()> {
+    let Message::Request(Request {
+        body,
+        ..
+    }) = km.message
+    else {
+        return Err(anyhow::anyhow!("not a request"));
+    };
+
+    let request: FdManagerRequest = serde_json::from_slice(&body)?;
+
+    match request {
+        FdManagerRequest::Cull { cull_fraction_denominator } => {
+            let fraction_to_close = files.open_files.len() as u64 / cull_fraction_denominator;
+            files.close_least_recently_used_files(fraction_to_close).await?;
+        }
+        _ => {
+            return Err(anyhow::anyhow!("non-Cull FdManagerRequest"));
+        }
+    }
+
+    Ok(())
 }
