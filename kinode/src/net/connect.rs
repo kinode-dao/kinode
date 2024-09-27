@@ -7,8 +7,9 @@ use tokio::sync::mpsc;
 /// if target is a peer, queue to be routed
 /// otherwise, create peer and initiate routing
 pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) {
-    if let Some(peer) = data.peers.get_mut(&km.target.node) {
+    if let Some(mut peer) = data.peers.get_mut(&km.target.node) {
         peer.sender.send(km).expect("net: peer sender was dropped");
+        peer.set_last_message();
     } else {
         let Some(peer_id) = data.pki.get(&km.target.node) else {
             return utils::error_offline(km, &ext.network_error_tx).await;
@@ -22,6 +23,7 @@ pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) 
                 identity: peer_id.clone(),
                 routing_for: false,
                 sender: peer_tx.clone(),
+                last_message: 0,
             },
         );
         tokio::spawn(connect_to_peer(

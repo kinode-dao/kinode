@@ -36,6 +36,7 @@ pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &N
             identity: router_id.clone(),
             routing_for: false,
             sender: peer_tx.clone(),
+            last_message: 0,
         },
     );
     if let Some((_ip, port)) = router_id.tcp_routing() {

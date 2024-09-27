@@ -1,6 +1,6 @@
 use crate::net::{
     types::{HandshakePayload, IdentityExt, Peers},
-    utils::{print_debug, print_loud, MESSAGE_MAX_SIZE},
+    utils::{print_debug, print_loud, IDLE_TIMEOUT, MESSAGE_MAX_SIZE},
     ws::{PeerConnection, WebSocket},
 };
 use lib::core::{KernelMessage, MessageSender, NodeId, PrintSender};
@@ -103,9 +103,14 @@ pub async fn maintain_connection(
         }
     };
 
+    let timeout = tokio::time::sleep(IDLE_TIMEOUT);
+
     tokio::select! {
         _ = write => (),
         _ = read => (),
+        _ = timeout => {
+            print_debug(&print_tx, &format!("net: closing idle connection with {peer_name}")).await;
+        }
     }
 
     print_debug(&print_tx, &format!("net: connection lost with {peer_name}")).await;

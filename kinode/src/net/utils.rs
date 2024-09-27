@@ -27,6 +27,12 @@ pub const MESSAGE_MAX_SIZE: u32 = 10_485_800;
 
 pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// 30 minute idle timeout for connections
+pub const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1800);
+
+/// maximum number of peers (open connections, but does not include passthroughs we provide!)
+pub const MAX_PEERS: usize = 100;
+
 pub async fn create_passthrough(
     our: &Identity,
     our_ip: &str,

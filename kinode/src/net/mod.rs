@@ -45,7 +45,7 @@ pub async fn networking(
     // start by initializing the structs where we'll store PKI in memory
     // and store a mapping of peers we have an active route for
     let pki: OnchainPKI = Arc::new(DashMap::new());
-    let peers: Peers = Arc::new(DashMap::new());
+    let peers: Peers = Peers(Arc::new(DashMap::new()));
     // only used by routers
     let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
 
@@ -171,6 +171,7 @@ async fn handle_local_request(
                 NetAction::GetPeers => (
                     NetResponse::Peers(
                         data.peers
+                            .0
                             .iter()
                             .map(|p| p.identity.clone())
                             .collect::<Vec<Identity>>(),
@@ -189,10 +190,11 @@ async fn handle_local_request(
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(
-                        "we have connections with {} peers:\r\n",
-                        data.peers.len()
+                        "we have connections with {} peers ({} max):\r\n",
+                        data.peers.0.len(),
+                        utils::MAX_PEERS,
                     ));
-                    for peer in data.peers.iter() {
+                    for peer in data.peers.0.iter() {
                         printout.push_str(&format!(
                             "    {}, routing_for={}\r\n",
                             peer.identity.name, peer.routing_for,

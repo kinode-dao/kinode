@@ -194,6 +194,7 @@ pub async fn recv_via_router(
                     identity: peer_id.clone(),
                     routing_for: false,
                     sender: peer_tx,
+                    last_message: 0,
                 },
             );
             // maintain direct connection
@@ -279,6 +280,7 @@ async fn recv_connection(
             identity: their_id.clone(),
             routing_for: their_handshake.proxy_request,
             sender: peer_tx,
+            last_message: 0,
         },
     );
     tokio::spawn(utils::maintain_connection(

@@ -1,3 +1,4 @@
+use crate::net::utils;
 use lib::types::core::{
     Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
 };
@@ -54,7 +55,40 @@ pub struct RoutingRequest {
     pub target: NodeId,
 }
 
-pub type Peers = Arc<DashMap<String, Peer>>;
+#[derive(Clone)]
+pub struct Peers(pub Arc<DashMap<String, Peer>>);
+
+impl Peers {
+    pub fn get(&self, name: &str) -> Option<dashmap::mapref::one::Ref<'_, String, Peer>> {
+        self.0.get(name)
+    }
+
+    pub fn get_mut(
+        &self,
+        name: &str,
+    ) -> std::option::Option<dashmap::mapref::one::RefMut<'_, String, Peer>> {
+        self.0.get_mut(name)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    /// when a peer is inserted, if the total number of peers exceeds the limit,
+    /// remove the one with the oldest last_message.
+    pub fn insert(&self, name: String, peer: Peer) {
+        self.0.insert(name, peer);
+        if self.0.len() > utils::MAX_PEERS {
+            let oldest = self.0.iter().min_by_key(|p| p.last_message).unwrap();
+            self.0.remove(oldest.key());
+        }
+    }
+
+    pub fn remove(&self, name: &str) -> Option<(String, Peer)> {
+        self.0.remove(name)
+    }
+}
+
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
 
 /// (from, target) -> from's socket
@@ -73,15 +107,24 @@ impl PendingStream {
     }
 }
 
-#[derive(Clone)]
 pub struct Peer {
     pub identity: Identity,
     /// If true, we are routing for them and have a RoutingClientConnection
     /// associated with them. We can send them prompts to establish Passthroughs.
     pub routing_for: bool,
     pub sender: UnboundedSender<KernelMessage>,
+    /// unix timestamp of last message sent *or* received
+    pub last_message: u64,
 }
 
+impl Peer {
+    pub fn set_last_message(&mut self) {
+        self.last_message = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+}
 /// [`Identity`], with additional fields for networking.
 #[derive(Clone)]
 pub struct IdentityExt {
