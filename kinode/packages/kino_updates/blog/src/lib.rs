@@ -87,6 +87,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         scrollbar-color: transparent transparent;
         scrollbar-width: none;
         align-self: stretch;
+        padding-bottom: 30px;
     }}
 
     .post {{

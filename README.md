@@ -120,7 +120,7 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - CTRL+J to toggle debug mode
 - CTRL+S to step through events in debug mode
 
-- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file. Off by default, this will write all events and verbose prints with timestamps.
+- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file. On by default, this will write all events and verbose prints with timestamps.
 
 - CTRL+A to jump to beginning of input
 - CTRL+E to jump to end of input

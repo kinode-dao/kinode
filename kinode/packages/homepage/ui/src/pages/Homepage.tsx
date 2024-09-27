@@ -46,13 +46,13 @@ function Homepage() {
           <KinodeBird />
           <h2>
             {new Date().getHours() < 4
-              ? "Good evening"
+              ? "Good evening" // midnight to 4am
               : new Date().getHours() < 12
-              ? "Good morning"
-              : new Date().getHours() < 18
-              ? "Good afternoon"
-              : "Good evening"}
-            , {our}
+                ? "Good morning" // 4am to 11am
+                : new Date().getHours() < 18
+                  ? "Good afternoon" // 12pm to 5pm
+                  : "Good evening" // 5pm to midnight
+            }, {our}
           </h2>
           <a
             href="https://github.com/kinode-dao/kinode/releases"
@@ -60,21 +60,18 @@ function Homepage() {
           >
             [kinode v{version}]
           </a>
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              setShowWidgetsSettings(true);
+            }}
+          >
+            [⚙]
+          </a>
         </header>
 
         <div id="widgets-container">
-          <header id="widgets-header">
-            <h2>Widgets</h2>
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                setShowWidgetsSettings(true);
-              }}
-            >
-              [⚙]
-            </a>
-          </header>
           <Widgets />
         </div>
         <footer>

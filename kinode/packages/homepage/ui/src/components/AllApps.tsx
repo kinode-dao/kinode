@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useMemo } from "react";
-import useHomepageStore from "../store/homepageStore";
-import usePersistentStore from "../store/persistentStore";
+import useHomepageStore, { HomepageApp } from "../store/homepageStore";
 import AppDisplay from "./AppDisplay";
 
 const AllApps: React.FC = () => {
   const { apps } = useHomepageStore();
-  const { appOrder, setAppOrder } = usePersistentStore();
   const [expanded, setExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [visibleApps, setVisibleApps] = useState(5);
+  const [orderedApps, setOrderedApps] = useState<HomepageApp[]>([]);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
@@ -26,13 +25,14 @@ const AllApps: React.FC = () => {
 
   // Sort apps based on persisted order
   const sortedApps = useMemo(() => {
-    const orderedApps = [...apps].sort((a, b) => {
-      return appOrder.indexOf(a.id) - appOrder.indexOf(b.id);
+    if (!orderedApps.length) {
+      setOrderedApps(apps);
+    }
+    const o = [...orderedApps].sort((a, b) => {
+      return a.order - b.order;
     });
-    // Ensure all apps are included in the order
-    const missingApps = apps.filter((app) => !appOrder.includes(app.id));
-    return [...orderedApps, ...missingApps];
-  }, [apps, appOrder]);
+    return o.filter(app => app.path !== null);
+  }, [orderedApps, apps]);
 
   const displayedApps = expanded
     ? sortedApps
@@ -67,29 +67,43 @@ const AllApps: React.FC = () => {
     const [movedApp] = newSortedApps.splice(dragIndex, 1);
     newSortedApps.splice(dropIndex, 0, movedApp);
 
-    const newAppOrder = newSortedApps.map((app) => app.id);
-    setAppOrder(newAppOrder);
+    const updatedApps = newSortedApps.map((app, index) => ({
+      ...app,
+      order: index
+    }));
+
+    setOrderedApps(updatedApps);
+
+    // Sync the order with the backend
+    fetch('/order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify(newSortedApps.map((app, index) => [app.id, index]))
+    });
+
     handleDragEnd();
   };
 
   return (
     <div id="all-apps" className={isMobile ? "mobile" : ""}>
       <div
-        className={`apps-grid ${expanded ? "expanded" : ""} ${
-          isMobile ? "mobile" : ""
-        }`}
+        className={`apps-grid ${expanded ? "expanded" : ""} ${isMobile ? "mobile" : ""
+          }`}
+        style={{ gridTemplateColumns: `repeat(${Math.min(displayedApps.length, 5)}, 1fr)` }}
       >
         {displayedApps.map((app, index) => (
           <div
-            key={app.id}
+            key={`${app.id}-${app.order}`}
             draggable
             onDragStart={(e) => handleDragStart(e, index)}
             onDragOver={(e) => handleDragOver(e, index)}
             onDragEnd={handleDragEnd}
             onDrop={(e) => handleDrop(e, index)}
-            className={`app-wrapper ${
-              draggedIndex === index ? "dragging" : ""
-            } ${dragOverIndex === index ? "drag-over" : ""}`}
+            className={`app-wrapper ${draggedIndex === index ? "dragging" : ""
+              } ${dragOverIndex === index ? "drag-over" : ""}`}
           >
             <AppDisplay app={app} />
             <div className="drag-handle">⋮⋮</div>

@@ -62,13 +62,6 @@ header button {
   margin-left: 4px;
 }
 
-#widgets-header {
-  color: light-dark(var(--off-white), var(--tasteful-dark));
-  border-color: light-dark(var(--off-white), var(--tasteful-dark));
-  padding: 1em 0em 1em 0em;
-  border-bottom: 1px solid light-dark(var(--tasteful-dark), var(--off-white));
-}
-
 @media (prefers-color-scheme: light) {
   .kino-bird {
     filter: invert(1);
@@ -76,19 +69,6 @@ header button {
 }
 
 @media (prefers-color-scheme: dark) {}
-
-[data-rfd-droppable-context-id] {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-  background-color: light-dark(#4f000055, var(--tasteful-dark));
-  padding: 10px;
-  border-radius: 10px;
-  margin: 0 auto;
-  margin-bottom: 10px;
-}
 
 .no-ui {
   position: absolute;
@@ -111,6 +91,7 @@ header button {
 }
 
 #widgets {
+  margin-top: 1em;
   width: 100%;
   display: flex;
   flex-direction: row;
@@ -178,7 +159,6 @@ footer {
 
 .apps-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
   width: 100%;
   color: var(--off-white);
 }
@@ -193,7 +173,7 @@ footer {
   border-radius: 0 0 1em 1em;
   border: 0.5px solid rgba(255, 255, 255, 0.2);
   padding: 1em;
-  color: light-dark(var(--white), var(--tasteful-dark));
+  color: var(--white);
 }
 
 @media (max-width: 1024px) {
@@ -302,7 +282,16 @@ footer {
   transition: transform 0.2s ease;
 }
 
+.widget-wrapper {
+  position: relative;
+  transition: transform 0.2s ease;
+}
+
 .app-wrapper:hover .drag-handle {
+  opacity: 1;
+}
+
+.widget-wrapper:hover .drag-handle {
   opacity: 1;
 }
 
@@ -313,6 +302,9 @@ footer {
   cursor: move;
   opacity: 0;
   transition: opacity 0.2s ease;
+  color: var(--white);
+  font-size: 1.2em;
+  text-shadow: -1px 1px 0px #000;
 }
 
 .dragging {
