@@ -58,7 +58,7 @@ fn output_reruns(dir: &Path) {
     }
 }
 
-fn untar_gz_file(path: &Path, dest: &Path) -> std::io::Result<()> {
+fn _untar_gz_file(path: &Path, dest: &Path) -> std::io::Result<()> {
     // Open the .tar.gz file
     let tar_gz = File::open(path)?;
     let tar_gz_reader = BufReader::new(tar_gz);
