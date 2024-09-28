@@ -3,12 +3,6 @@ FROM nick1udwig/buildbase:latest
 ENV NVM_DIR=/root/.nvm \
     PATH="/root/.nvm/versions/node/$(node -v)/bin:${PATH}"
 
-# Install Git
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git \
-        python3 \
-    && rm -rf /var/lib/apt/lists/*
-
 RUN . ~/.bashrc \
     && . ~/.cargo/env \
     && . $NVM_DIR/nvm.sh \

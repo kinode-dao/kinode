@@ -1,16 +1,14 @@
 FROM nick1udwig/buildbase:latest
 
-ENV NVM_DIR=/root/.nvm \
-    PATH="/root/.nvm/versions/node/$(node -v)/bin:${PATH}"
+ARG DOCKER_BUILD_IMAGE_VERSION=latest
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git \
-        python3 \
-    && rm -rf /var/lib/apt/lists/*
+ENV NVM_DIR=/root/.nvm \
+    PATH="/root/.nvm/versions/node/$(node -v)/bin:${PATH}" \
+    DOCKER_BUILD_IMAGE_VERSION=$DOCKER_BUILD_IMAGE_VERSION
 
 # Bind readonly & copy files in to avoid modifying host files
 WORKDIR /input
 
 # Set the default command to run the build script
 # TODO: once build is idempotent, remove the `rm -rf` line
-CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && rm -rf target/ kinode/packages/*/pkg/*wasm kinode/packages/*/*/target/ kinode/packages/*/pkg/api.zip kinode/packages/*/*/wit && ./scripts/build-release.py && cp -r /tmp/kinode-release/* /output && chmod 664 /output/* && rm -rf target/ kinode/packages/*/pkg/*wasm kinode/packages/*/*/target/ kinode/packages/*/pkg/api.zip kinode/packages/*/*/wit"]
+CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && rm -rf target/ kinode/packages/*/pkg/*wasm kinode/packages/*/*/target/ kinode/packages/*/pkg/api.zip kinode/packages/*/*/wit kinode/packages/app_store/pkg/ui kinode/packages/homepage/pkg/ui kinode/src/register-ui/build && ./scripts/build-release.py && cp -r /tmp/kinode-release/* /output && chmod 664 /output/* && rm -rf target/ kinode/packages/*/pkg/*wasm kinode/packages/*/*/target/ kinode/packages/*/pkg/api.zip kinode/packages/*/*/wit kinode/packages/app_store/pkg/ui kinode/packages/homepage/pkg/ui kinode/src/register-ui/build"]

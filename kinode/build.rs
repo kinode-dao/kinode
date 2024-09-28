@@ -222,5 +222,13 @@ fn main() -> anyhow::Result<()> {
     let bootstrapped_processes_path = target_dir.join("bootstrapped_processes.rs");
     fs::write(&bootstrapped_processes_path, bootstrapped_processes)?;
 
+    let version = if let Ok(version) = std::env::var("DOCKER_BUILD_IMAGE_VERSION") {
+        // embed the DOCKER_BUILD_IMAGE_VERSION
+        version
+    } else {
+        "none".to_string()
+    };
+    println!("cargo:rustc-env=DOCKER_BUILD_IMAGE_VERSION={version}");
+
     Ok(())
 }
