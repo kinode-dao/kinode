@@ -1,6 +1,7 @@
 use lib::types::core::{
-    Address, FdManagerError, FdManagerRequest, KernelMessage, Message, MessageReceiver,
-    MessageSender, PrintSender, Printout, ProcessId, Request, FD_MANAGER_PROCESS_ID,
+    Address, FdManagerError, FdManagerRequest, FdManagerResponse, KernelMessage, Message,
+    MessageReceiver, MessageSender, PrintSender, Printout, ProcessId, Request,
+    FD_MANAGER_PROCESS_ID,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -28,16 +29,19 @@ enum Mode {
 }
 
 impl State {
-    fn new() -> Self {
-        Self::default()
+    fn new(static_max_fds: Option<u64>) -> Self {
+        Self::default(static_max_fds)
     }
 
-    fn default() -> Self {
+    fn default(static_max_fds: Option<u64>) -> Self {
         Self {
             fds: HashMap::new(),
-            mode: Mode::default(),
+            mode: Mode::default(static_max_fds),
             total_fds: 0,
-            max_fds: DEFAULT_MAX_OPEN_FDS,
+            max_fds: match static_max_fds {
+                Some(max) => max,
+                None => DEFAULT_MAX_OPEN_FDS,
+            },
             cull_fraction_denominator: DEFAULT_CULL_FRACTION_DENOMINATOR,
         }
     }
@@ -55,10 +59,14 @@ impl State {
 }
 
 impl Mode {
-    fn default() -> Self {
-        Self::DynamicMax {
-            max_fds_as_fraction_of_ulimit_percentage: DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE,
-            update_ulimit_secs: DEFAULT_UPDATE_ULIMIT_SECS,
+    fn default(static_max_fds: Option<u64>) -> Self {
+        match static_max_fds {
+            Some(_) => Self::StaticMax,
+            None => Self::DynamicMax {
+                max_fds_as_fraction_of_ulimit_percentage:
+                    DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE,
+                update_ulimit_secs: DEFAULT_UPDATE_ULIMIT_SECS,
+            },
         }
     }
 }
@@ -69,8 +77,9 @@ pub async fn fd_manager(
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
+    static_max_fds: Option<u64>,
 ) -> anyhow::Result<()> {
-    let mut state = State::new();
+    let mut state = State::new(static_max_fds);
     let mut interval = {
         // in code block to release the reference into state
         let Mode::DynamicMax {
@@ -80,7 +89,7 @@ pub async fn fd_manager(
         else {
             return Ok(());
         };
-        tokio::time::interval(tokio::time::Duration::from_secs(update_ulimit_secs.clone()))
+        tokio::time::interval(tokio::time::Duration::from_secs(*update_ulimit_secs))
     };
     let our_node = our_node.as_str();
     loop {
@@ -90,7 +99,8 @@ pub async fn fd_manager(
                     message,
                     &mut interval,
                     &mut state,
-                )? {
+                    &send_to_loop,
+                ).await? {
                     Printout::new(2, to_print).send(&send_to_terminal).await;
                 }
             }
@@ -114,12 +124,18 @@ pub async fn fd_manager(
     }
 }
 
-fn handle_message(
+async fn handle_message(
     km: KernelMessage,
     _interval: &mut tokio::time::Interval,
     state: &mut State,
+    send_to_loop: &MessageSender,
 ) -> anyhow::Result<Option<String>> {
-    let Message::Request(Request { body, .. }) = km.message else {
+    let Message::Request(Request {
+        body,
+        expects_response,
+        ..
+    }) = km.message
+    else {
         return Err(FdManagerError::NotARequest.into());
     };
     let request: FdManagerRequest =
@@ -154,14 +170,79 @@ fn handle_message(
         FdManagerRequest::Cull { .. } => {
             return Err(FdManagerError::FdManagerWasSentCull.into());
         }
-        FdManagerRequest::UpdateMaxFdsAsFractionOfUlimitPercentage(_new) => {
-            unimplemented!();
+        FdManagerRequest::UpdateMaxFdsAsFractionOfUlimitPercentage(new) => {
+            match state.mode {
+                Mode::DynamicMax {
+                    ref mut max_fds_as_fraction_of_ulimit_percentage,
+                    ..
+                } => *max_fds_as_fraction_of_ulimit_percentage = new,
+                _ => return Err(FdManagerError::BadRequest.into()),
+            }
+            None
         }
-        FdManagerRequest::UpdateUpdateUlimitSecs(_new) => {
-            unimplemented!();
+        FdManagerRequest::UpdateUpdateUlimitSecs(new) => {
+            match state.mode {
+                Mode::DynamicMax {
+                    ref mut update_ulimit_secs,
+                    ..
+                } => *update_ulimit_secs = new,
+                _ => return Err(FdManagerError::BadRequest.into()),
+            }
+            None
         }
-        FdManagerRequest::UpdateCullFractionDenominator(_new) => {
-            unimplemented!();
+        FdManagerRequest::UpdateCullFractionDenominator(new) => {
+            state.cull_fraction_denominator = new;
+            None
+        }
+        FdManagerRequest::GetState => {
+            if expects_response.is_some() {
+                KernelMessage::builder()
+                    .id(km.id)
+                    .source(km.target)
+                    .target(km.rsvp.unwrap_or(km.source))
+                    .message(Message::Response((
+                        lib::core::Response {
+                            body: serde_json::to_vec(&FdManagerResponse::GetState(
+                                state.fds.clone(),
+                            ))
+                            .unwrap(),
+                            inherit: false,
+                            metadata: None,
+                            capabilities: vec![],
+                        },
+                        None,
+                    )))
+                    .build()
+                    .unwrap()
+                    .send(send_to_loop)
+                    .await;
+            }
+            None
+        }
+        FdManagerRequest::GetProcessFdCount(process) => {
+            if expects_response.is_some() {
+                KernelMessage::builder()
+                    .id(km.id)
+                    .source(km.target)
+                    .target(km.rsvp.unwrap_or(km.source))
+                    .message(Message::Response((
+                        lib::core::Response {
+                            body: serde_json::to_vec(&FdManagerResponse::GetProcessFdCount(
+                                *state.fds.get(&process).unwrap_or(&0),
+                            ))
+                            .unwrap(),
+                            inherit: false,
+                            metadata: None,
+                            capabilities: vec![],
+                        },
+                        None,
+                    )))
+                    .build()
+                    .unwrap()
+                    .send(send_to_loop)
+                    .await;
+            }
+            None
         }
     };
     Ok(return_value)

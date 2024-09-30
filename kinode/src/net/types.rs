@@ -1,3 +1,4 @@
+use crate::net::utils;
 use lib::types::core::{
     Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
 };
@@ -57,13 +58,15 @@ pub struct RoutingRequest {
 #[derive(Clone)]
 pub struct Peers {
     max_peers: u32,
+    send_to_loop: MessageSender,
     peers: Arc<DashMap<String, Peer>>,
 }
 
 impl Peers {
-    pub fn new(max_peers: u32) -> Self {
+    pub fn new(max_peers: u32, send_to_loop: MessageSender) -> Self {
         Self {
             max_peers,
+            send_to_loop,
             peers: Arc::new(DashMap::new()),
         }
     }
@@ -89,20 +92,22 @@ impl Peers {
 
     /// when a peer is inserted, if the total number of peers exceeds the limit,
     /// remove the one with the oldest last_message.
-    pub fn insert(&self, name: String, peer: Peer) {
+    pub async fn insert(&self, name: String, peer: Peer) {
         self.peers.insert(name, peer);
+        utils::send_fd_manager_open(1, &self.send_to_loop).await;
         if self.peers.len() > self.max_peers as usize {
             let oldest = self.peers.iter().min_by_key(|p| p.last_message).unwrap();
             self.peers.remove(oldest.key());
         }
     }
 
-    pub fn remove(&self, name: &str) -> Option<(String, Peer)> {
+    pub async fn remove(&self, name: &str) -> Option<(String, Peer)> {
+        utils::send_fd_manager_close(1, &self.send_to_loop).await;
         self.peers.remove(name)
     }
 
     /// close the (peer count / fraction) oldest connections
-    pub fn cull(&self, fraction: u64) {
+    pub async fn cull(&self, fraction: u64) {
         let num_to_remove = (self.peers.len() as f64 / fraction as f64).ceil() as usize;
         let mut to_remove = Vec::with_capacity(num_to_remove);
         let mut sorted_peers: Vec<_> = self.peers.iter().collect();
@@ -111,6 +116,7 @@ impl Peers {
         for peer in to_remove {
             self.peers.remove(&peer.identity.name);
         }
+        utils::send_fd_manager_close(num_to_remove as u64, &self.send_to_loop).await;
     }
 }
 

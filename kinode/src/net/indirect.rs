@@ -30,7 +30,7 @@ pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &N
     )
     .await;
     let (peer, peer_rx) = Peer::new(router_id.clone(), false);
-    data.peers.insert(router_id.name.clone(), peer);
+    data.peers.insert(router_id.name.clone(), peer).await;
     if let Some((_ip, port)) = router_id.tcp_routing() {
         match tcp::init_direct(ext, data, &router_id, *port, true, peer_rx).await {
             Ok(()) => {

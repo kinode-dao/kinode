@@ -93,7 +93,7 @@ pub async fn maintain_connection(
     }
 
     print_debug(&print_tx, &format!("net: connection lost with {peer_name}")).await;
-    peers.remove(&peer_name);
+    peers.remove(&peer_name).await;
 }
 
 async fn send_protocol_message(

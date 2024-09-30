@@ -17,7 +17,7 @@ pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) 
         let (mut peer, peer_rx) = Peer::new(peer_id.clone(), false);
         // send message to be routed
         peer.send(km);
-        data.peers.insert(peer_id.name.clone(), peer);
+        data.peers.insert(peer_id.name.clone(), peer).await;
         tokio::spawn(connect_to_peer(
             ext.clone(),
             data.clone(),

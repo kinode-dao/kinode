@@ -188,7 +188,7 @@ pub async fn recv_via_router(
     match connect_with_handshake_via_router(&ext, &peer_id, &router_id, socket).await {
         Ok(connection) => {
             let (peer, peer_rx) = Peer::new(peer_id.clone(), false);
-            data.peers.insert(peer_id.name.clone(), peer);
+            data.peers.insert(peer_id.name.clone(), peer).await;
             // maintain direct connection
             tokio::spawn(utils::maintain_connection(
                 peer_id.name,
@@ -221,8 +221,7 @@ async fn recv_connection(
         let (from_id, target_id) =
             validate_routing_request(&ext.our.name, first_message, &data.pki)?;
         return create_passthrough(
-            &ext.our,
-            &ext.our_ip,
+            &ext,
             from_id,
             target_id,
             &data,
@@ -265,7 +264,7 @@ async fn recv_connection(
     )?;
 
     let (peer, peer_rx) = Peer::new(their_id.clone(), their_handshake.proxy_request);
-    data.peers.insert(their_id.name.clone(), peer);
+    data.peers.insert(their_id.name.clone(), peer).await;
 
     tokio::spawn(utils::maintain_connection(
         their_handshake.name,

@@ -1,11 +1,11 @@
 use crate::net::types::{
-    ActivePassthroughs, HandshakePayload, NetData, OnchainPKI, PendingStream, RoutingRequest,
-    TCP_PROTOCOL, WS_PROTOCOL,
+    ActivePassthroughs, HandshakePayload, IdentityExt, NetData, OnchainPKI, PendingStream,
+    RoutingRequest, TCP_PROTOCOL, WS_PROTOCOL,
 };
 use lib::types::core::{
-    Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
-    NodeId, NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
-    WrappedSendError,
+    Address, Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction,
+    NetworkErrorSender, NodeId, NodeRouting, PrintSender, Printout, Request, Response, SendError,
+    SendErrorKind, WrappedSendError, NET_PROCESS_ID,
 };
 use {
     futures::{SinkExt, StreamExt},
@@ -31,8 +31,7 @@ pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 pub const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1800);
 
 pub async fn create_passthrough(
-    our: &Identity,
-    our_ip: &str,
+    ext: &IdentityExt,
     from_id: Identity,
     target_id: Identity,
     data: &NetData,
@@ -62,7 +61,7 @@ pub async fn create_passthrough(
     if socket_1.is_tcp() {
         if let Some((ip, tcp_port)) = target_id.tcp_routing() {
             // create passthrough to direct node over tcp
-            let tcp_url = make_conn_url(our_ip, ip, tcp_port, TCP_PROTOCOL)?;
+            let tcp_url = make_conn_url(&ext.our_ip, ip, tcp_port, TCP_PROTOCOL)?;
             let Ok(Ok(stream_2)) =
                 time::timeout(TIMEOUT, tokio::net::TcpStream::connect(tcp_url.to_string())).await
             else {
@@ -84,7 +83,7 @@ pub async fn create_passthrough(
     } else if socket_1.is_ws() {
         if let Some((ip, ws_port)) = target_id.ws_routing() {
             // create passthrough to direct node over websocket
-            let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
+            let ws_url = make_conn_url(&ext.our_ip, ip, ws_port, WS_PROTOCOL)?;
             let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
             else {
                 return Err(anyhow::anyhow!(
@@ -121,7 +120,7 @@ pub async fn create_passthrough(
     target_peer.sender.send(
         KernelMessage::builder()
             .id(rand::random())
-            .source((our.name.as_str(), "net", "distro", "sys"))
+            .source((ext.our.name.as_str(), "net", "distro", "sys"))
             .target((target_id.name.as_str(), "net", "distro", "sys"))
             .message(Message::Request(Request {
                 inherit: false,
@@ -380,6 +379,18 @@ pub async fn parse_hello_message(
         .unwrap()
         .send(kernel_message_tx)
         .await;
+}
+
+/// Send an OpenFds message to the fd_manager.
+pub async fn send_fd_manager_open(num_opened: u64, kernel_message_tx: &MessageSender) {
+    let our: Address = Address::new("our", NET_PROCESS_ID.clone());
+    let _ = crate::fd_manager::send_fd_manager_open(&our, num_opened, kernel_message_tx).await;
+}
+
+/// Send a CloseFds message to the fd_manager.
+pub async fn send_fd_manager_close(num_closed: u64, kernel_message_tx: &MessageSender) {
+    let our: Address = Address::new("our", NET_PROCESS_ID.clone());
+    let _ = crate::fd_manager::send_fd_manager_close(&our, num_closed, kernel_message_tx).await;
 }
 
 /// Create a terminal printout at verbosity level 0.

@@ -377,6 +377,7 @@ async fn main() {
         kernel_message_sender.clone(),
         print_sender.clone(),
         fd_manager_receiver,
+        matches.get_one::<u64>("soft-ulimit").copied(),
     ));
     tasks.spawn(kv::kv(
         our_name_arc.clone(),
@@ -713,6 +714,10 @@ fn build_command() -> Command {
         .arg(
             arg!(--"max-passthroughs" <MAX_PASSTHROUGHS> "Maximum number of passthroughs serve as a router (default 0)")
                 .value_parser(value_parser!(u32)),
+        )
+        .arg(
+            arg!(--"soft-ulimit" <SOFT_ULIMIT> "Enforce a static maximum number of file descriptors (default fetched from system)")
+                .value_parser(value_parser!(u64)),
         );
 
     #[cfg(feature = "simulation-mode")]

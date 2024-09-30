@@ -55,7 +55,7 @@ pub async fn networking(
     // start by initializing the structs where we'll store PKI in memory
     // and store a mapping of peers we have an active route for
     let pki: OnchainPKI = Arc::new(DashMap::new());
-    let peers: Peers = Peers::new(max_peers);
+    let peers: Peers = Peers::new(max_peers, ext.kernel_message_tx.clone());
     // only used by routers
     let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
     let active_passthroughs: ActivePassthroughs = Arc::new(DashSet::new());
@@ -340,7 +340,7 @@ async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &NetData) {
         } => {
             // we are requested to cull a fraction of our peers!
             // TODO cull passthroughs too?
-            data.peers.cull(cull_fraction_denominator);
+            data.peers.cull(cull_fraction_denominator).await;
         }
         _ => return,
     }

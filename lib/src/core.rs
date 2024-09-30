@@ -8,16 +8,17 @@ use thiserror::Error;
 
 lazy_static::lazy_static! {
     pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd_manager"), "distro", "sys");
     pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
     pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
+    pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
     pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys");
     pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys");
     pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys");
-    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
-    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
-    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
-    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd_manager"), "distro", "sys");
 }
 
 //
@@ -2076,22 +2077,32 @@ impl KnsUpdate {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FdManagerRequest {
     /// other process -> fd_manager
-    OpenFds {
-        number_opened: u64,
-    },
-    CloseFds {
-        number_closed: u64,
-    },
+    OpenFds { number_opened: u64 },
+    /// other process -> fd_manager
+    CloseFds { number_closed: u64 },
 
     /// fd_manager -> other process
-    Cull {
-        cull_fraction_denominator: u64,
-    },
+    Cull { cull_fraction_denominator: u64 },
 
     /// administrative
     UpdateMaxFdsAsFractionOfUlimitPercentage(u64),
+    /// administrative
     UpdateUpdateUlimitSecs(u64),
+    /// administrative
     UpdateCullFractionDenominator(u64),
+
+    /// get a `HashMap` of all `ProcessId`s to their known number of open file descriptors.
+    GetState,
+    /// get the `u64` known number of file descriptors used by `ProcessId`.
+    GetProcessFdCount(ProcessId),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum FdManagerResponse {
+    /// response to [`FdManagerRequest::GetState`]
+    GetState(HashMap<ProcessId, u64>),
+    /// response to [`FdManagerRequest::GetProcessFdCount`]
+    GetProcessFdCount(u64),
 }
 
 #[derive(Debug, Error)]
