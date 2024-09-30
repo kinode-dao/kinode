@@ -1,7 +1,7 @@
 use crate::net::types::{IdentityExt, NetData, Peer};
 use crate::net::{connect, tcp, utils, ws};
 use lib::types::core::{Identity, NodeRouting};
-use tokio::{sync::mpsc, time};
+use tokio::time;
 
 pub async fn maintain_routers(ext: IdentityExt, data: NetData) -> anyhow::Result<()> {
     let NodeRouting::Routers(ref routers) = ext.our.routing else {
@@ -29,16 +29,8 @@ pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &N
         &format!("net: attempting to connect to router {}", router_id.name),
     )
     .await;
-    let (peer_tx, peer_rx) = mpsc::unbounded_channel();
-    data.peers.insert(
-        router_id.name.clone(),
-        Peer {
-            identity: router_id.clone(),
-            routing_for: false,
-            sender: peer_tx.clone(),
-            last_message: 0,
-        },
-    );
+    let (peer, peer_rx) = Peer::new(router_id.clone(), false);
+    data.peers.insert(router_id.name.clone(), peer);
     if let Some((_ip, port)) = router_id.tcp_routing() {
         match tcp::init_direct(ext, data, &router_id, *port, true, peer_rx).await {
             Ok(()) => {

@@ -353,6 +353,8 @@ async fn main() {
         print_sender.clone(),
         net_message_receiver,
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
+        *matches.get_one::<u32>("max-peers").unwrap_or(&100),
+        *matches.get_one::<u32>("max-passthroughs").unwrap_or(&0),
     ));
     tasks.spawn(state::state_sender(
         our_name_arc.clone(),
@@ -695,6 +697,14 @@ fn build_command() -> Command {
         .arg(
             arg!(--"number-log-files" <NUMBER_LOG_FILES> "Number of logs to rotate (default 4)")
                 .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"max-peers" <MAX_PEERS> "Maximum number of peers to hold active connections with (default 100)")
+                .value_parser(value_parser!(u32)),
+        )
+        .arg(
+            arg!(--"max-passthroughs" <MAX_PASSTHROUGHS> "Maximum number of passthroughs serve as a router (default 0)")
+                .value_parser(value_parser!(u32)),
         );
 
     #[cfg(feature = "simulation-mode")]

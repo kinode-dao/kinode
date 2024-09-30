@@ -1,14 +1,13 @@
-use crate::net::utils;
 use lib::types::core::{
     Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
 };
 use {
-    dashmap::DashMap,
+    dashmap::{DashMap, DashSet},
     ring::signature::Ed25519KeyPair,
     serde::{Deserialize, Serialize},
     std::sync::Arc,
     tokio::net::TcpStream,
-    tokio::sync::mpsc::UnboundedSender,
+    tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender},
     tokio_tungstenite::{MaybeTlsStream, WebSocketStream},
 };
 
@@ -56,47 +55,68 @@ pub struct RoutingRequest {
 }
 
 #[derive(Clone)]
-pub struct Peers(pub Arc<DashMap<String, Peer>>);
+pub struct Peers {
+    max_peers: u32,
+    peers: Arc<DashMap<String, Peer>>,
+}
 
 impl Peers {
+    pub fn new(max_peers: u32) -> Self {
+        Self {
+            max_peers,
+            peers: Arc::new(DashMap::new()),
+        }
+    }
+
+    pub fn peers(&self) -> &DashMap<String, Peer> {
+        &self.peers
+    }
+
     pub fn get(&self, name: &str) -> Option<dashmap::mapref::one::Ref<'_, String, Peer>> {
-        self.0.get(name)
+        self.peers.get(name)
     }
 
     pub fn get_mut(
         &self,
         name: &str,
     ) -> std::option::Option<dashmap::mapref::one::RefMut<'_, String, Peer>> {
-        self.0.get_mut(name)
+        self.peers.get_mut(name)
     }
 
     pub fn contains_key(&self, name: &str) -> bool {
-        self.0.contains_key(name)
+        self.peers.contains_key(name)
     }
 
     /// when a peer is inserted, if the total number of peers exceeds the limit,
     /// remove the one with the oldest last_message.
     pub fn insert(&self, name: String, peer: Peer) {
-        self.0.insert(name, peer);
-        if self.0.len() > utils::MAX_PEERS {
-            let oldest = self.0.iter().min_by_key(|p| p.last_message).unwrap();
-            self.0.remove(oldest.key());
+        self.peers.insert(name, peer);
+        if self.peers.len() > self.max_peers as usize {
+            let oldest = self.peers.iter().min_by_key(|p| p.last_message).unwrap();
+            self.peers.remove(oldest.key());
         }
     }
 
     pub fn remove(&self, name: &str) -> Option<(String, Peer)> {
-        self.0.remove(name)
+        self.peers.remove(name)
     }
 }
 
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
 
 /// (from, target) -> from's socket
+///
+/// only used by routers
 pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), PendingStream>>;
 pub enum PendingStream {
     WebSocket(WebSocketStream<MaybeTlsStream<TcpStream>>),
     Tcp(TcpStream),
 }
+
+/// (from, target)
+///
+/// only used by routers
+pub type ActivePassthroughs = Arc<DashSet<(NodeId, NodeId)>>;
 
 impl PendingStream {
     pub fn is_ws(&self) -> bool {
@@ -118,6 +138,31 @@ pub struct Peer {
 }
 
 impl Peer {
+    /// Create a new Peer.
+    /// If `routing_for` is true, we are routing for them.
+    pub fn new(identity: Identity, routing_for: bool) -> (Self, UnboundedReceiver<KernelMessage>) {
+        let (peer_tx, peer_rx) = tokio::sync::mpsc::unbounded_channel();
+        (
+            Self {
+                identity,
+                routing_for,
+                sender: peer_tx,
+                last_message: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            },
+            peer_rx,
+        )
+    }
+
+    /// Send a message to the peer.
+    pub fn send(&mut self, km: KernelMessage) {
+        self.sender.send(km).expect("net: peer sender was dropped");
+        self.set_last_message();
+    }
+
+    /// Update the last message time to now.
     pub fn set_last_message(&mut self) {
         self.last_message = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -141,5 +186,10 @@ pub struct IdentityExt {
 pub struct NetData {
     pub pki: OnchainPKI,
     pub peers: Peers,
+    /// only used by routers
     pub pending_passthroughs: PendingPassthroughs,
+    /// only used by routers
+    pub active_passthroughs: ActivePassthroughs,
+    pub max_peers: u32,
+    pub max_passthroughs: u32,
 }
