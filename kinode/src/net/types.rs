@@ -100,6 +100,18 @@ impl Peers {
     pub fn remove(&self, name: &str) -> Option<(String, Peer)> {
         self.peers.remove(name)
     }
+
+    /// close the (peer count / fraction) oldest connections
+    pub fn cull(&self, fraction: u64) {
+        let num_to_remove = (self.peers.len() as f64 / fraction as f64).ceil() as usize;
+        let mut to_remove = Vec::with_capacity(num_to_remove);
+        let mut sorted_peers: Vec<_> = self.peers.iter().collect();
+        sorted_peers.sort_by_key(|p| p.last_message);
+        to_remove.extend(sorted_peers.iter().take(num_to_remove));
+        for peer in to_remove {
+            self.peers.remove(&peer.identity.name);
+        }
+    }
 }
 
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;

@@ -48,6 +48,10 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WS_MIN_PORT: u16 = 9_000;
 const TCP_MIN_PORT: u16 = 10_000;
 const MAX_PORT: u16 = 65_535;
+
+const DEFAULT_MAX_PEERS: u32 = 32;
+const DEFAULT_MAX_PASSTHROUGHS: u32 = 0;
+
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
@@ -353,8 +357,12 @@ async fn main() {
         print_sender.clone(),
         net_message_receiver,
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
-        *matches.get_one::<u32>("max-peers").unwrap_or(&100),
-        *matches.get_one::<u32>("max-passthroughs").unwrap_or(&0),
+        *matches
+            .get_one::<u32>("max-peers")
+            .unwrap_or(&DEFAULT_MAX_PEERS),
+        *matches
+            .get_one::<u32>("max-passthroughs")
+            .unwrap_or(&DEFAULT_MAX_PASSTHROUGHS),
     ));
     tasks.spawn(state::state_sender(
         our_name_arc.clone(),
@@ -699,7 +707,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u64)),
         )
         .arg(
-            arg!(--"max-peers" <MAX_PEERS> "Maximum number of peers to hold active connections with (default 100)")
+            arg!(--"max-peers" <MAX_PEERS> "Maximum number of peers to hold active connections with (default 32)")
                 .value_parser(value_parser!(u32)),
         )
         .arg(

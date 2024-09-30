@@ -167,7 +167,8 @@ async fn handle_local_request(
 ) {
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Err(_e) => {
-            // ignore
+            // only other possible message is from fd_manager -- handle here
+            handle_fdman(km, request_body, data).await;
         }
         Ok(NetAction::ConnectionRequest(_)) => {
             // we shouldn't get these locally, ignore
@@ -222,10 +223,12 @@ async fn handle_local_request(
                         ));
                     }
 
-                    printout.push_str(&format!(
-                        "we allow {} max passthroughs\r\n",
-                        data.max_passthroughs
-                    ));
+                    if data.max_passthroughs > 0 {
+                        printout.push_str(&format!(
+                            "we allow {} max passthroughs\r\n",
+                            data.max_passthroughs
+                        ));
+                    }
 
                     if !data.pending_passthroughs.is_empty() {
                         printout.push_str(&format!(
@@ -321,6 +324,25 @@ async fn handle_local_request(
                 .send(&ext.kernel_message_tx)
                 .await;
         }
+    }
+}
+
+async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &NetData) {
+    if km.source.process != *lib::core::FD_MANAGER_PROCESS_ID {
+        return;
+    }
+    let Ok(req) = rmp_serde::from_slice::<lib::core::FdManagerRequest>(request_body) else {
+        return;
+    };
+    match req {
+        lib::core::FdManagerRequest::Cull {
+            cull_fraction_denominator,
+        } => {
+            // we are requested to cull a fraction of our peers!
+            // TODO cull passthroughs too?
+            data.peers.cull(cull_fraction_denominator);
+        }
+        _ => return,
     }
 }
 
