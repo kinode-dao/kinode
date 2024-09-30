@@ -3,9 +3,15 @@ use lib::types::core::{
     NetworkErrorSender, NodeRouting, PrintSender,
 };
 use types::{
-    IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL, WS_PROTOCOL,
+    ActivePassthroughs, IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL,
+    WS_PROTOCOL,
 };
-use {dashmap::DashMap, ring::signature::Ed25519KeyPair, std::sync::Arc, tokio::task::JoinSet};
+use {
+    dashmap::{DashMap, DashSet},
+    ring::signature::Ed25519KeyPair,
+    std::sync::Arc,
+    tokio::task::JoinSet,
+};
 
 mod connect;
 mod indirect;
@@ -31,7 +37,11 @@ pub async fn networking(
     network_error_tx: NetworkErrorSender,
     print_tx: PrintSender,
     kernel_message_rx: MessageReceiver,
-    _reveal_ip: bool, // only used if indirect
+    // only used if indirect -- TODO use
+    _reveal_ip: bool,
+    max_peers: u32,
+    // only used by routers
+    max_passthroughs: u32,
 ) -> anyhow::Result<()> {
     let ext = IdentityExt {
         our: Arc::new(our),
@@ -45,14 +55,18 @@ pub async fn networking(
     // start by initializing the structs where we'll store PKI in memory
     // and store a mapping of peers we have an active route for
     let pki: OnchainPKI = Arc::new(DashMap::new());
-    let peers: Peers = Arc::new(DashMap::new());
+    let peers: Peers = Peers::new(max_peers);
     // only used by routers
     let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
+    let active_passthroughs: ActivePassthroughs = Arc::new(DashSet::new());
 
     let net_data = NetData {
         pki,
         peers,
         pending_passthroughs,
+        active_passthroughs,
+        max_peers,
+        max_passthroughs,
     };
 
     let mut tasks = JoinSet::<anyhow::Result<()>>::new();
@@ -153,7 +167,8 @@ async fn handle_local_request(
 ) {
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Err(_e) => {
-            // ignore
+            // only other possible message is from fd_manager -- handle here
+            handle_fdman(km, request_body, data).await;
         }
         Ok(NetAction::ConnectionRequest(_)) => {
             // we shouldn't get these locally, ignore
@@ -171,6 +186,7 @@ async fn handle_local_request(
                 NetAction::GetPeers => (
                     NetResponse::Peers(
                         data.peers
+                            .peers()
                             .iter()
                             .map(|p| p.identity.clone())
                             .collect::<Vec<Identity>>(),
@@ -189,19 +205,31 @@ async fn handle_local_request(
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(
-                        "we have connections with {} peers:\r\n",
-                        data.peers.len()
+                        "we have connections with {} peers ({} max):\r\n",
+                        data.peers.peers().len(),
+                        data.max_peers,
                     ));
-                    for peer in data.peers.iter() {
+
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    for peer in data.peers.peers().iter() {
                         printout.push_str(&format!(
-                            "    {}, routing_for={}\r\n",
-                            peer.identity.name, peer.routing_for,
+                            "    {},{} last message {}s ago\r\n",
+                            peer.identity.name,
+                            if peer.routing_for { " (routing)" } else { "" },
+                            now.saturating_sub(peer.last_message)
                         ));
                     }
-                    printout.push_str(&format!(
-                        "we have {} entries in the PKI\r\n",
-                        data.pki.len()
-                    ));
+
+                    if data.max_passthroughs > 0 {
+                        printout.push_str(&format!(
+                            "we allow {} max passthroughs\r\n",
+                            data.max_passthroughs
+                        ));
+                    }
+
                     if !data.pending_passthroughs.is_empty() {
                         printout.push_str(&format!(
                             "we have {} pending passthroughs:\r\n",
@@ -211,6 +239,21 @@ async fn handle_local_request(
                             printout.push_str(&format!("    {} -> {}\r\n", p.key().0, p.key().1));
                         }
                     }
+
+                    if !data.active_passthroughs.is_empty() {
+                        printout.push_str(&format!(
+                            "we have {} active passthroughs:\r\n",
+                            data.active_passthroughs.len()
+                        ));
+                        for p in data.active_passthroughs.iter() {
+                            printout.push_str(&format!("    {} -> {}\r\n", p.0, p.1));
+                        }
+                    }
+
+                    printout.push_str(&format!(
+                        "we have {} entries in the PKI\r\n",
+                        data.pki.len()
+                    ));
 
                     (NetResponse::Diagnostics(printout), None)
                 }
@@ -281,6 +324,25 @@ async fn handle_local_request(
                 .send(&ext.kernel_message_tx)
                 .await;
         }
+    }
+}
+
+async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &NetData) {
+    if km.source.process != *lib::core::FD_MANAGER_PROCESS_ID {
+        return;
+    }
+    let Ok(req) = rmp_serde::from_slice::<lib::core::FdManagerRequest>(request_body) else {
+        return;
+    };
+    match req {
+        lib::core::FdManagerRequest::Cull {
+            cull_fraction_denominator,
+        } => {
+            // we are requested to cull a fraction of our peers!
+            // TODO cull passthroughs too?
+            data.peers.cull(cull_fraction_denominator);
+        }
+        _ => return,
     }
 }
 
