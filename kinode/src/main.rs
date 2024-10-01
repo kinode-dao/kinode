@@ -60,6 +60,10 @@ pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
 #[tokio::main]
 async fn main() {
+    println!(
+        "\nDOCKER_BUILD_IMAGE_VERSION: {}\n",
+        env!("DOCKER_BUILD_IMAGE_VERSION")
+    );
     let app = build_command();
 
     let matches = app.get_matches();
