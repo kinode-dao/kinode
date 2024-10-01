@@ -19,9 +19,6 @@ use tokio::{
     sync::Mutex,
 };
 
-// Constants for file cleanup
-const MAX_OPEN_FILES: usize = 180;
-
 /// The main VFS service function.
 ///
 /// This function sets up the VFS, handles incoming requests, and manages file operations.
