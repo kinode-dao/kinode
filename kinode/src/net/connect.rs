@@ -151,7 +151,7 @@ pub async fn handle_failed_connection(
         &format!("net: failed to connect to {}", peer_id.name),
     )
     .await;
-    drop(data.peers.remove(&peer_id.name));
+    data.peers.remove(&peer_id.name).await;
     peer_rx.close();
     while let Some(km) = peer_rx.recv().await {
         utils::error_offline(km, &ext.network_error_tx).await;
