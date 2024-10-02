@@ -95,7 +95,13 @@ impl Peers {
     pub async fn insert(&self, name: String, peer: Peer) {
         self.peers.insert(name, peer);
         if self.peers.len() > self.max_peers as usize {
-            let oldest = self.peers.iter().min_by_key(|p| p.last_message).unwrap().key().clone();
+            let oldest = self
+                .peers
+                .iter()
+                .min_by_key(|p| p.last_message)
+                .unwrap()
+                .key()
+                .clone();
             self.peers.remove(&oldest);
         } else {
             utils::send_fd_manager_open(1, &self.send_to_loop).await;
