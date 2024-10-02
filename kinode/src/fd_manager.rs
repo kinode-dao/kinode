@@ -267,11 +267,7 @@ async fn update_max_fds(state: &mut State) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn send_cull(
-    our_node: &str,
-    send_to_loop: &MessageSender,
-    state: &State,
-) {
+async fn send_cull(our_node: &str, send_to_loop: &MessageSender, state: &State) {
     let message = Message::Request(Request {
         inherit: false,
         expects_response: None,
