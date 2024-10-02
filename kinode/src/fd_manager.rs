@@ -95,17 +95,29 @@ pub async fn fd_manager(
     loop {
         tokio::select! {
             Some(message) = recv_from_loop.recv() => {
-                if let Some(to_print) = handle_message(
+                match handle_message(
                     message,
                     &mut interval,
                     &mut state,
                     &send_to_loop,
-                ).await? {
-                    Printout::new(2, to_print).send(&send_to_terminal).await;
+                ).await {
+                    Ok(Some(to_print)) => {
+                        Printout::new(2, to_print).send(&send_to_terminal).await;
+                    }
+                    Err(e) => {
+                        Printout::new(1, &format!("handle_message error: {e:?}"))
+                            .send(&send_to_terminal)
+                            .await;
+                    }
+                    _ => {}
                 }
             }
             _ = interval.tick() => {
-                update_max_fds(&send_to_terminal, &mut state).await?;
+                if let Err(e) = update_max_fds(&mut state).await {
+                    Printout::new(1, &format!("update_max_fds error: {e:?}"))
+                        .send(&send_to_terminal)
+                        .await;
+                }
             }
         }
 
@@ -119,7 +131,7 @@ pub async fn fd_manager(
             )
             .send(&send_to_terminal)
             .await;
-            send_cull(our_node, &send_to_loop, &state).await?;
+            send_cull(our_node, &send_to_loop, &state).await;
         }
     }
 }
@@ -248,16 +260,9 @@ async fn handle_message(
     Ok(return_value)
 }
 
-async fn update_max_fds(send_to_terminal: &PrintSender, state: &mut State) -> anyhow::Result<()> {
-    let ulimit_max_fds = match get_max_fd_limit() {
-        Ok(ulimit_max_fds) => ulimit_max_fds,
-        Err(_) => {
-            Printout::new(1, "Couldn't update max fd limit: ulimit failed")
-                .send(send_to_terminal)
-                .await;
-            return Ok(());
-        }
-    };
+async fn update_max_fds(state: &mut State) -> anyhow::Result<()> {
+    let ulimit_max_fds = get_max_fd_limit()
+        .map_err(|_| anyhow::anyhow!("Couldn't update max fd limit: ulimit failed"))?;
     state.update_max_fds_from_ulimit(ulimit_max_fds);
     Ok(())
 }
@@ -266,7 +271,7 @@ async fn send_cull(
     our_node: &str,
     send_to_loop: &MessageSender,
     state: &State,
-) -> anyhow::Result<()> {
+) {
     let message = Message::Request(Request {
         inherit: false,
         expects_response: None,
@@ -288,7 +293,6 @@ async fn send_cull(
             .send(send_to_loop)
             .await;
     }
-    Ok(())
 }
 
 fn get_max_fd_limit() -> anyhow::Result<u64> {
