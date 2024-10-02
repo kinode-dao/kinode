@@ -331,7 +331,7 @@ async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &NetData) {
     if km.source.process != *lib::core::FD_MANAGER_PROCESS_ID {
         return;
     }
-    let Ok(req) = rmp_serde::from_slice::<lib::core::FdManagerRequest>(request_body) else {
+    let Ok(req) = serde_json::from_slice::<lib::core::FdManagerRequest>(request_body) else {
         return;
     };
     match req {
