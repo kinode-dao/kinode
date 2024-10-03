@@ -171,12 +171,12 @@ async fn handle_message(
                 ));
             }
             let mut return_value = Some(format!(
-                "{} closed {} of {}",
+                "{} closed {} of {} total;",
                 km.source.process, number_closed, state.total_fds,
             ));
             if state.total_fds < number_closed {
                 return_value.as_mut().unwrap().push_str(&format!(
-                    "\n!!process claims to have closed more fds ({}) than we have open for all processes ({})!!",
+                    " !!process claims to have closed more fds ({}) than we have open for all processes ({})!!",
                     number_closed,
                     state.total_fds,
                 ));
@@ -190,7 +190,7 @@ async fn handle_message(
                 .and_modify(|e| {
                     if e < &mut number_closed {
                         return_value.as_mut().unwrap().push_str(&format!(
-                            "\n!!process claims to have closed more fds ({}) than it had open: {}!!",
+                            " !!process claims to have closed more fds ({}) than it had open: {}!!",
                             number_closed,
                             e,
                         ));
@@ -198,6 +198,7 @@ async fn handle_message(
                     } else {
                         *e -= number_closed;
                     }
+                    return_value.as_mut().unwrap().push_str(&format!(" {e} left"));
                 });
             return_value
         }
