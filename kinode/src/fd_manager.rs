@@ -163,12 +163,20 @@ async fn handle_message(
             None
         }
         FdManagerRequest::CloseFds { mut number_closed } => {
-            assert!(state.total_fds >= number_closed);
             let mut return_value = Some(format!(
                 "{} closed {} of {}",
                 km.source.process, number_closed, state.total_fds,
             ));
-            state.total_fds -= number_closed;
+            if state.total_fds < number_closed {
+                return_value.as_mut().unwrap().push_str(&format!(
+                    "\n!!process claims to have closed more fds ({}) than we have open for all processes ({})!!",
+                    number_closed,
+                    state.total_fds,
+                ));
+                state.total_fds = 0;
+            } else {
+                state.total_fds -= number_closed;
+            }
             state
                 .fds
                 .entry(km.source.process)
