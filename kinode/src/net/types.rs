@@ -3,7 +3,7 @@ use lib::types::core::{
     Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
 };
 use {
-    dashmap::{DashMap, DashSet},
+    dashmap::DashMap,
     ring::signature::Ed25519KeyPair,
     serde::{Deserialize, Serialize},
     std::sync::Arc,
@@ -132,7 +132,7 @@ pub type OnchainPKI = Arc<DashMap<String, Identity>>;
 /// (from, target) -> from's socket
 ///
 /// only used by routers
-pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), PendingStream>>;
+pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), (PendingStream, u64)>>;
 pub enum PendingStream {
     WebSocket(WebSocketStream<MaybeTlsStream<TcpStream>>),
     Tcp(TcpStream),
@@ -141,7 +141,7 @@ pub enum PendingStream {
 /// (from, target)
 ///
 /// only used by routers
-pub type ActivePassthroughs = Arc<DashSet<(NodeId, NodeId)>>;
+pub type ActivePassthroughs = Arc<DashMap<(NodeId, NodeId), (u64, KillSender)>>;
 
 impl PendingStream {
     pub fn is_ws(&self) -> bool {
@@ -151,6 +151,8 @@ impl PendingStream {
         matches!(self, PendingStream::Tcp(_))
     }
 }
+
+type KillSender = tokio::sync::mpsc::Sender<()>;
 
 pub struct Peer {
     pub identity: Identity,

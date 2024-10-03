@@ -7,7 +7,7 @@ use types::{
     WS_PROTOCOL,
 };
 use {
-    dashmap::{DashMap, DashSet},
+    dashmap::DashMap,
     ring::signature::Ed25519KeyPair,
     std::sync::Arc,
     tokio::task::JoinSet,
@@ -58,7 +58,7 @@ pub async fn networking(
     let peers: Peers = Peers::new(max_peers, ext.kernel_message_tx.clone());
     // only used by routers
     let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
-    let active_passthroughs: ActivePassthroughs = Arc::new(DashSet::new());
+    let active_passthroughs: ActivePassthroughs = Arc::new(DashMap::new());
 
     let net_data = NetData {
         pki,
@@ -246,7 +246,7 @@ async fn handle_local_request(
                             data.active_passthroughs.len()
                         ));
                         for p in data.active_passthroughs.iter() {
-                            printout.push_str(&format!("    {} -> {}\r\n", p.0, p.1));
+                            printout.push_str(&format!("    {} -> {}\r\n", p.key().0, p.key().1));
                         }
                     }
 
