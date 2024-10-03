@@ -197,7 +197,7 @@ async fn handle_message(
                 return_value
                     .as_mut()
                     .unwrap()
-                    .push_str(&format!(" {e} left"));
+                    .push_str(&format!(" ({e} left to process after close)"));
             });
             return_value
         }
