@@ -52,23 +52,22 @@ pub async fn create_passthrough(
     if data.active_passthroughs.len() + data.pending_passthroughs.len()
         >= data.max_passthroughs as usize
     {
-        let oldest_active = data
-            .active_passthroughs
-            .iter()
-            .min_by_key(|p| p.0);
-        let (oldest_active_key, oldest_active_time, oldest_active_kill_sender) = match oldest_active {
+        let oldest_active = data.active_passthroughs.iter().min_by_key(|p| p.0);
+        let (oldest_active_key, oldest_active_time, oldest_active_kill_sender) = match oldest_active
+        {
             None => (None, get_now(), None),
             Some(oldest_active) => {
                 let (oldest_active_key, oldest_active_val) = oldest_active.pair();
                 let oldest_active_key = oldest_active_key.clone();
                 let (oldest_active_time, oldest_active_kill_sender) = oldest_active_val.clone();
-                (Some(oldest_active_key), oldest_active_time, Some(oldest_active_kill_sender))
+                (
+                    Some(oldest_active_key),
+                    oldest_active_time,
+                    Some(oldest_active_kill_sender),
+                )
             }
         };
-        let oldest_pending = data
-            .pending_passthroughs
-            .iter()
-            .min_by_key(|p| p.1);
+        let oldest_pending = data.pending_passthroughs.iter().min_by_key(|p| p.1);
         let (oldest_pending_key, oldest_pending_time) = match oldest_pending {
             None => (None, get_now()),
             Some(oldest_pending) => {
@@ -84,7 +83,8 @@ pub async fn create_passthrough(
             data.active_passthroughs.remove(&oldest_active_key.unwrap());
         } else {
             // pending key is oldest
-            data.pending_passthroughs.remove(&oldest_pending_key.unwrap());
+            data.pending_passthroughs
+                .remove(&oldest_pending_key.unwrap());
         }
     }
     // if the target has already generated a pending passthrough for this source,

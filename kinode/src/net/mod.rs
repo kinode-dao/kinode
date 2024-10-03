@@ -6,12 +6,7 @@ use types::{
     ActivePassthroughs, IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL,
     WS_PROTOCOL,
 };
-use {
-    dashmap::DashMap,
-    ring::signature::Ed25519KeyPair,
-    std::sync::Arc,
-    tokio::task::JoinSet,
-};
+use {dashmap::DashMap, ring::signature::Ed25519KeyPair, std::sync::Arc, tokio::task::JoinSet};
 
 mod connect;
 mod indirect;
