@@ -184,22 +184,21 @@ async fn handle_message(
             } else {
                 state.total_fds -= number_closed;
             }
-            state
-                .fds
-                .entry(km.source.process)
-                .and_modify(|e| {
-                    if e < &mut number_closed {
-                        return_value.as_mut().unwrap().push_str(&format!(
-                            " !!process claims to have closed more fds ({}) than it had open: {}!!",
-                            number_closed,
-                            e,
-                        ));
-                        *e = 0;
-                    } else {
-                        *e -= number_closed;
-                    }
-                    return_value.as_mut().unwrap().push_str(&format!(" {e} left"));
-                });
+            state.fds.entry(km.source.process).and_modify(|e| {
+                if e < &mut number_closed {
+                    return_value.as_mut().unwrap().push_str(&format!(
+                        " !!process claims to have closed more fds ({}) than it had open: {}!!",
+                        number_closed, e,
+                    ));
+                    *e = 0;
+                } else {
+                    *e -= number_closed;
+                }
+                return_value
+                    .as_mut()
+                    .unwrap()
+                    .push_str(&format!(" {e} left"));
+            });
             return_value
         }
         FdManagerRequest::Cull { .. } => {
