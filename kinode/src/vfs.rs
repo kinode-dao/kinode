@@ -51,11 +51,13 @@ pub async fn vfs(
 
     let files = Files::new(
         Address::new(our_node.as_str(), VFS_PROCESS_ID.clone()),
-        send_to_loop.clone(),
+        send_to_loop,
     );
 
     let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
         HashMap::default();
+
+    crate::fd_manager::send_fd_manager_request_fds_limit(&files.our, &files.send_to_loop).await;
 
     while let Some(km) = recv_from_loop.recv().await {
         if *our_node != km.source.node {
@@ -72,10 +74,10 @@ pub async fn vfs(
         }
 
         if km.source.process == *FD_MANAGER_PROCESS_ID {
-            let files = files.clone();
+            let mut files = files.clone();
             let send_to_terminal = send_to_terminal.clone();
             tokio::spawn(async move {
-                if let Err(e) = handle_fd_request(km, files).await {
+                if let Err(e) = handle_fd_request(km, &mut files).await {
                     Printout::new(
                         1,
                         format!("vfs: got request from fd_manager that errored: {e:?}"),
@@ -99,9 +101,8 @@ pub async fn vfs(
 
         // Clone Arcs for the new task
         let our_node = our_node.clone();
-        let send_to_loop = send_to_loop.clone();
         let send_to_caps_oracle = send_to_caps_oracle.clone();
-        let files = files.clone();
+        let mut files = files.clone();
         let vfs_path = vfs_path.clone();
 
         tokio::spawn(async move {
@@ -110,15 +111,8 @@ pub async fn vfs(
                 let (km_id, km_rsvp) =
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
-                if let Err(e) = handle_request(
-                    &our_node,
-                    km,
-                    files,
-                    &send_to_loop,
-                    &send_to_caps_oracle,
-                    &vfs_path,
-                )
-                .await
+                if let Err(e) =
+                    handle_request(&our_node, km, &mut files, &send_to_caps_oracle, &vfs_path).await
                 {
                     KernelMessage::builder()
                         .id(km_id)
@@ -135,7 +129,7 @@ pub async fn vfs(
                         )))
                         .build()
                         .unwrap()
-                        .send(&send_to_loop)
+                        .send(&files.send_to_loop)
                         .await;
                 }
             }
@@ -153,8 +147,9 @@ struct Files {
     cursor_positions: Arc<DashMap<PathBuf, u64>>,
     /// access order of files
     access_order: Arc<Mutex<UniqueQueue<PathBuf>>>,
-    our: Address,
-    send_to_loop: MessageSender,
+    pub our: Address,
+    pub send_to_loop: MessageSender,
+    pub fds_limit: u64,
 }
 
 struct FileEntry {
@@ -170,6 +165,7 @@ impl Files {
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
             our,
             send_to_loop,
+            fds_limit: 100, // TODO blocking request to fd_manager to get max num of fds at boot
         }
     }
 
@@ -200,22 +196,19 @@ impl Files {
             },
         );
         self.update_access_order(&path).await;
-        crate::fd_manager::send_fd_manager_open(&self.our, 1, &self.send_to_loop)
-            .await
-            .map_err(|e| VfsError::Other {
-                error: e.to_string(),
-            })?;
+
+        // if open files >= fds_limit, close the (limit/2) least recently used files
+        if self.open_files.len() as u64 >= self.fds_limit {
+            crate::fd_manager::send_fd_manager_hit_fds_limit(&self.our, &self.send_to_loop).await;
+            self.close_least_recently_used_files(self.fds_limit / 2)
+                .await?;
+        }
+
         Ok(file)
     }
 
     async fn remove_file(&self, path: &Path) -> Result<(), VfsError> {
-        if self.open_files.remove(path).is_some() {
-            crate::fd_manager::send_fd_manager_close(&self.our, 1, &self.send_to_loop)
-                .await
-                .map_err(|e| VfsError::Other {
-                    error: e.to_string(),
-                })?;
-        }
+        self.open_files.remove(path);
         Ok(())
     }
 
@@ -249,11 +242,6 @@ impl Files {
                 break; // no more files to close
             }
         }
-        crate::fd_manager::send_fd_manager_close(&self.our, closed, &self.send_to_loop)
-            .await
-            .map_err(|e| VfsError::Other {
-                error: e.to_string(),
-            })?;
         Ok(())
     }
 
@@ -290,8 +278,7 @@ impl Files {
 async fn handle_request(
     our_node: &str,
     km: KernelMessage,
-    files: Files,
-    send_to_loop: &MessageSender,
+    files: &mut Files,
     send_to_caps_oracle: &CapMessageSender,
     vfs_path: &PathBuf,
 ) -> Result<(), VfsError> {
@@ -347,7 +334,7 @@ async fn handle_request(
                 )))
                 .build()
                 .unwrap()
-                .send(send_to_loop)
+                .send(&files.send_to_loop)
                 .await;
             return Ok(());
         } else {
@@ -661,7 +648,7 @@ async fn handle_request(
             }))
             .build()
             .unwrap()
-            .send(send_to_loop)
+            .send(&files.send_to_loop)
             .await;
     }
 
@@ -1030,7 +1017,7 @@ fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
     base.join(extension_path)
 }
 
-async fn handle_fd_request(km: KernelMessage, files: Files) -> anyhow::Result<()> {
+async fn handle_fd_request(km: KernelMessage, files: &mut Files) -> anyhow::Result<()> {
     let Message::Request(Request { body, .. }) = km.message else {
         return Err(anyhow::anyhow!("not a request"));
     };
@@ -1038,13 +1025,17 @@ async fn handle_fd_request(km: KernelMessage, files: Files) -> anyhow::Result<()
     let request: FdManagerRequest = serde_json::from_slice(&body)?;
 
     match request {
-        FdManagerRequest::Cull {
-            cull_fraction_denominator,
-        } => {
-            let fraction_to_close = files.open_files.len() as u64 / cull_fraction_denominator;
-            files
-                .close_least_recently_used_files(fraction_to_close)
-                .await?;
+        FdManagerRequest::FdsLimit(fds_limit) => {
+            files.fds_limit = fds_limit;
+            if files.open_files.len() as u64 >= fds_limit {
+                crate::fd_manager::send_fd_manager_hit_fds_limit(&files.our, &files.send_to_loop)
+                    .await;
+                files
+                    .close_least_recently_used_files(
+                        (files.open_files.len() as u64 - fds_limit) / 2,
+                    )
+                    .await?;
+            }
         }
         _ => {
             return Err(anyhow::anyhow!("non-Cull FdManagerRequest"));

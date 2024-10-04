@@ -2077,12 +2077,15 @@ impl KnsUpdate {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FdManagerRequest {
     /// other process -> fd_manager
-    OpenFds { number_opened: u64 },
+    /// must send this to fd_manager to get an initial fds_limit
+    RequestFdsLimit,
     /// other process -> fd_manager
-    CloseFds { number_closed: u64 },
+    /// send this to notify fd_manager that limit was hit,
+    /// which may or may not be reacted to
+    FdsLimitHit,
 
     /// fd_manager -> other process
-    Cull { cull_fraction_denominator: u64 },
+    FdsLimit(u64),
 
     /// administrative
     UpdateMaxFdsAsFractionOfUlimitPercentage(u64),
@@ -2091,18 +2094,24 @@ pub enum FdManagerRequest {
     /// administrative
     UpdateCullFractionDenominator(u64),
 
-    /// get a `HashMap` of all `ProcessId`s to their known number of open file descriptors.
+    /// get a `HashMap` of all `ProcessId`s to their number of allocated file descriptors.
     GetState,
-    /// get the `u64` known number of file descriptors used by `ProcessId`.
-    GetProcessFdCount(ProcessId),
+    /// get the `u64` number of file descriptors allocated to `ProcessId`.
+    GetProcessFdLimit(ProcessId),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FdManagerResponse {
     /// response to [`FdManagerRequest::GetState`]
-    GetState(HashMap<ProcessId, u64>),
-    /// response to [`FdManagerRequest::GetProcessFdCount`]
-    GetProcessFdCount(u64),
+    GetState(HashMap<ProcessId, FdsLimit>),
+    /// response to [`FdManagerRequest::GetProcessFdLimit`]
+    GetProcessFdLimit(u64),
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct FdsLimit {
+    pub limit: u64,
+    pub hit_count: u64,
 }
 
 #[derive(Debug, Error)]
@@ -2111,6 +2120,6 @@ pub enum FdManagerError {
     NotARequest,
     #[error("fd_manager: received a non-FdManangerRequest")]
     BadRequest,
-    #[error("fd_manager: received a FdManagerRequest::Cull, but I am the one who culls")]
-    FdManagerWasSentCull,
+    #[error("fd_manager: received a FdManagerRequest::FdsLimit, but I am the one who sets limits")]
+    FdManagerWasSentLimit,
 }

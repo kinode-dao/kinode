@@ -1,6 +1,6 @@
-use crate::net::utils;
 use lib::types::core::{
-    Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
+    Address, Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
+    NET_PROCESS_ID,
 };
 use {
     dashmap::DashMap,
@@ -57,13 +57,13 @@ pub struct RoutingRequest {
 
 #[derive(Clone)]
 pub struct Peers {
-    max_peers: u32,
+    max_peers: u64,
     send_to_loop: MessageSender,
     peers: Arc<DashMap<String, Peer>>,
 }
 
 impl Peers {
-    pub fn new(max_peers: u32, send_to_loop: MessageSender) -> Self {
+    pub fn new(max_peers: u64, send_to_loop: MessageSender) -> Self {
         Self {
             max_peers,
             send_to_loop,
@@ -103,13 +103,15 @@ impl Peers {
                 .key()
                 .clone();
             self.peers.remove(&oldest);
-        } else {
-            utils::send_fd_manager_open(1, &self.send_to_loop).await;
+            crate::fd_manager::send_fd_manager_hit_fds_limit(
+                &Address::new("our", NET_PROCESS_ID.clone()),
+                &self.send_to_loop,
+            )
+            .await;
         }
     }
 
     pub async fn remove(&self, name: &str) -> Option<(String, Peer)> {
-        utils::send_fd_manager_close(1, &self.send_to_loop).await;
         self.peers.remove(name)
     }
 
@@ -123,7 +125,11 @@ impl Peers {
         for peer in to_remove {
             self.peers.remove(&peer.identity.name);
         }
-        utils::send_fd_manager_close(num_to_remove as u64, &self.send_to_loop).await;
+        crate::fd_manager::send_fd_manager_hit_fds_limit(
+            &Address::new("our", NET_PROCESS_ID.clone()),
+            &self.send_to_loop,
+        )
+        .await;
     }
 }
 
@@ -217,6 +223,7 @@ pub struct NetData {
     pub pending_passthroughs: PendingPassthroughs,
     /// only used by routers
     pub active_passthroughs: ActivePassthroughs,
-    pub max_peers: u32,
-    pub max_passthroughs: u32,
+    pub max_peers: u64,
+    pub max_passthroughs: u64,
+    pub fds_limit: u64,
 }

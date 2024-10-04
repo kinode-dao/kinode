@@ -49,8 +49,8 @@ const WS_MIN_PORT: u16 = 9_000;
 const TCP_MIN_PORT: u16 = 10_000;
 const MAX_PORT: u16 = 65_535;
 
-const DEFAULT_MAX_PEERS: u32 = 32;
-const DEFAULT_MAX_PASSTHROUGHS: u32 = 0;
+const DEFAULT_MAX_PEERS: u64 = 32;
+const DEFAULT_MAX_PASSTHROUGHS: u64 = 0;
 
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
@@ -358,10 +358,10 @@ async fn main() {
         net_message_receiver,
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
         *matches
-            .get_one::<u32>("max-peers")
+            .get_one::<u64>("max-peers")
             .unwrap_or(&DEFAULT_MAX_PEERS),
         *matches
-            .get_one::<u32>("max-passthroughs")
+            .get_one::<u64>("max-passthroughs")
             .unwrap_or(&DEFAULT_MAX_PASSTHROUGHS),
     ));
     tasks.spawn(state::state_sender(
