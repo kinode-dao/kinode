@@ -55,7 +55,7 @@ impl State {
 
     fn update_all_fds_limits(&mut self) {
         let len = self.fds_limits.len() as u64;
-        let per_process_limit = self.max_fds / len;
+        let per_process_limit = self.max_fds / std::cmp::max(len, 1);
         for limit in self.fds_limits.values_mut() {
             limit.limit = per_process_limit;
             // reset hit count when updating limits
