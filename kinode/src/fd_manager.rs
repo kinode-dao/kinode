@@ -52,6 +52,16 @@ impl State {
         };
         self.max_fds = ulimit_max_fds * max_fds_as_fraction_of_ulimit_percentage / 100;
     }
+
+    fn update_all_fds_limits(&mut self) {
+        let len = self.fds_limits.len() as u64;
+        let per_process_limit = self.max_fds / len;
+        for limit in self.fds_limits.values_mut() {
+            limit.limit = per_process_limit;
+            // reset hit count when updating limits
+            limit.hit_count = 0;
+        }
+    }
 }
 
 impl Mode {
@@ -113,6 +123,7 @@ pub async fn fd_manager(
                 match update_max_fds(&mut state).await {
                     Ok(new) => {
                         if new != old_max_fds {
+                            state.update_all_fds_limits();
                             send_all_fds_limits(&our_node, &send_to_loop, &state).await;
                         }
                     }
@@ -147,20 +158,15 @@ async fn handle_message(
             // divide max_fds by number of processes requesting fds limits,
             // then send each process its new limit
             // TODO can weight different processes differently
-            let per_process_limit = state.max_fds / (state.fds_limits.len() + 1) as u64;
             state.fds_limits.insert(
                 km.source.process,
                 FdsLimit {
-                    limit: per_process_limit,
+                    limit: 0,
                     hit_count: 0,
                 },
             );
-            state.fds_limits.iter_mut().for_each(|(_process, limit)| {
-                limit.limit = per_process_limit;
-                limit.hit_count = 0;
-            });
+            state.update_all_fds_limits();
             send_all_fds_limits(our_node, send_to_loop, state).await;
-
             None
         }
         FdManagerRequest::FdsLimitHit => {
