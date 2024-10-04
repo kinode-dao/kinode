@@ -109,10 +109,16 @@ pub async fn fd_manager(
                 }
             }
             _ = interval.tick() => {
-                if let Err(e) = update_max_fds(&mut state).await {
-                    Printout::new(1, &format!("update_max_fds error: {e:?}"))
+                let old_max_fds = state.max_fds;
+                match update_max_fds(&mut state).await {
+                    Ok(new) => {
+                        if new != old_max_fds {
+                            send_all_fds_limits(&our_node, &send_to_loop, &state).await;
+                        }
+                    }
+                    Err(e) => Printout::new(1, &format!("update_max_fds error: {e:?}"))
                         .send(&send_to_terminal)
-                        .await;
+                        .await,
                 }
             }
         }
@@ -251,11 +257,11 @@ async fn handle_message(
     Ok(return_value)
 }
 
-async fn update_max_fds(state: &mut State) -> anyhow::Result<()> {
+async fn update_max_fds(state: &mut State) -> anyhow::Result<u64> {
     let ulimit_max_fds = get_max_fd_limit()
         .map_err(|_| anyhow::anyhow!("Couldn't update max fd limit: ulimit failed"))?;
     state.update_max_fds_from_ulimit(ulimit_max_fds);
-    Ok(())
+    Ok(ulimit_max_fds)
 }
 
 async fn send_all_fds_limits(our_node: &str, send_to_loop: &MessageSender, state: &State) {
