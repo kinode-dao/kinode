@@ -71,7 +71,7 @@ pub async fn networking(
         active_passthroughs,
         max_peers,
         max_passthroughs,
-        fds_limit: 100, // TODO blocking request to fd_manager to get max num of fds at boot
+        fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
     };
 
     let mut tasks = JoinSet::<anyhow::Result<()>>::new();
@@ -349,9 +349,10 @@ async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &mut NetDat
             if data.max_passthroughs > fds_limit {
                 data.max_passthroughs = fds_limit;
             }
-            // TODO cull passthroughs too?
+            // TODO cull passthroughs too
             if data.peers.peers().len() >= data.fds_limit as usize {
-                data.peers.cull(2).await;
+                let diff = data.peers.peers().len() - data.fds_limit as usize;
+                data.peers.cull(diff).await;
             }
         }
         _ => return,

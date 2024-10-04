@@ -115,13 +115,12 @@ impl Peers {
         self.peers.remove(name)
     }
 
-    /// close the (peer count / fraction) oldest connections
-    pub async fn cull(&self, fraction: u64) {
-        let num_to_remove = (self.peers.len() as f64 / fraction as f64).ceil() as usize;
-        let mut to_remove = Vec::with_capacity(num_to_remove);
+    /// close the n oldest connections
+    pub async fn cull(&self, n: usize) {
+        let mut to_remove = Vec::with_capacity(n);
         let mut sorted_peers: Vec<_> = self.peers.iter().collect();
         sorted_peers.sort_by_key(|p| p.last_message);
-        to_remove.extend(sorted_peers.iter().take(num_to_remove));
+        to_remove.extend(sorted_peers.iter().take(n));
         for peer in to_remove {
             self.peers.remove(&peer.identity.name);
         }

@@ -165,7 +165,7 @@ impl Files {
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
             our,
             send_to_loop,
-            fds_limit: 100, // TODO blocking request to fd_manager to get max num of fds at boot
+            fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
         }
     }
 
@@ -1031,9 +1031,7 @@ async fn handle_fd_request(km: KernelMessage, files: &mut Files) -> anyhow::Resu
                 crate::fd_manager::send_fd_manager_hit_fds_limit(&files.our, &files.send_to_loop)
                     .await;
                 files
-                    .close_least_recently_used_files(
-                        (files.open_files.len() as u64 - fds_limit) / 2,
-                    )
+                    .close_least_recently_used_files(files.open_files.len() as u64 - fds_limit)
                     .await?;
             }
         }
