@@ -1,6 +1,9 @@
-use lib::types::core::{
-    Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
-    NetworkErrorSender, NodeRouting, PrintSender,
+use lib::{
+    core::Address,
+    types::core::{
+        Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
+        NetworkErrorSender, NodeRouting, PrintSender, NET_PROCESS_ID,
+    },
 };
 use types::{
     ActivePassthroughs, IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL,
@@ -34,10 +37,16 @@ pub async fn networking(
     kernel_message_rx: MessageReceiver,
     // only used if indirect -- TODO use
     _reveal_ip: bool,
-    max_peers: u32,
+    max_peers: u64,
     // only used by routers
-    max_passthroughs: u32,
+    max_passthroughs: u64,
 ) -> anyhow::Result<()> {
+    crate::fd_manager::send_fd_manager_request_fds_limit(
+        &Address::new(&our.name, NET_PROCESS_ID.clone()),
+        &kernel_message_tx,
+    )
+    .await;
+
     let ext = IdentityExt {
         our: Arc::new(our),
         our_ip: Arc::new(our_ip),
@@ -62,6 +71,7 @@ pub async fn networking(
         active_passthroughs,
         max_peers,
         max_passthroughs,
+        fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
     };
 
     let mut tasks = JoinSet::<anyhow::Result<()>>::new();
@@ -116,12 +126,12 @@ pub async fn networking(
 async fn local_recv(
     ext: IdentityExt,
     mut kernel_message_rx: MessageReceiver,
-    data: NetData,
+    mut data: NetData,
 ) -> anyhow::Result<()> {
     while let Some(km) = kernel_message_rx.recv().await {
         if km.target.node == ext.our.name {
             // handle messages sent to us
-            handle_message(&ext, km, &data).await;
+            handle_message(&ext, km, &mut data).await;
         } else {
             connect::send_to_peer(&ext, &data, km).await;
         }
@@ -129,7 +139,7 @@ async fn local_recv(
     Err(anyhow::anyhow!("net: kernel message channel was dropped"))
 }
 
-async fn handle_message(ext: &IdentityExt, km: KernelMessage, data: &NetData) {
+async fn handle_message(ext: &IdentityExt, km: KernelMessage, data: &mut NetData) {
     match &km.message {
         lib::core::Message::Request(request) => handle_request(ext, &km, &request.body, data).await,
         lib::core::Message::Response((response, _context)) => {
@@ -142,7 +152,7 @@ async fn handle_request(
     ext: &IdentityExt,
     km: &KernelMessage,
     request_body: &[u8],
-    data: &NetData,
+    data: &mut NetData,
 ) {
     if km.source.node == ext.our.name {
         handle_local_request(ext, km, request_body, data).await;
@@ -158,7 +168,7 @@ async fn handle_local_request(
     ext: &IdentityExt,
     km: &KernelMessage,
     request_body: &[u8],
-    data: &NetData,
+    data: &mut NetData,
 ) {
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Err(_e) => {
@@ -322,7 +332,7 @@ async fn handle_local_request(
     }
 }
 
-async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &NetData) {
+async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &mut NetData) {
     if km.source.process != *lib::core::FD_MANAGER_PROCESS_ID {
         return;
     }
@@ -330,12 +340,20 @@ async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &NetData) {
         return;
     };
     match req {
-        lib::core::FdManagerRequest::Cull {
-            cull_fraction_denominator,
-        } => {
-            // we are requested to cull a fraction of our peers!
-            // TODO cull passthroughs too?
-            data.peers.cull(cull_fraction_denominator).await;
+        lib::core::FdManagerRequest::FdsLimit(fds_limit) => {
+            data.fds_limit = fds_limit;
+            if data.max_peers > fds_limit {
+                data.max_peers = fds_limit;
+            }
+            // TODO combine with max_peers check
+            if data.max_passthroughs > fds_limit {
+                data.max_passthroughs = fds_limit;
+            }
+            // TODO cull passthroughs too
+            if data.peers.peers().len() >= data.fds_limit as usize {
+                let diff = data.peers.peers().len() - data.fds_limit as usize;
+                data.peers.cull(diff).await;
+            }
         }
         _ => return,
     }

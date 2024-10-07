@@ -3,9 +3,9 @@ use crate::net::types::{
     RoutingRequest, TCP_PROTOCOL, WS_PROTOCOL,
 };
 use lib::types::core::{
-    Address, Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction,
-    NetworkErrorSender, NodeId, NodeRouting, PrintSender, Printout, Request, Response, SendError,
-    SendErrorKind, WrappedSendError, NET_PROCESS_ID,
+    Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
+    NodeId, NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
+    WrappedSendError,
 };
 use {
     futures::{SinkExt, StreamExt},
@@ -425,18 +425,6 @@ pub async fn parse_hello_message(
         .unwrap()
         .send(kernel_message_tx)
         .await;
-}
-
-/// Send an OpenFds message to the fd_manager.
-pub async fn send_fd_manager_open(num_opened: u64, kernel_message_tx: &MessageSender) {
-    let our: Address = Address::new("our", NET_PROCESS_ID.clone());
-    let _ = crate::fd_manager::send_fd_manager_open(&our, num_opened, kernel_message_tx).await;
-}
-
-/// Send a CloseFds message to the fd_manager.
-pub async fn send_fd_manager_close(num_closed: u64, kernel_message_tx: &MessageSender) {
-    let our: Address = Address::new("our", NET_PROCESS_ID.clone());
-    let _ = crate::fd_manager::send_fd_manager_close(&our, num_closed, kernel_message_tx).await;
 }
 
 /// Create a terminal printout at verbosity level 0.

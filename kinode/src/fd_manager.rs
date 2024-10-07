@@ -1,5 +1,5 @@
 use lib::types::core::{
-    Address, FdManagerError, FdManagerRequest, FdManagerResponse, KernelMessage, Message,
+    Address, FdManagerError, FdManagerRequest, FdManagerResponse, FdsLimit, KernelMessage, Message,
     MessageReceiver, MessageSender, PrintSender, Printout, ProcessId, Request,
     FD_MANAGER_PROCESS_ID,
 };
@@ -8,14 +8,12 @@ use std::{collections::HashMap, sync::Arc};
 const DEFAULT_MAX_OPEN_FDS: u64 = 180;
 const DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE: u64 = 60;
 const DEFAULT_UPDATE_ULIMIT_SECS: u64 = 3600;
-const DEFAULT_CULL_FRACTION_DENOMINATOR: u64 = 2;
+const _DEFAULT_CULL_FRACTION_DENOMINATOR: u64 = 2;
 
 struct State {
-    fds: HashMap<ProcessId, u64>,
+    fds_limits: HashMap<ProcessId, FdsLimit>,
     mode: Mode,
-    total_fds: u64,
     max_fds: u64,
-    cull_fraction_denominator: u64,
 }
 
 enum Mode {
@@ -35,14 +33,12 @@ impl State {
 
     fn default(static_max_fds: Option<u64>) -> Self {
         Self {
-            fds: HashMap::new(),
+            fds_limits: HashMap::new(),
             mode: Mode::default(static_max_fds),
-            total_fds: 0,
             max_fds: match static_max_fds {
                 Some(max) => max,
                 None => DEFAULT_MAX_OPEN_FDS,
             },
-            cull_fraction_denominator: DEFAULT_CULL_FRACTION_DENOMINATOR,
         }
     }
 
@@ -55,6 +51,16 @@ impl State {
             return;
         };
         self.max_fds = ulimit_max_fds * max_fds_as_fraction_of_ulimit_percentage / 100;
+    }
+
+    fn update_all_fds_limits(&mut self) {
+        let len = self.fds_limits.len() as u64;
+        let per_process_limit = self.max_fds / std::cmp::max(len, 1);
+        for limit in self.fds_limits.values_mut() {
+            limit.limit = per_process_limit;
+            // reset hit count when updating limits
+            limit.hit_count = 0;
+        }
     }
 }
 
@@ -91,11 +97,11 @@ pub async fn fd_manager(
         };
         tokio::time::interval(tokio::time::Duration::from_secs(*update_ulimit_secs))
     };
-    let our_node = our_node.as_str();
     loop {
         tokio::select! {
             Some(message) = recv_from_loop.recv() => {
                 match handle_message(
+                    &our_node,
                     message,
                     &mut interval,
                     &mut state,
@@ -113,30 +119,25 @@ pub async fn fd_manager(
                 }
             }
             _ = interval.tick() => {
-                if let Err(e) = update_max_fds(&mut state).await {
-                    Printout::new(1, &format!("update_max_fds error: {e:?}"))
+                let old_max_fds = state.max_fds;
+                match update_max_fds(&mut state).await {
+                    Ok(new) => {
+                        if new != old_max_fds {
+                            state.update_all_fds_limits();
+                            send_all_fds_limits(&our_node, &send_to_loop, &state).await;
+                        }
+                    }
+                    Err(e) => Printout::new(1, &format!("update_max_fds error: {e:?}"))
                         .send(&send_to_terminal)
-                        .await;
+                        .await,
                 }
             }
-        }
-
-        if state.total_fds >= state.max_fds {
-            Printout::new(
-                2,
-                format!(
-                    "Have {} open >= {} max fds; sending Cull Request...",
-                    state.total_fds, state.max_fds,
-                ),
-            )
-            .send(&send_to_terminal)
-            .await;
-            send_cull(our_node, &send_to_loop, &state).await;
         }
     }
 }
 
 async fn handle_message(
+    our_node: &str,
     km: KernelMessage,
     _interval: &mut tokio::time::Interval,
     state: &mut State,
@@ -153,56 +154,32 @@ async fn handle_message(
     let request: FdManagerRequest =
         serde_json::from_slice(&body).map_err(|_e| FdManagerError::BadRequest)?;
     let return_value = match request {
-        FdManagerRequest::OpenFds { number_opened } => {
-            state.total_fds += number_opened;
-            state
-                .fds
-                .entry(km.source.process)
-                .and_modify(|e| *e += number_opened)
-                .or_insert(number_opened);
+        FdManagerRequest::RequestFdsLimit => {
+            // divide max_fds by number of processes requesting fds limits,
+            // then send each process its new limit
+            // TODO can weight different processes differently
+            state.fds_limits.insert(
+                km.source.process,
+                FdsLimit {
+                    limit: 0,
+                    hit_count: 0,
+                },
+            );
+            state.update_all_fds_limits();
+            send_all_fds_limits(our_node, send_to_loop, state).await;
             None
         }
-        FdManagerRequest::CloseFds { mut number_closed } => {
-            if !state.fds.contains_key(&km.source.process) {
-                return Err(anyhow::anyhow!(
-                    "{} attempted to CloseFds {} but does not have any open!",
-                    km.source.process,
-                    number_closed,
-                ));
-            }
-            let mut return_value = Some(format!(
-                "{} closed {} of {} total;",
-                km.source.process, number_closed, state.total_fds,
-            ));
-            if state.total_fds < number_closed {
-                return_value.as_mut().unwrap().push_str(&format!(
-                    " !!process claims to have closed more fds ({}) than we have open for all processes ({})!!",
-                    number_closed,
-                    state.total_fds,
-                ));
-                state.total_fds = 0;
-            } else {
-                state.total_fds -= number_closed;
-            }
-            state.fds.entry(km.source.process).and_modify(|e| {
-                if e < &mut number_closed {
-                    return_value.as_mut().unwrap().push_str(&format!(
-                        " !!process claims to have closed more fds ({}) than it had open: {}!!",
-                        number_closed, e,
-                    ));
-                    *e = 0;
-                } else {
-                    *e -= number_closed;
-                }
-                return_value
-                    .as_mut()
-                    .unwrap()
-                    .push_str(&format!(" ({e} left to process after close)"));
+        FdManagerRequest::FdsLimitHit => {
+            // sender process hit its fd limit
+            // TODO react to this
+            state.fds_limits.get_mut(&km.source.process).map(|limit| {
+                limit.hit_count += 1;
             });
-            return_value
+            Some(format!("{} hit its fd limit", km.source.process))
         }
-        FdManagerRequest::Cull { .. } => {
-            return Err(FdManagerError::FdManagerWasSentCull.into());
+        FdManagerRequest::FdsLimit(_) => {
+            // should only send this, never receive it
+            return Err(FdManagerError::FdManagerWasSentLimit.into());
         }
         FdManagerRequest::UpdateMaxFdsAsFractionOfUlimitPercentage(new) => {
             match state.mode {
@@ -224,8 +201,8 @@ async fn handle_message(
             }
             None
         }
-        FdManagerRequest::UpdateCullFractionDenominator(new) => {
-            state.cull_fraction_denominator = new;
+        FdManagerRequest::UpdateCullFractionDenominator(_new) => {
+            // state.cull_fraction_denominator = new;
             None
         }
         FdManagerRequest::GetState => {
@@ -237,7 +214,7 @@ async fn handle_message(
                     .message(Message::Response((
                         lib::core::Response {
                             body: serde_json::to_vec(&FdManagerResponse::GetState(
-                                state.fds.clone(),
+                                state.fds_limits.clone(),
                             ))
                             .unwrap(),
                             inherit: false,
@@ -253,7 +230,7 @@ async fn handle_message(
             }
             None
         }
-        FdManagerRequest::GetProcessFdCount(process) => {
+        FdManagerRequest::GetProcessFdLimit(process) => {
             if expects_response.is_some() {
                 KernelMessage::builder()
                     .id(km.id)
@@ -261,8 +238,12 @@ async fn handle_message(
                     .target(km.rsvp.unwrap_or(km.source))
                     .message(Message::Response((
                         lib::core::Response {
-                            body: serde_json::to_vec(&FdManagerResponse::GetProcessFdCount(
-                                *state.fds.get(&process).unwrap_or(&0),
+                            body: serde_json::to_vec(&FdManagerResponse::GetProcessFdLimit(
+                                state
+                                    .fds_limits
+                                    .get(&process)
+                                    .map(|limit| limit.limit)
+                                    .unwrap_or(0),
                             ))
                             .unwrap(),
                             inherit: false,
@@ -282,30 +263,26 @@ async fn handle_message(
     Ok(return_value)
 }
 
-async fn update_max_fds(state: &mut State) -> anyhow::Result<()> {
+async fn update_max_fds(state: &mut State) -> anyhow::Result<u64> {
     let ulimit_max_fds = get_max_fd_limit()
         .map_err(|_| anyhow::anyhow!("Couldn't update max fd limit: ulimit failed"))?;
     state.update_max_fds_from_ulimit(ulimit_max_fds);
-    Ok(())
+    Ok(ulimit_max_fds)
 }
 
-async fn send_cull(our_node: &str, send_to_loop: &MessageSender, state: &State) {
-    let message = Message::Request(Request {
-        inherit: false,
-        expects_response: None,
-        body: serde_json::to_vec(&FdManagerRequest::Cull {
-            cull_fraction_denominator: state.cull_fraction_denominator.clone(),
-        })
-        .unwrap(),
-        metadata: None,
-        capabilities: vec![],
-    });
-    for process_id in state.fds.keys() {
+async fn send_all_fds_limits(our_node: &str, send_to_loop: &MessageSender, state: &State) {
+    for (process_id, limit) in &state.fds_limits {
         KernelMessage::builder()
             .id(rand::random())
             .source((our_node, FD_MANAGER_PROCESS_ID.clone()))
             .target((our_node, process_id.clone()))
-            .message(message.clone())
+            .message(Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                body: serde_json::to_vec(&FdManagerRequest::FdsLimit(limit.limit)).unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            }))
             .build()
             .unwrap()
             .send(send_to_loop)
@@ -327,43 +304,29 @@ fn get_max_fd_limit() -> anyhow::Result<u64> {
     }
 }
 
-pub async fn send_fd_manager_open(
-    our: &Address,
-    number_opened: u64,
-    send_to_loop: &MessageSender,
-) -> anyhow::Result<()> {
+pub async fn send_fd_manager_request_fds_limit(our: &Address, send_to_loop: &MessageSender) {
     let message = Message::Request(Request {
         inherit: false,
         expects_response: None,
-        body: serde_json::to_vec(&FdManagerRequest::OpenFds { number_opened }).unwrap(),
+        body: serde_json::to_vec(&FdManagerRequest::RequestFdsLimit).unwrap(),
         metadata: None,
         capabilities: vec![],
     });
-    send_to_fd_manager(our, message, send_to_loop).await?;
-    Ok(())
+    send_to_fd_manager(our, message, send_to_loop).await
 }
 
-pub async fn send_fd_manager_close(
-    our: &Address,
-    number_closed: u64,
-    send_to_loop: &MessageSender,
-) -> anyhow::Result<()> {
+pub async fn send_fd_manager_hit_fds_limit(our: &Address, send_to_loop: &MessageSender) {
     let message = Message::Request(Request {
         inherit: false,
         expects_response: None,
-        body: serde_json::to_vec(&FdManagerRequest::CloseFds { number_closed }).unwrap(),
+        body: serde_json::to_vec(&FdManagerRequest::FdsLimitHit).unwrap(),
         metadata: None,
         capabilities: vec![],
     });
-    send_to_fd_manager(our, message, send_to_loop).await?;
-    Ok(())
+    send_to_fd_manager(our, message, send_to_loop).await
 }
 
-async fn send_to_fd_manager(
-    our: &Address,
-    message: Message,
-    send_to_loop: &MessageSender,
-) -> anyhow::Result<()> {
+async fn send_to_fd_manager(our: &Address, message: Message, send_to_loop: &MessageSender) {
     KernelMessage::builder()
         .id(rand::random())
         .source(our.clone())
@@ -372,6 +335,5 @@ async fn send_to_fd_manager(
         .build()
         .unwrap()
         .send(send_to_loop)
-        .await;
-    Ok(())
+        .await
 }
