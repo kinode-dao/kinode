@@ -72,16 +72,19 @@ fn build_and_zip_package(
 fn main() -> anyhow::Result<()> {
     let matches = Command::new("build_package")
         .about("Build the core Kinode packages.")
-        .arg(Arg::new("FEATURES")
-             .long("features")
-             .help("List of features to compile packages with")
-             .action(clap::ArgAction::Append))
-        .arg(Arg::new("SKIP_FRONTEND")
-             .long("skip-build-frontend")
-             .help("Skip building the frontend")
-             .action(clap::ArgAction::SetTrue))
+        .arg(
+            Arg::new("FEATURES")
+                .long("features")
+                .help("List of features to compile packages with")
+                .action(clap::ArgAction::Append),
+        )
+        .arg(
+            Arg::new("SKIP_FRONTEND")
+                .long("skip-build-frontend")
+                .help("Skip building the frontend")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
-
 
     println!("a");
     // kinode/target/debug/build_package
@@ -128,7 +131,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!("c");
-    let features = matches.get_many::<String>("FEATURES")
+    let features = matches
+        .get_many::<String>("FEATURES")
         .unwrap_or_default()
         .map(|s| s.to_owned())
         .collect::<Vec<String>>()
@@ -179,10 +183,8 @@ fn main() -> anyhow::Result<()> {
             Ok((entry_path, zip_filename, zip_contents)) => {
                 let metadata_path = entry_path.join("metadata.json");
                 let metadata_file_name = {
-                    let metadata_file_stem = entry_path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap();
+                    let metadata_file_stem =
+                        entry_path.file_stem().and_then(|s| s.to_str()).unwrap();
                     format!("{metadata_file_stem}.json")
                 };
                 let new_metadata_path = target_metadatas_dir.join(metadata_file_name);
@@ -193,7 +195,9 @@ fn main() -> anyhow::Result<()> {
                 writeln!(
                     bootstrapped_processes,
                     "    (\"{}\", include_bytes!(\"{}\"), include_bytes!(\"{}\"),),",
-                    zip_filename, new_metadata_path.display(), zip_path.display(),
+                    zip_filename,
+                    new_metadata_path.display(),
+                    zip_path.display(),
                 )?;
             }
             Err(e) => return Err(e),
