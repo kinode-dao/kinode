@@ -3,19 +3,23 @@ use lib::types::core::{
     MessageReceiver, MessageSender, PrintSender, Printout, ProcessId, Request,
     FD_MANAGER_PROCESS_ID,
 };
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 
 const DEFAULT_MAX_OPEN_FDS: u64 = 180;
-const DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE: u64 = 60;
+const DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE: u64 = 90;
+const SYS_RESERVED_FDS: u64 = 30;
 const DEFAULT_UPDATE_ULIMIT_SECS: u64 = 3600;
 const _DEFAULT_CULL_FRACTION_DENOMINATOR: u64 = 2;
 
+#[derive(Debug, Serialize, Deserialize)]
 struct State {
     fds_limits: HashMap<ProcessId, FdsLimit>,
     mode: Mode,
     max_fds: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 enum Mode {
     /// don't update the max_fds except by user input
     StaticMax,
@@ -50,7 +54,15 @@ impl State {
         else {
             return;
         };
-        self.max_fds = ulimit_max_fds * max_fds_as_fraction_of_ulimit_percentage / 100;
+        let min_ulimit = SYS_RESERVED_FDS + 10;
+        if ulimit_max_fds <= min_ulimit {
+            panic!(
+                "fatal: ulimit from system ({ulimit_max_fds}) is too small to operate Kinode. Please run Kinode with a larger ulimit (at least {min_ulimit}).",
+            );
+        }
+
+        self.max_fds =
+            ulimit_max_fds * max_fds_as_fraction_of_ulimit_percentage / 100 - SYS_RESERVED_FDS;
     }
 
     fn update_all_fds_limits(&mut self) {
@@ -228,7 +240,7 @@ async fn handle_message(
                     .send(send_to_loop)
                     .await;
             }
-            None
+            Some(format!("fd_manager: {:?}", state))
         }
         FdManagerRequest::GetProcessFdLimit(process) => {
             if expects_response.is_some() {
