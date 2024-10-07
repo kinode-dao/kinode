@@ -1403,6 +1403,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "build_package"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fs-err",
+ "kit",
+ "tokio",
+ "walkdir",
+ "zip 0.6.6",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
