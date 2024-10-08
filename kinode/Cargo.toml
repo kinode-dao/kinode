@@ -62,6 +62,7 @@ indexmap = "2.4"
 jwt = "0.16"
 lib = { path = "../lib" }
 lazy_static = "1.4.0"
+libc = "0.2"
 nohash-hasher = "0.2.0"
 open = "5.1.4"
 public-ip = "0.2.2"

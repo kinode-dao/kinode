@@ -1,9 +1,9 @@
 use dashmap::DashMap;
 use lib::types::core::{
-    Address, CapMessage, CapMessageSender, Capability, DirEntry, FileMetadata, FileType,
-    KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
-    Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest, VfsResponse,
-    KERNEL_PROCESS_ID, VFS_PROCESS_ID,
+    Address, CapMessage, CapMessageSender, Capability, DirEntry, FdManagerRequest, FileMetadata,
+    FileType, KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId,
+    PrintSender, Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest,
+    VfsResponse, FD_MANAGER_PROCESS_ID, KERNEL_PROCESS_ID, VFS_PROCESS_ID,
 };
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -18,9 +18,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
     sync::Mutex,
 };
-
-// Constants for file cleanup
-const MAX_OPEN_FILES: usize = 180;
 
 /// The main VFS service function.
 ///
@@ -52,10 +49,15 @@ pub async fn vfs(
         .map_err(|e| anyhow::anyhow!("failed creating vfs dir! {e:?}"))?;
     let vfs_path = Arc::new(fs::canonicalize(&vfs_path).await?);
 
-    let files = Files::new();
+    let mut files = Files::new(
+        Address::new(our_node.as_str(), VFS_PROCESS_ID.clone()),
+        send_to_loop,
+    );
 
     let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
         HashMap::default();
+
+    crate::fd_manager::send_fd_manager_request_fds_limit(&files.our, &files.send_to_loop).await;
 
     while let Some(km) = recv_from_loop.recv().await {
         if *our_node != km.source.node {
@@ -71,6 +73,18 @@ pub async fn vfs(
             continue;
         }
 
+        if km.source.process == *FD_MANAGER_PROCESS_ID {
+            if let Err(e) = handle_fd_request(km, &mut files).await {
+                Printout::new(
+                    1,
+                    format!("vfs: got request from fd_manager that errored: {e:?}"),
+                )
+                .send(&send_to_terminal)
+                .await;
+            };
+            continue;
+        }
+
         let queue = process_queues
             .get(&km.source.process)
             .cloned()
@@ -83,9 +97,8 @@ pub async fn vfs(
 
         // Clone Arcs for the new task
         let our_node = our_node.clone();
-        let send_to_loop = send_to_loop.clone();
         let send_to_caps_oracle = send_to_caps_oracle.clone();
-        let files = files.clone();
+        let mut files = files.clone();
         let vfs_path = vfs_path.clone();
 
         tokio::spawn(async move {
@@ -94,15 +107,8 @@ pub async fn vfs(
                 let (km_id, km_rsvp) =
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
-                if let Err(e) = handle_request(
-                    &our_node,
-                    km,
-                    files,
-                    &send_to_loop,
-                    &send_to_caps_oracle,
-                    &vfs_path,
-                )
-                .await
+                if let Err(e) =
+                    handle_request(&our_node, km, &mut files, &send_to_caps_oracle, &vfs_path).await
                 {
                     KernelMessage::builder()
                         .id(km_id)
@@ -119,7 +125,7 @@ pub async fn vfs(
                         )))
                         .build()
                         .unwrap()
-                        .send(&send_to_loop)
+                        .send(&files.send_to_loop)
                         .await;
                 }
             }
@@ -137,6 +143,9 @@ struct Files {
     cursor_positions: Arc<DashMap<PathBuf, u64>>,
     /// access order of files
     access_order: Arc<Mutex<UniqueQueue<PathBuf>>>,
+    pub our: Address,
+    pub send_to_loop: MessageSender,
+    pub fds_limit: u64,
 }
 
 struct FileEntry {
@@ -145,11 +154,14 @@ struct FileEntry {
 }
 
 impl Files {
-    pub fn new() -> Self {
+    pub fn new(our: Address, send_to_loop: MessageSender) -> Self {
         Self {
             open_files: Arc::new(DashMap::new()),
             cursor_positions: Arc::new(DashMap::new()),
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
+            our,
+            send_to_loop,
+            fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
         }
     }
 
@@ -167,10 +179,6 @@ impl Files {
             return Ok(entry.value().file.clone());
         }
 
-        if self.open_files.len() >= MAX_OPEN_FILES {
-            self.close_least_recently_used_files().await?;
-        }
-
         let mut file = self.try_open_file(&path, create, truncate).await?;
         if let Some(position) = self.cursor_positions.get(&path) {
             file.seek(SeekFrom::Start(*position)).await?;
@@ -184,7 +192,20 @@ impl Files {
             },
         );
         self.update_access_order(&path).await;
+
+        // if open files >= fds_limit, close the (limit/2) least recently used files
+        if self.open_files.len() as u64 >= self.fds_limit {
+            crate::fd_manager::send_fd_manager_hit_fds_limit(&self.our, &self.send_to_loop).await;
+            self.close_least_recently_used_files(self.fds_limit / 2)
+                .await?;
+        }
+
         Ok(file)
+    }
+
+    async fn remove_file(&self, path: &Path) -> Result<(), VfsError> {
+        self.open_files.remove(path);
+        Ok(())
     }
 
     async fn update_access_order(&self, path: &Path) {
@@ -192,10 +213,9 @@ impl Files {
         access_order.push_back(path.to_path_buf());
     }
 
-    async fn close_least_recently_used_files(&self) -> Result<(), VfsError> {
+    async fn close_least_recently_used_files(&self, to_close: u64) -> Result<(), VfsError> {
         let mut access_order = self.access_order.lock().await;
         let mut closed = 0;
-        let to_close = MAX_OPEN_FILES / 3; // close 33% of max open files
 
         while closed < to_close {
             if let Some(path) = access_order.pop_front() {
@@ -254,8 +274,7 @@ impl Files {
 async fn handle_request(
     our_node: &str,
     km: KernelMessage,
-    files: Files,
-    send_to_loop: &MessageSender,
+    files: &mut Files,
     send_to_caps_oracle: &CapMessageSender,
     vfs_path: &PathBuf,
 ) -> Result<(), VfsError> {
@@ -311,7 +330,7 @@ async fn handle_request(
                 )))
                 .build()
                 .unwrap()
-                .send(send_to_loop)
+                .send(&files.send_to_loop)
                 .await;
             return Ok(());
         } else {
@@ -361,7 +380,7 @@ async fn handle_request(
         }
         VfsAction::CreateFile => {
             // create truncates any file that might've existed before
-            files.open_files.remove(&path);
+            files.remove_file(&path).await?;
             let _file = files.open_file(&path, true, true).await?;
             (VfsResponse::Ok, None)
         }
@@ -373,7 +392,7 @@ async fn handle_request(
         }
         VfsAction::CloseFile => {
             // removes file from scope, resets file_handle and cursor.
-            files.open_files.remove(&path);
+            files.remove_file(&path).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::WriteAll => {
@@ -470,7 +489,7 @@ async fn handle_request(
         }
         VfsAction::RemoveFile => {
             fs::remove_file(&path).await?;
-            files.open_files.remove(&path);
+            files.remove_file(&path).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::RemoveDir => {
@@ -625,7 +644,7 @@ async fn handle_request(
             }))
             .build()
             .unwrap()
-            .send(send_to_loop)
+            .send(&files.send_to_loop)
             .await;
     }
 
@@ -902,7 +921,6 @@ fn get_file_type(metadata: &std::fs::Metadata) -> FileType {
 }
 
 /// helper cache for most recently used paths
-
 pub struct UniqueQueue<T>
 where
     T: Eq + Hash,
@@ -992,4 +1010,30 @@ fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
 
     let extension_path = Path::new(extension_str);
     base.join(extension_path)
+}
+
+async fn handle_fd_request(km: KernelMessage, files: &mut Files) -> anyhow::Result<()> {
+    let Message::Request(Request { body, .. }) = km.message else {
+        return Err(anyhow::anyhow!("not a request"));
+    };
+
+    let request: FdManagerRequest = serde_json::from_slice(&body)?;
+
+    match request {
+        FdManagerRequest::FdsLimit(fds_limit) => {
+            files.fds_limit = fds_limit;
+            if files.open_files.len() as u64 >= fds_limit {
+                crate::fd_manager::send_fd_manager_hit_fds_limit(&files.our, &files.send_to_loop)
+                    .await;
+                files
+                    .close_least_recently_used_files(files.open_files.len() as u64 - fds_limit)
+                    .await?;
+            }
+        }
+        _ => {
+            return Err(anyhow::anyhow!("non-Cull FdManagerRequest"));
+        }
+    }
+
+    Ok(())
 }

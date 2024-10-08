@@ -8,15 +8,17 @@ use thiserror::Error;
 
 lazy_static::lazy_static! {
     pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd_manager"), "distro", "sys");
     pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
     pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
+    pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
     pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys");
     pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys");
     pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys");
-    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
-    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
-    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
 }
 
 //
@@ -1719,6 +1721,8 @@ pub enum VfsError {
     NotFound { path: String },
     #[error("Creating directory failed at path: {path}: {error}")]
     CreateDirError { path: String, error: String },
+    #[error("Other error: {error}")]
+    Other { error: String },
 }
 
 impl VfsError {
@@ -1733,6 +1737,7 @@ impl VfsError {
             VfsError::BadJson { .. } => "NoJson",
             VfsError::NotFound { .. } => "NotFound",
             VfsError::CreateDirError { .. } => "CreateDirError",
+            VfsError::Other { .. } => "Other",
         }
     }
 }
@@ -2067,4 +2072,54 @@ impl KnsUpdate {
     pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
         self.ports.get(protocol)
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum FdManagerRequest {
+    /// other process -> fd_manager
+    /// must send this to fd_manager to get an initial fds_limit
+    RequestFdsLimit,
+    /// other process -> fd_manager
+    /// send this to notify fd_manager that limit was hit,
+    /// which may or may not be reacted to
+    FdsLimitHit,
+
+    /// fd_manager -> other process
+    FdsLimit(u64),
+
+    /// administrative
+    UpdateMaxFdsAsFractionOfUlimitPercentage(u64),
+    /// administrative
+    UpdateUpdateUlimitSecs(u64),
+    /// administrative
+    UpdateCullFractionDenominator(u64),
+
+    /// get a `HashMap` of all `ProcessId`s to their number of allocated file descriptors.
+    GetState,
+    /// get the `u64` number of file descriptors allocated to `ProcessId`.
+    GetProcessFdLimit(ProcessId),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum FdManagerResponse {
+    /// response to [`FdManagerRequest::GetState`]
+    GetState(HashMap<ProcessId, FdsLimit>),
+    /// response to [`FdManagerRequest::GetProcessFdLimit`]
+    GetProcessFdLimit(u64),
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct FdsLimit {
+    pub limit: u64,
+    pub hit_count: u64,
+}
+
+#[derive(Debug, Error)]
+pub enum FdManagerError {
+    #[error("fd_manager: received a non-Request message")]
+    NotARequest,
+    #[error("fd_manager: received a non-FdManangerRequest")]
+    BadRequest,
+    #[error("fd_manager: received a FdManagerRequest::FdsLimit, but I am the one who sets limits")]
+    FdManagerWasSentLimit,
 }

@@ -7,23 +7,17 @@ use tokio::sync::mpsc;
 /// if target is a peer, queue to be routed
 /// otherwise, create peer and initiate routing
 pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) {
-    if let Some(peer) = data.peers.get_mut(&km.target.node) {
+    if let Some(mut peer) = data.peers.get_mut(&km.target.node) {
         peer.sender.send(km).expect("net: peer sender was dropped");
+        peer.set_last_message();
     } else {
         let Some(peer_id) = data.pki.get(&km.target.node) else {
             return utils::error_offline(km, &ext.network_error_tx).await;
         };
-        let (peer_tx, peer_rx) = mpsc::unbounded_channel();
+        let (mut peer, peer_rx) = Peer::new(peer_id.clone(), false);
         // send message to be routed
-        peer_tx.send(km).unwrap();
-        data.peers.insert(
-            peer_id.name.clone(),
-            Peer {
-                identity: peer_id.clone(),
-                routing_for: false,
-                sender: peer_tx.clone(),
-            },
-        );
+        peer.send(km);
+        data.peers.insert(peer_id.name.clone(), peer).await;
         tokio::spawn(connect_to_peer(
             ext.clone(),
             data.clone(),
@@ -157,7 +151,7 @@ pub async fn handle_failed_connection(
         &format!("net: failed to connect to {}", peer_id.name),
     )
     .await;
-    drop(data.peers.remove(&peer_id.name));
+    data.peers.remove(&peer_id.name).await;
     peer_rx.close();
     while let Some(km) = peer_rx.recv().await {
         utils::error_offline(km, &ext.network_error_tx).await;
