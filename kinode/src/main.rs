@@ -1,5 +1,3 @@
-#![feature(async_closure)]
-#![feature(btree_extract_if)]
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
 use lib::types::core::{

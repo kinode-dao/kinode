@@ -86,7 +86,6 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    println!("a");
     // kinode/target/debug/build_package
     let current_exe_dir = std::env::current_exe() // build_package
         .unwrap();
@@ -100,9 +99,6 @@ fn main() -> anyhow::Result<()> {
     let kinode_dir = top_level_dir.join("kinode");
     let packages_dir = kinode_dir.join("packages");
 
-    println!("{current_exe_dir:?} {top_level_dir:?} {kinode_dir:?} {packages_dir:?}");
-
-    println!("b");
     if matches.get_flag("SKIP_FRONTEND") {
         println!("skipping frontend builds");
     } else {
@@ -130,7 +126,6 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    println!("c");
     let features = matches
         .get_many::<String>("FEATURES")
         .unwrap_or_default()
@@ -138,7 +133,6 @@ fn main() -> anyhow::Result<()> {
         .collect::<Vec<String>>()
         .join(",");
 
-    println!("d");
     let results: Vec<anyhow::Result<(PathBuf, String, Vec<u8>)>> = fs::read_dir(&packages_dir)?
         .filter_map(|entry| {
             let entry_path = match entry {
@@ -158,62 +152,38 @@ fn main() -> anyhow::Result<()> {
         })
         .collect();
 
-    println!("e");
-    // Process results, e.g., write to `bootstrapped_processes.rs`
-    // This part remains sequential
-    let mut bootstrapped_processes = vec![];
-    writeln!(
-        bootstrapped_processes,
-        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8], &[u8])] = &["
-    )?;
+    let mut file_to_metadata = std::collections::HashMap::new();
 
-    println!("f");
     let target_dir = top_level_dir.join("target");
     let target_packages_dir = target_dir.join("packages");
-    let target_metadatas_dir = target_dir.join("metadatas");
-    for path in [&target_packages_dir, &target_metadatas_dir] {
-        if !path.exists() {
-            fs::create_dir_all(path)?;
-        }
+    // fresh
+    if target_packages_dir.exists() {
+        fs::remove_dir_all(&target_packages_dir)?;
     }
+    fs::create_dir_all(&target_packages_dir)?;
 
-    println!("g");
     for result in results {
         match result {
             Ok((entry_path, zip_filename, zip_contents)) => {
                 let metadata_path = entry_path.join("metadata.json");
-                let metadata_file_name = {
-                    let metadata_file_stem =
-                        entry_path.file_stem().and_then(|s| s.to_str()).unwrap();
-                    format!("{metadata_file_stem}.json")
-                };
-                let new_metadata_path = target_metadatas_dir.join(metadata_file_name);
-                fs::copy(&metadata_path, &new_metadata_path)?;
+                let metadata_contents = fs::read_to_string(&metadata_path)?;
+                let metadata_contents: serde_json::Value = serde_json::from_str(&metadata_contents)?;
+                file_to_metadata.insert(zip_filename.clone(), metadata_contents);
                 let zip_path = target_packages_dir.join(&zip_filename);
                 fs::write(&zip_path, &zip_contents)?;
-
-                writeln!(
-                    bootstrapped_processes,
-                    "    (\"{}\", include_bytes!(\"{}\"), include_bytes!(\"{}\"),),",
-                    zip_filename,
-                    new_metadata_path.display(),
-                    zip_path.display(),
-                )?;
             }
-            Err(e) => return Err(e),
+            Err(e) => return Err(anyhow::anyhow!("{e:?}")),
         }
     }
 
-    println!("h");
-    writeln!(bootstrapped_processes, "];")?;
-    let bootstrapped_processes_path = target_packages_dir.join("bootstrapped_processes.rs");
-    fs::write(&bootstrapped_processes_path, bootstrapped_processes)?;
+    let file_to_metadata = serde_json::to_value(&file_to_metadata)?;
+    let file_to_metadata = serde_json::to_string_pretty(&file_to_metadata)?;
+    let file_to_metadata_path = target_packages_dir.join("file_to_metadata.json");
+    fs::write(&file_to_metadata_path, file_to_metadata)?;
 
-    println!("i");
     let package_zip_path = target_dir.join("packages.zip");
     let package_zip_contents = zip_directory(&target_packages_dir)?;
     fs::write(package_zip_path, package_zip_contents)?;
 
-    println!("j");
     Ok(())
 }
