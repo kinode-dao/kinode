@@ -410,14 +410,14 @@ async fn check_caps(
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
-                    cap: Capability {
-                        issuer: state.our.as_ref().clone(),
-                        params: serde_json::json!({
+                    cap: Capability::new(
+                        state.our.as_ref().clone(),
+                        serde_json::json!({
                             "kind": "write",
                             "db": request.db.to_string(),
                         })
                         .to_string(),
-                    },
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;
@@ -433,14 +433,14 @@ async fn check_caps(
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
-                    cap: Capability {
-                        issuer: state.our.as_ref().clone(),
-                        params: serde_json::json!({
+                    cap: Capability::new(
+                        state.our.as_ref().clone(),
+                        serde_json::json!({
                             "kind": "read",
                             "db": request.db.to_string(),
                         })
                         .to_string(),
-                    },
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;

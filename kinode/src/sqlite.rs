@@ -1,3 +1,4 @@
+use crate::vfs::UniqueQueue;
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use dashmap::DashMap;
 use lib::types::core::{
@@ -21,6 +22,82 @@ lazy_static::lazy_static! {
         HashSet::from(["ALTER", "ANALYZE", "COMMIT", "CREATE", "DELETE", "DETACH", "DROP", "END", "INSERT", "REINDEX", "RELEASE", "RENAME", "REPLACE", "ROLLBACK", "SAVEPOINT", "UPDATE", "VACUUM"]);
 }
 
+#[derive(Clone)]
+struct SqliteState {
+    our: Arc<Address>,
+    sqlite_path: Arc<String>,
+    send_to_loop: MessageSender,
+    send_to_terminal: PrintSender,
+    open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
+    access_order: Arc<Mutex<UniqueQueue<(PackageId, String)>>>,
+    txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>>,
+    fds_limit: u64,
+}
+
+impl SqliteState {
+    pub fn new(
+        our: Address,
+        send_to_terminal: PrintSender,
+        send_to_loop: MessageSender,
+        home_directory_path: String,
+    ) -> Self {
+        Self {
+            our: Arc::new(our),
+            sqlite_path: Arc::new(format!("{home_directory_path}/sqlite")),
+            send_to_loop,
+            send_to_terminal,
+            open_dbs: Arc::new(DashMap::new()),
+            access_order: Arc::new(Mutex::new(UniqueQueue::new())),
+            txs: Arc::new(DashMap::new()),
+            fds_limit: 10,
+        }
+    }
+
+    pub async fn open_db(&mut self, package_id: PackageId, db: String) -> Result<(), SqliteError> {
+        let key = (package_id.clone(), db.clone());
+        if self.open_dbs.contains_key(&key) {
+            return Ok(());
+        }
+
+        if self.open_dbs.len() as u64 >= self.fds_limit {
+            // close least recently used db
+            let key = self.access_order.lock().await.pop_front().unwrap();
+            self.remove_db(key.0, key.1).await;
+        }
+
+        let db_path = format!("{}/{}/{}", self.sqlite_path.as_str(), package_id, db);
+        fs::create_dir_all(&db_path).await?;
+
+        let db_file_path = format!("{}/{}.db", db_path, db);
+
+        let db_conn = Connection::open(db_file_path)?;
+        let _ = db_conn.execute("PRAGMA journal_mode=WAL", []);
+
+        self.open_dbs.insert(key, Mutex::new(db_conn));
+
+        let mut access_order = self.access_order.lock().await;
+        access_order.push_back((package_id, db));
+        Ok(())
+    }
+
+    pub async fn remove_db(&mut self, package_id: PackageId, db: String) {
+        let db_path = format!("{}/{}/{}", self.sqlite_path.as_str(), package_id, db);
+        self.open_dbs.remove(&(package_id.clone(), db.to_string()));
+        let mut access_order = self.access_order.lock().await;
+        access_order.remove(&(package_id, db));
+        let _ = fs::remove_dir_all(&db_path).await;
+    }
+
+    pub async fn remove_least_recently_used_dbs(&mut self, n: u64) {
+        for _ in 0..n {
+            let mut lock = self.access_order.lock().await;
+            let key = lock.pop_front().unwrap();
+            drop(lock);
+            self.remove_db(key.0, key.1).await;
+        }
+    }
+}
+
 pub async fn sqlite(
     our_node: Arc<String>,
     send_to_loop: MessageSender,
@@ -29,52 +106,39 @@ pub async fn sqlite(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let sqlite_path = Arc::new(format!("{home_directory_path}/sqlite"));
-    if let Err(e) = fs::create_dir_all(&*sqlite_path).await {
+    let our = Address::new(our_node.as_str(), SQLITE_PROCESS_ID.clone());
+
+    crate::fd_manager::send_fd_manager_request_fds_limit(&our, &send_to_loop).await;
+
+    let mut state = SqliteState::new(our, send_to_terminal, send_to_loop, home_directory_path);
+
+    if let Err(e) = fs::create_dir_all(state.sqlite_path.as_str()).await {
         panic!("failed creating sqlite dir! {e:?}");
     }
 
-    let open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>> = Arc::new(DashMap::new());
-    let txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>> = Arc::new(DashMap::new());
-    let mut fds_limit = 10;
-
     let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> = HashMap::new();
 
-    crate::fd_manager::send_fd_manager_request_fds_limit(
-        &Address::new(our_node.as_str(), SQLITE_PROCESS_ID.clone()),
-        &send_to_loop,
-    )
-    .await;
-
     while let Some(km) = recv_from_loop.recv().await {
-        if *our_node != km.source.node {
+        if state.our.node != km.source.node {
             Printout::new(
                 1,
                 format!(
-                    "sqlite: got request from {}, but requests must come from our node {our_node}",
-                    km.source.node
+                    "sqlite: got request from {}, but requests must come from our node {}",
+                    km.source.node, state.our.node
                 ),
             )
-            .send(&send_to_terminal)
+            .send(&state.send_to_terminal)
             .await;
             continue;
         }
 
         if km.source.process == *FD_MANAGER_PROCESS_ID {
-            if let Err(e) = handle_fd_request(
-                our_node.as_str(),
-                km,
-                &open_dbs,
-                &mut fds_limit,
-                &send_to_loop,
-            )
-            .await
-            {
+            if let Err(e) = handle_fd_request(km, &mut state).await {
                 Printout::new(
                     1,
-                    format!("kv: got request from fd_manager that errored: {e:?}"),
+                    format!("sqlite: got request from fd_manager that errored: {e:?}"),
                 )
-                .send(&send_to_terminal)
+                .send(&state.send_to_terminal)
                 .await;
             };
             continue;
@@ -91,13 +155,8 @@ pub async fn sqlite(
         }
 
         // clone Arcs
-        let our_node = our_node.clone();
-        let send_to_loop = send_to_loop.clone();
-        let send_to_terminal = send_to_terminal.clone();
+        let mut state = state.clone();
         let send_to_caps_oracle = send_to_caps_oracle.clone();
-        let open_dbs = open_dbs.clone();
-        let txs = txs.clone();
-        let sqlite_path = sqlite_path.clone();
 
         tokio::spawn(async move {
             let mut queue_lock = queue.lock().await;
@@ -105,23 +164,13 @@ pub async fn sqlite(
                 let (km_id, km_rsvp) =
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
-                if let Err(e) = handle_request(
-                    &our_node,
-                    km,
-                    open_dbs,
-                    txs,
-                    &send_to_loop,
-                    &send_to_caps_oracle,
-                    &sqlite_path,
-                )
-                .await
-                {
+                if let Err(e) = handle_request(km, &mut state, &send_to_caps_oracle).await {
                     Printout::new(1, format!("sqlite: {e}"))
-                        .send(&send_to_terminal)
+                        .send(&state.send_to_terminal)
                         .await;
                     KernelMessage::builder()
                         .id(km_id)
-                        .source((our_node.as_str(), SQLITE_PROCESS_ID.clone()))
+                        .source(state.our.as_ref().clone())
                         .target(km_rsvp)
                         .message(Message::Response((
                             Response {
@@ -135,7 +184,7 @@ pub async fn sqlite(
                         )))
                         .build()
                         .unwrap()
-                        .send(&send_to_loop)
+                        .send(&state.send_to_loop)
                         .await;
                 }
             }
@@ -145,13 +194,9 @@ pub async fn sqlite(
 }
 
 async fn handle_request(
-    our_node: &str,
     km: KernelMessage,
-    open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
-    txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>>,
-    send_to_loop: &MessageSender,
+    state: &mut SqliteState,
     send_to_caps_oracle: &CapMessageSender,
-    sqlite_path: &str,
 ) -> Result<(), SqliteError> {
     let KernelMessage {
         id,
@@ -182,15 +227,12 @@ async fn handle_request(
         }
     };
 
-    check_caps(
-        our_node,
-        &source,
-        &open_dbs,
-        send_to_caps_oracle,
-        &request,
-        sqlite_path,
-    )
-    .await?;
+    check_caps(&source, state, send_to_caps_oracle, &request).await?;
+
+    // always open to ensure db exists
+    state
+        .open_db(request.package_id.clone(), request.db.clone())
+        .await?;
 
     let (body, bytes) = match request.action {
         SqliteAction::Open => {
@@ -202,7 +244,7 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Read { query } => {
-            let db = match open_dbs.get(&(request.package_id, request.db)) {
+            let db = match state.open_dbs.get(&(request.package_id, request.db)) {
                 Some(db) => db,
                 None => {
                     return Err(SqliteError::NoDb);
@@ -258,7 +300,7 @@ async fn handle_request(
             )
         }
         SqliteAction::Write { statement, tx_id } => {
-            let db = match open_dbs.get(&(request.package_id, request.db)) {
+            let db = match state.open_dbs.get(&(request.package_id, request.db)) {
                 Some(db) => db,
                 None => {
                     return Err(SqliteError::NoDb);
@@ -280,7 +322,9 @@ async fn handle_request(
 
             match tx_id {
                 Some(tx_id) => {
-                    txs.entry(tx_id)
+                    state
+                        .txs
+                        .entry(tx_id)
                         .or_default()
                         .push((statement.clone(), parameters));
                 }
@@ -293,7 +337,7 @@ async fn handle_request(
         }
         SqliteAction::BeginTx => {
             let tx_id = rand::random::<u64>();
-            txs.insert(tx_id, Vec::new());
+            state.txs.insert(tx_id, Vec::new());
 
             (
                 serde_json::to_vec(&SqliteResponse::BeginTx { tx_id }).unwrap(),
@@ -301,7 +345,7 @@ async fn handle_request(
             )
         }
         SqliteAction::Commit { tx_id } => {
-            let db = match open_dbs.get(&(request.package_id, request.db)) {
+            let db = match state.open_dbs.get(&(request.package_id, request.db)) {
                 Some(db) => db,
                 None => {
                     return Err(SqliteError::NoDb);
@@ -309,7 +353,7 @@ async fn handle_request(
             };
             let mut db = db.lock().await;
 
-            let txs = match txs.remove(&tx_id).map(|(_, tx)| tx) {
+            let txs = match state.txs.remove(&tx_id).map(|(_, tx)| tx) {
                 None => {
                     return Err(SqliteError::NoTx);
                 }
@@ -325,7 +369,7 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Backup => {
-            for db_ref in open_dbs.iter() {
+            for db_ref in state.open_dbs.iter() {
                 let db = db_ref.value().lock().await;
                 let result: rusqlite::Result<()> = db
                     .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
@@ -343,7 +387,7 @@ async fn handle_request(
     if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
         KernelMessage::builder()
             .id(id)
-            .source((our_node, SQLITE_PROCESS_ID.clone()))
+            .source(state.our.as_ref().clone())
             .target(target)
             .message(Message::Response((
                 Response {
@@ -360,7 +404,7 @@ async fn handle_request(
             }))
             .build()
             .unwrap()
-            .send(send_to_loop)
+            .send(&state.send_to_loop)
             .await;
     }
 
@@ -368,12 +412,10 @@ async fn handle_request(
 }
 
 async fn check_caps(
-    our_node: &str,
     source: &Address,
-    open_dbs: &Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
+    state: &mut SqliteState,
     send_to_caps_oracle: &CapMessageSender,
     request: &SqliteRequest,
-    sqlite_path: &str,
 ) -> Result<(), SqliteError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -384,7 +426,7 @@ async fn check_caps(
                 .send(CapMessage::Has {
                     on: source.process.clone(),
                     cap: Capability::new(
-                        (our_node, SQLITE_PROCESS_ID.clone()),
+                        state.our.as_ref().clone(),
                         serde_json::json!({
                             "kind": "write",
                             "db": request.db.to_string(),
@@ -407,7 +449,7 @@ async fn check_caps(
                 .send(CapMessage::Has {
                     on: source.process.clone(),
                     cap: Capability::new(
-                        (our_node, SQLITE_PROCESS_ID.clone()),
+                        state.our.as_ref().clone(),
                         serde_json::json!({
                             "kind": "read",
                             "db": request.db.to_string(),
@@ -435,7 +477,7 @@ async fn check_caps(
             add_capability(
                 "read",
                 &request.db.to_string(),
-                &our_node,
+                &state.our,
                 &source,
                 send_to_caps_oracle,
             )
@@ -443,28 +485,22 @@ async fn check_caps(
             add_capability(
                 "write",
                 &request.db.to_string(),
-                &our_node,
+                &state.our,
                 &source,
                 send_to_caps_oracle,
             )
             .await?;
 
-            if open_dbs.contains_key(&(request.package_id.clone(), request.db.clone())) {
+            if state
+                .open_dbs
+                .contains_key(&(request.package_id.clone(), request.db.clone()))
+            {
                 return Ok(());
             }
 
-            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
-            fs::create_dir_all(&db_path).await?;
-
-            let db_file_path = format!("{}/{}.db", db_path, request.db);
-
-            let db = Connection::open(db_file_path)?;
-            let _ = db.execute("PRAGMA journal_mode=WAL", []);
-
-            open_dbs.insert(
-                (request.package_id.clone(), request.db.clone()),
-                Mutex::new(db),
-            );
+            state
+                .open_db(request.package_id.clone(), request.db.clone())
+                .await?;
             Ok(())
         }
         SqliteAction::RemoveDb => {
@@ -474,10 +510,9 @@ async fn check_caps(
                 });
             }
 
-            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
-            open_dbs.remove(&(request.package_id.clone(), request.db.clone()));
-
-            fs::remove_dir_all(&db_path).await?;
+            state
+                .remove_db(request.package_id.clone(), request.db.clone())
+                .await;
             Ok(())
         }
         SqliteAction::Backup => {
@@ -487,13 +522,7 @@ async fn check_caps(
     }
 }
 
-async fn handle_fd_request(
-    our_node: &str,
-    km: KernelMessage,
-    open_dbs: &Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
-    fds_limit: &mut u64,
-    send_to_loop: &MessageSender,
-) -> anyhow::Result<()> {
+async fn handle_fd_request(km: KernelMessage, state: &mut SqliteState) -> anyhow::Result<()> {
     let Message::Request(Request { body, .. }) = km.message else {
         return Err(anyhow::anyhow!("not a request"));
     };
@@ -502,14 +531,13 @@ async fn handle_fd_request(
 
     match request {
         FdManagerRequest::FdsLimit(new_fds_limit) => {
-            *fds_limit = new_fds_limit;
-            if open_dbs.len() as u64 >= *fds_limit {
-                crate::fd_manager::send_fd_manager_hit_fds_limit(
-                    &Address::new(our_node, SQLITE_PROCESS_ID.clone()),
-                    &send_to_loop,
-                )
-                .await;
-                // TODO close least recently used dbs!
+            state.fds_limit = new_fds_limit;
+            if state.open_dbs.len() as u64 >= state.fds_limit {
+                crate::fd_manager::send_fd_manager_hit_fds_limit(&state.our, &state.send_to_loop)
+                    .await;
+                state
+                    .remove_least_recently_used_dbs(state.open_dbs.len() as u64 - state.fds_limit)
+                    .await;
             }
         }
         _ => {
@@ -523,15 +551,12 @@ async fn handle_fd_request(
 async fn add_capability(
     kind: &str,
     db: &str,
-    our_node: &str,
+    our: &Address,
     source: &Address,
     send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), SqliteError> {
     let cap = Capability {
-        issuer: Address {
-            node: our_node.to_string(),
-            process: SQLITE_PROCESS_ID.clone(),
-        },
+        issuer: our.clone(),
         params: serde_json::json!({ "kind": kind, "db": db }).to_string(),
     };
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
