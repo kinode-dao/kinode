@@ -56,9 +56,9 @@ impl SqliteState {
     pub async fn open_db(&mut self, package_id: PackageId, db: String) -> Result<(), SqliteError> {
         let key = (package_id.clone(), db.clone());
         if self.open_dbs.contains_key(&key) {
-            // let mut access_order = self.access_order.lock().await;
-            // access_order.remove(&key);
-            // access_order.push_back(key);
+            let mut access_order = self.access_order.lock().await;
+            access_order.remove(&key);
+            access_order.push_back(key);
             return Ok(());
         }
 
@@ -515,10 +515,11 @@ async fn check_caps(
                 .remove_db(request.package_id.clone(), request.db.clone())
                 .await;
 
-            let _ = fs::remove_dir_all(format!(
+            fs::remove_dir_all(format!(
                 "{}/{}/{}",
                 state.sqlite_path, request.package_id, request.db
-            ));
+            ))
+            .await?;
 
             Ok(())
         }
