@@ -167,7 +167,8 @@ fn main() -> anyhow::Result<()> {
             Ok((entry_path, zip_filename, zip_contents)) => {
                 let metadata_path = entry_path.join("metadata.json");
                 let metadata_contents = fs::read_to_string(&metadata_path)?;
-                let metadata_contents: serde_json::Value = serde_json::from_str(&metadata_contents)?;
+                let metadata_contents: serde_json::Value =
+                    serde_json::from_str(&metadata_contents)?;
                 file_to_metadata.insert(zip_filename.clone(), metadata_contents);
                 let zip_path = target_packages_dir.join(&zip_filename);
                 fs::write(&zip_path, &zip_contents)?;
