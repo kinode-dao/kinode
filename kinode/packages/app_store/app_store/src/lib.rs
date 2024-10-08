@@ -261,8 +261,8 @@ fn handle_local_request(
             match utils::install(&package_id, metadata, &version_hash, state, &our.node) {
                 Ok(()) => {
                     println!(
-                        "successfully installed package: {:?}",
-                        &package_id.to_process_lib()
+                        "successfully installed {}:{}",
+                        package_id.package_name, package_id.publisher_node
                     );
                     LocalResponse::InstallResponse(InstallResponse::Success)
                 }

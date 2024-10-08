@@ -58,7 +58,7 @@ fn output_reruns(dir: &Path) {
     }
 }
 
-fn untar_gz_file(path: &Path, dest: &Path) -> std::io::Result<()> {
+fn _untar_gz_file(path: &Path, dest: &Path) -> std::io::Result<()> {
     // Open the .tar.gz file
     let tar_gz = File::open(path)?;
     let tar_gz_reader = BufReader::new(tar_gz);
@@ -221,6 +221,14 @@ fn main() -> anyhow::Result<()> {
     }
     let bootstrapped_processes_path = target_dir.join("bootstrapped_processes.rs");
     fs::write(&bootstrapped_processes_path, bootstrapped_processes)?;
+
+    let version = if let Ok(version) = std::env::var("DOCKER_BUILD_IMAGE_VERSION") {
+        // embed the DOCKER_BUILD_IMAGE_VERSION
+        version
+    } else {
+        "none".to_string()
+    };
+    println!("cargo:rustc-env=DOCKER_BUILD_IMAGE_VERSION={version}");
 
     Ok(())
 }
