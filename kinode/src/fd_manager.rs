@@ -65,14 +65,21 @@ impl State {
             ulimit_max_fds * max_fds_as_fraction_of_ulimit_percentage / 100 - SYS_RESERVED_FDS;
     }
 
-    fn update_all_fds_limits(&mut self) {
-        let len = self.fds_limits.len() as u64;
-        let per_process_limit = self.max_fds / std::cmp::max(len, 1);
+    async fn update_all_fds_limits(&mut self, our_node: &str, send_to_loop: &MessageSender) {
+        let weights = self
+            .fds_limits
+            .values()
+            .map(|limit| limit.hit_count)
+            .sum::<u64>();
+        let statically_allocated = self.max_fds as f64 / 2.0;
+        let per_process_unweighted =
+            statically_allocated / std::cmp::max(self.fds_limits.len() as u64, 1) as f64;
+        let per_process_weighted = statically_allocated / std::cmp::max(weights, 1) as f64;
         for limit in self.fds_limits.values_mut() {
-            limit.limit = per_process_limit;
-            // reset hit count when updating limits
-            limit.hit_count = 0;
+            limit.limit = (per_process_unweighted + per_process_weighted * limit.hit_count as f64)
+                .floor() as u64;
         }
+        send_all_fds_limits(our_node, send_to_loop, self).await;
     }
 }
 
@@ -135,8 +142,7 @@ pub async fn fd_manager(
                 match update_max_fds(&mut state).await {
                     Ok(new) => {
                         if new != old_max_fds {
-                            state.update_all_fds_limits();
-                            send_all_fds_limits(&our_node, &send_to_loop, &state).await;
+                            state.update_all_fds_limits(our_node.as_str(), &send_to_loop).await;
                         }
                     }
                     Err(e) => Printout::new(1, &format!("update_max_fds error: {e:?}"))
@@ -174,19 +180,20 @@ async fn handle_message(
                 km.source.process,
                 FdsLimit {
                     limit: 0,
-                    hit_count: 0,
+                    hit_count: 1, // starts with 1 to give initial weight
                 },
             );
-            state.update_all_fds_limits();
-            send_all_fds_limits(our_node, send_to_loop, state).await;
+            state.update_all_fds_limits(our_node, &send_to_loop).await;
             None
         }
         FdManagerRequest::FdsLimitHit => {
             // sender process hit its fd limit
-            // TODO react to this
+            // react to this by incrementing hit count and
+            // re-weighting all processes' limits
             state.fds_limits.get_mut(&km.source.process).map(|limit| {
                 limit.hit_count += 1;
             });
+            state.update_all_fds_limits(our_node, &send_to_loop).await;
             Some(format!("{} hit its fd limit", km.source.process))
         }
         FdManagerRequest::FdsLimit(_) => {
