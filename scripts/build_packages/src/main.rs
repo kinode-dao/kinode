@@ -41,13 +41,14 @@ fn zip_directory(dir_path: &Path) -> anyhow::Result<Vec<u8>> {
 fn build_and_zip_package(
     entry_path: PathBuf,
     parent_pkg_path: &str,
+    skip_frontend: bool,
     features: &str,
 ) -> anyhow::Result<(PathBuf, String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         kit::build::execute(
             &entry_path,
-            true,
+            skip_frontend,
             false,
             true,
             features,
@@ -105,33 +106,6 @@ fn main() -> anyhow::Result<()> {
     let kinode_dir = top_level_dir.join("kinode");
     let packages_dir = kinode_dir.join("packages");
 
-    if matches.get_flag("SKIP_FRONTEND") {
-        println!("skipping frontend builds");
-    } else {
-        // build core frontends
-        let core_frontends = vec![
-            "src/register-ui",
-            "packages/app_store/ui",
-            "packages/homepage/ui",
-            // chess when brought in
-        ];
-
-        // for each frontend, execute build.sh
-        for frontend in core_frontends {
-            let frontend_path = kinode_dir.join(frontend);
-            if !frontend_path.exists() {
-                panic!("couldn't find frontend at {frontend_path:?}");
-            }
-            let status = std::process::Command::new("sh")
-                .current_dir(frontend_path)
-                .arg("./build.sh")
-                .status()?;
-            if !status.success() {
-                return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
-            }
-        }
-    }
-
     let mut features = matches
         .get_many::<String>("FEATURES")
         .unwrap_or_default()
@@ -139,6 +113,8 @@ fn main() -> anyhow::Result<()> {
         .collect::<Vec<String>>();
     features.sort();
     let features = features.join(",");
+
+    let skip_frontend = matches.get_flag("SKIP_FRONTEND");
 
     let results: Vec<anyhow::Result<(PathBuf, String, Vec<u8>)>> = fs::read_dir(&packages_dir)?
         .filter_map(|entry| {
@@ -154,6 +130,7 @@ fn main() -> anyhow::Result<()> {
             Some(build_and_zip_package(
                 entry_path.clone(),
                 child_pkg_path.to_str().unwrap(),
+                skip_frontend,
                 &features,
             ))
         })
