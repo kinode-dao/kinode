@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 
-static PACKAGES_ZIP: &[u8] =  include_bytes!("../../target/packages.zip");
+static PACKAGES_ZIP: &[u8] = include_bytes!("../../target/packages.zip");
 const FILE_TO_METADATA: &str = "file_to_metadata.json";
 
 pub async fn load_state(
@@ -714,10 +714,7 @@ fn sign_cap(cap: Capability, keypair: Arc<signature::Ed25519KeyPair>) -> Vec<u8>
 }
 
 /// read in `include!()`ed .zip package files
-fn get_zipped_packages() -> Vec<(
-    Erc721Metadata,
-    zip::ZipArchive<std::io::Cursor<Vec<u8>>>,
-)> {
+fn get_zipped_packages() -> Vec<(Erc721Metadata, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> {
     let mut packages = Vec::new();
 
     let mut packages_zip = zip::ZipArchive::new(std::io::Cursor::new(PACKAGES_ZIP)).unwrap();
