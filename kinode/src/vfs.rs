@@ -49,7 +49,7 @@ pub async fn vfs(
         .map_err(|e| anyhow::anyhow!("failed creating vfs dir! {e:?}"))?;
     let vfs_path = Arc::new(fs::canonicalize(&vfs_path).await?);
 
-    let files = Files::new(
+    let mut files = Files::new(
         Address::new(our_node.as_str(), VFS_PROCESS_ID.clone()),
         send_to_loop,
     );
@@ -74,18 +74,14 @@ pub async fn vfs(
         }
 
         if km.source.process == *FD_MANAGER_PROCESS_ID {
-            let mut files = files.clone();
-            let send_to_terminal = send_to_terminal.clone();
-            tokio::spawn(async move {
-                if let Err(e) = handle_fd_request(km, &mut files).await {
-                    Printout::new(
-                        1,
-                        format!("vfs: got request from fd_manager that errored: {e:?}"),
-                    )
-                    .send(&send_to_terminal)
-                    .await;
-                };
-            });
+            if let Err(e) = handle_fd_request(km, &mut files).await {
+                Printout::new(
+                    1,
+                    format!("vfs: got request from fd_manager that errored: {e:?}"),
+                )
+                .send(&send_to_terminal)
+                .await;
+            };
             continue;
         }
 
@@ -925,7 +921,6 @@ fn get_file_type(metadata: &std::fs::Metadata) -> FileType {
 }
 
 /// helper cache for most recently used paths
-
 pub struct UniqueQueue<T>
 where
     T: Eq + Hash,

@@ -1,9 +1,10 @@
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use dashmap::DashMap;
 use lib::types::core::{
-    Address, CapMessage, CapMessageSender, Capability, KernelMessage, LazyLoadBlob, Message,
-    MessageReceiver, MessageSender, PackageId, PrintSender, Printout, ProcessId, Request, Response,
-    SqlValue, SqliteAction, SqliteError, SqliteRequest, SqliteResponse, SQLITE_PROCESS_ID,
+    Address, CapMessage, CapMessageSender, Capability, FdManagerRequest, KernelMessage,
+    LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender, Printout,
+    ProcessId, Request, Response, SqlValue, SqliteAction, SqliteError, SqliteRequest,
+    SqliteResponse, FD_MANAGER_PROCESS_ID, SQLITE_PROCESS_ID,
 };
 use rusqlite::Connection;
 use std::{
@@ -35,8 +36,15 @@ pub async fn sqlite(
 
     let open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>> = Arc::new(DashMap::new());
     let txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>> = Arc::new(DashMap::new());
+    let mut fds_limit = 10;
 
     let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> = HashMap::new();
+
+    crate::fd_manager::send_fd_manager_request_fds_limit(
+        &Address::new(our_node.as_str(), SQLITE_PROCESS_ID.clone()),
+        &send_to_loop,
+    )
+    .await;
 
     while let Some(km) = recv_from_loop.recv().await {
         if *our_node != km.source.node {
@@ -49,6 +57,26 @@ pub async fn sqlite(
             )
             .send(&send_to_terminal)
             .await;
+            continue;
+        }
+
+        if km.source.process == *FD_MANAGER_PROCESS_ID {
+            if let Err(e) = handle_fd_request(
+                our_node.as_str(),
+                km,
+                &open_dbs,
+                &mut fds_limit,
+                &send_to_loop,
+            )
+            .await
+            {
+                Printout::new(
+                    1,
+                    format!("kv: got request from fd_manager that errored: {e:?}"),
+                )
+                .send(&send_to_terminal)
+                .await;
+            };
             continue;
         }
 
@@ -457,6 +485,39 @@ async fn check_caps(
             Ok(())
         }
     }
+}
+
+async fn handle_fd_request(
+    our_node: &str,
+    km: KernelMessage,
+    open_dbs: &Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
+    fds_limit: &mut u64,
+    send_to_loop: &MessageSender,
+) -> anyhow::Result<()> {
+    let Message::Request(Request { body, .. }) = km.message else {
+        return Err(anyhow::anyhow!("not a request"));
+    };
+
+    let request: FdManagerRequest = serde_json::from_slice(&body)?;
+
+    match request {
+        FdManagerRequest::FdsLimit(new_fds_limit) => {
+            *fds_limit = new_fds_limit;
+            if open_dbs.len() as u64 >= *fds_limit {
+                crate::fd_manager::send_fd_manager_hit_fds_limit(
+                    &Address::new(our_node, SQLITE_PROCESS_ID.clone()),
+                    &send_to_loop,
+                )
+                .await;
+                // TODO close least recently used dbs!
+            }
+        }
+        _ => {
+            return Err(anyhow::anyhow!("non-Cull FdManagerRequest"));
+        }
+    }
+
+    Ok(())
 }
 
 async fn add_capability(
