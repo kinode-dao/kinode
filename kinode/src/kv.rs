@@ -70,11 +70,9 @@ impl KvState {
     }
 
     pub async fn remove_db(&mut self, package_id: PackageId, db: String) {
-        let db_path = format!("{}/{}/{}", self.kv_path.as_str(), package_id, db);
         self.open_kvs.remove(&(package_id.clone(), db.to_string()));
         let mut access_order = self.access_order.lock().await;
         access_order.remove(&(package_id, db));
-        let _ = fs::remove_dir_all(&db_path).await;
     }
 
     pub async fn remove_least_recently_used_dbs(&mut self, n: u64) {
@@ -498,6 +496,11 @@ async fn check_caps(
             state
                 .remove_db(request.package_id.clone(), request.db.clone())
                 .await;
+
+            let _ = fs::remove_dir_all(format!(
+                "{}/{}/{}",
+                state.kv_path, request.package_id, request.db
+            ));
 
             Ok(())
         }
