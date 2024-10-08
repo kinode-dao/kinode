@@ -33,9 +33,6 @@ git clone git@github.com:kinode-dao/kinode.git
 cd kinode
 cargo install wasm-tools
 rustup install nightly
-rustup target add wasm32-wasi
-rustup target add wasm32-wasi --toolchain nightly
-rustup target add wasm32-wasip1
 rustup target add wasm32-wasip1 --toolchain nightly
 cargo install cargo-wasi
 
@@ -43,11 +40,14 @@ cargo install cargo-wasi
 # https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
 # If you want to skip this step, run cargo build with the environment variable SKIP_BUILD_FRONTEND=true
 
-# Build the runtime, along with a number of "distro" Wasm modules.
-# The compiled binary will be at `kinode/target/debug/kinode`
-# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
+# Build the "distro" Wasm modules.
+# Then, build the runtime.
+# The compiled packages will be at `kinode/target/packages.zip`.
+# The compiled binary will be at `kinode/target/debug/kinode`.
+# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`).
 
-cargo +nightly build -p kinode
+cargo run -p build_packages
+cargo build -p kinode
 ```
 
 ## Security Status

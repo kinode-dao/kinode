@@ -27,14 +27,39 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
 
     zip_prefix = f"kinode-{architecture}-{os_name}"
     release_env = os.environ.copy()
-    release_env["CARGO_PROFILE_RELEASE_LTO"] = f"fat"
-    release_env["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = f"1"
-    release_env["CARGO_PROFILE_RELEASE_STRIP"] = f"symbols"
+    release_env["CARGO_PROFILE_RELEASE_LTO"] = "fat"
+    release_env["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "1"
+    release_env["CARGO_PROFILE_RELEASE_STRIP"] = "symbols"
     if feature:
-        subprocess.run(["cargo", "+nightly", "build", "--release", "-p", "kinode", "--features", feature], check=True, env=release_env)
+        release_env["PATH_TO_PACKAGES_ZIP"] = f"../target/packages-{feature}.zip"
+        subprocess.run(
+            ["cargo", "run", "-p", "build_packages", "--", "--features", feature],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        subprocess.run(
+            ["cargo", "build", "--release", "-p", "kinode", "--features", feature],
+            check=True,
+            env=release_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         zip_name = f"{zip_prefix}-{feature}.zip"
     else:
-        subprocess.run(["cargo", "+nightly", "build", "--release", "-p", "kinode"], check=True, env=release_env)
+        subprocess.run(
+            ["cargo", "run", "-p", "build_packages"],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        subprocess.run(
+            ["cargo", "build", "--release", "-p", "kinode"],
+            check=True,
+            env=release_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         zip_name = f"{zip_prefix}.zip"
 
     # Move and rename the binary
@@ -74,4 +99,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

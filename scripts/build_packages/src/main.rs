@@ -84,6 +84,12 @@ fn main() -> anyhow::Result<()> {
                 .help("Skip building the frontend")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("OUTPUT_FILENAME")
+                .long("output-filename")
+                .help("Set output filename (default: packages-{features}.zip)")
+                .action(clap::ArgAction::Set),
+        )
         .get_matches();
 
     // kinode/target/debug/build_package
@@ -126,12 +132,13 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let features = matches
+    let mut features = matches
         .get_many::<String>("FEATURES")
         .unwrap_or_default()
         .map(|s| s.to_owned())
-        .collect::<Vec<String>>()
-        .join(",");
+        .collect::<Vec<String>>();
+    features.sort();
+    let features = features.join(",");
 
     let results: Vec<anyhow::Result<(PathBuf, String, Vec<u8>)>> = fs::read_dir(&packages_dir)?
         .filter_map(|entry| {
@@ -182,7 +189,17 @@ fn main() -> anyhow::Result<()> {
     let file_to_metadata_path = target_packages_dir.join("file_to_metadata.json");
     fs::write(&file_to_metadata_path, file_to_metadata)?;
 
-    let package_zip_path = target_dir.join("packages.zip");
+    let package_zip_file_name = match matches.get_one::<String>("OUTPUT_FILENAME") {
+        Some(filename) => filename.to_string(),
+        None => {
+            if features.is_empty() {
+                "packages.zip".to_string()
+            } else {
+                format!("packages-{features}.zip")
+            }
+        }
+    };
+    let package_zip_path = target_dir.join(package_zip_file_name);
     let package_zip_contents = zip_directory(&target_packages_dir)?;
     fs::write(package_zip_path, package_zip_contents)?;
 
