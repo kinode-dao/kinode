@@ -2,21 +2,24 @@ use std::path::PathBuf;
 
 const CANONICAL_PACKAGES_ZIP_PATH: &str = "../target/packages.zip";
 
+macro_rules! p {
+    ($($tokens: tt)*) => {
+        println!("cargo:warning={}", format!($($tokens)*))
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let path_to_packages_zip = match std::env::var("PATH_TO_PACKAGES_ZIP") {
-        Err(_) => {
-            let build_package_script_path = PathBuf::from("../scripts/build_package");
-            let mut child = std::process::Command::new("cargo")
-                .arg("run")
-                .current_dir(&build_package_script_path)
-                .spawn()?;
-            let result = child.wait()?;
-            if !result.success() {
-                return Err(anyhow::anyhow!("Failed to build packages."));
-            }
-            CANONICAL_PACKAGES_ZIP_PATH.to_string()
-        }
         Ok(env_var) => env_var,
+        Err(_) => {
+            let canonical_path = PathBuf::from(CANONICAL_PACKAGES_ZIP_PATH);
+            if canonical_path.exists() {
+                p!("No path given via PATH_TO_PACKAGES_ZIP envvar. Defaulting to path of `kinode/target/packages.zip`.");
+                CANONICAL_PACKAGES_ZIP_PATH.to_string()
+            } else {
+                return Err(anyhow::anyhow!("You must build packages.zip with scripts/build_packages or set PATH_TO_PACKAGES_ZIP to point to your desired pacakges.zip (default path at kinode/target/packages.zip was not populated)."));
+            }
+        }
     };
     let path = PathBuf::from(&path_to_packages_zip);
     if !path.exists() {

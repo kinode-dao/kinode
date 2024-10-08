@@ -1403,7 +1403,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "build_package"
+name = "build_packages"
 version = "0.1.0"
 dependencies = [
  "anyhow",
