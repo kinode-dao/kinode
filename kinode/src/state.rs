@@ -244,7 +244,9 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = PathBuf::from(home_directory_path).join("kernel").join("backup");
+            let checkpoint_dir = PathBuf::from(home_directory_path)
+                .join("kernel")
+                .join("backup");
 
             if checkpoint_dir.exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
