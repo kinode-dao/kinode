@@ -15,6 +15,7 @@ use std::{
     fs::{read_to_string, OpenOptions},
     io::BufWriter,
 };
+#[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -242,23 +243,19 @@ pub async fn terminal(
         verbose_mode,
     };
 
+
     // use to trigger cleanup if receive signal to kill process
-    let mut sigalrm =
-        signal(SignalKind::alarm()).expect("terminal: failed to set up SIGALRM handler");
-    let mut sighup =
-        signal(SignalKind::hangup()).expect("terminal: failed to set up SIGHUP handler");
-    let mut sigint =
-        signal(SignalKind::interrupt()).expect("terminal: failed to set up SIGINT handler");
-    let mut sigpipe =
-        signal(SignalKind::pipe()).expect("terminal: failed to set up SIGPIPE handler");
-    let mut sigquit =
-        signal(SignalKind::quit()).expect("terminal: failed to set up SIGQUIT handler");
-    let mut sigterm =
-        signal(SignalKind::terminate()).expect("terminal: failed to set up SIGTERM handler");
-    let mut sigusr1 =
-        signal(SignalKind::user_defined1()).expect("terminal: failed to set up SIGUSR1 handler");
-    let mut sigusr2 =
-        signal(SignalKind::user_defined2()).expect("terminal: failed to set up SIGUSR2 handler");
+    #[cfg(unix)]
+    let (mut sigalrm, mut sighup, mut sigint, mut sigpipe, mut sigquit, mut sigterm, mut sigusr1, mut sigusr2) = (
+        signal(SignalKind::alarm()).expect("terminal: failed to set up SIGALRM handler"),
+        signal(SignalKind::hangup()).expect("terminal: failed to set up SIGHUP handler"),
+        signal(SignalKind::interrupt()).expect("terminal: failed to set up SIGINT handler"),
+        signal(SignalKind::pipe()).expect("terminal: failed to set up SIGPIPE handler"),
+        signal(SignalKind::quit()).expect("terminal: failed to set up SIGQUIT handler"),
+        signal(SignalKind::terminate()).expect("terminal: failed to set up SIGTERM handler"),
+        signal(SignalKind::user_defined1()).expect("terminal: failed to set up SIGUSR1 handler"),
+        signal(SignalKind::user_defined2()).expect("terminal: failed to set up SIGUSR2 handler"),
+    );
 
     // if the verbosity boot flag was **not** set to "full event loop", tell kernel
     // the kernel will try and print all events by default so that booting with
@@ -274,6 +271,7 @@ pub async fn terminal(
     if !is_detached {
         let mut reader = EventStream::new();
         loop {
+            #[cfg(unix)]
             tokio::select! {
                 Some(printout) = print_rx.recv() => {
                     handle_printout(printout, &mut state)?;
@@ -292,9 +290,21 @@ pub async fn terminal(
                 _ = sigusr1.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR1")),
                 _ = sigusr2.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR2")),
             }
+            #[cfg(target_os = "windows")]
+            tokio::select! {
+                Some(printout) = print_rx.recv() => {
+                    handle_printout(printout, &mut state)?;
+                }
+                Some(Ok(event)) = reader.next().fuse() => {
+                    if handle_event(&our, event, &mut state, &mut event_loop, &mut debug_event_loop, &mut print_tx).await? {
+                        break;
+                    }
+                }
+            }
         }
     } else {
         loop {
+            #[cfg(unix)]
             tokio::select! {
                 Some(printout) = print_rx.recv() => {
                     handle_printout(printout, &mut state)?;
@@ -308,6 +318,10 @@ pub async fn terminal(
                 _ = sigusr1.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR1")),
                 _ = sigusr2.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR2")),
             }
+            #[cfg(target_os = "windows")]
+            if let Some(printout) = print_rx.recv().await {
+                handle_printout(printout, &mut state)?;
+            };
         }
     };
     Ok(())
