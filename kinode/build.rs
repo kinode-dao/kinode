@@ -56,18 +56,18 @@ fn main() -> anyhow::Result<()> {
 
     // build core frontends
     let pwd = std::env::current_dir()?;
-    let core_frontends = vec!["src/register-ui"];
+    //let core_frontends = vec!["src/register-ui"];
 
-    // for each frontend, execute build.sh
-    for frontend in core_frontends {
-        let status = std::process::Command::new("sh")
-            .current_dir(pwd.join(frontend))
-            .arg("./build.sh")
-            .status()?;
-        if !status.success() {
-            return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
-        }
-    }
+    //// for each frontend, execute build.sh
+    //for frontend in core_frontends {
+    //    let status = std::process::Command::new("sh")
+    //        .current_dir(pwd.join(frontend))
+    //        .arg("./build.sh")
+    //        .status()?;
+    //    if !status.success() {
+    //        return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
+    //    }
+    //}
 
     let version = if let Ok(version) = std::env::var("DOCKER_BUILD_IMAGE_VERSION") {
         // embed the DOCKER_BUILD_IMAGE_VERSION
