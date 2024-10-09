@@ -56,9 +56,7 @@ fn main() -> anyhow::Result<()> {
 
     // build core frontends
     let pwd = std::env::current_dir()?;
-    let core_frontends = vec![
-        "src/register-ui",
-    ];
+    let core_frontends = vec!["src/register-ui"];
 
     // for each frontend, execute build.sh
     for frontend in core_frontends {
