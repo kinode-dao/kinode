@@ -35,30 +35,23 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
         subprocess.run(
             ["cargo", "run", "-p", "build_packages", "--", "--features", feature],
             check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            #stdout=subprocess.PIPE,
+            #stderr=subprocess.PIPE,
         )
         subprocess.run(
             ["cargo", "build", "--release", "-p", "kinode", "--features", feature],
             check=True,
             env=release_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            #stdout=subprocess.PIPE,
+            #stderr=subprocess.PIPE,
         )
         zip_name = f"{zip_prefix}-{feature}.zip"
     else:
-        subprocess.run(
-            ["cargo", "run", "-p", "build_packages"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        subprocess.run(["cargo", "run", "-p", "build_packages"], check=True)
         subprocess.run(
             ["cargo", "build", "--release", "-p", "kinode"],
             check=True,
             env=release_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
         )
         zip_name = f"{zip_prefix}.zip"
 

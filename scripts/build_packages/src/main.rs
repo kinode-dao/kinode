@@ -60,6 +60,7 @@ fn build_and_zip_package(
             false,
             false,
             false,
+            false,
         )
         .await
         .map_err(|e| anyhow::anyhow!("{:?}", e))?;

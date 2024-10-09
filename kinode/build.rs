@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use sha2::Digest;
 
 const CANONICAL_PACKAGES_ZIP_PATH: &str = "../target/packages.zip";
 
@@ -6,6 +9,23 @@ macro_rules! p {
     ($($tokens: tt)*) => {
         println!("cargo:warning={}", format!($($tokens)*))
     }
+}
+
+fn compute_hash(file_path: &Path) -> anyhow::Result<String> {
+    let input_file = std::fs::File::open(file_path)?;
+    let mut reader = std::io::BufReader::new(input_file);
+    let mut hasher = sha2::Sha256::new();
+    let mut buffer = [0; 1024]; // buffer for chunks of the file
+
+    loop {
+        let count = reader.read(&mut buffer)?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -31,7 +51,24 @@ fn main() -> anyhow::Result<()> {
     let path_to_packages_zip_path = PathBuf::from(&path_to_packages_zip).canonicalize()?;
     let canonical_packages_zip_path = PathBuf::from(CANONICAL_PACKAGES_ZIP_PATH).canonicalize()?;
     if path_to_packages_zip_path != canonical_packages_zip_path {
-        std::fs::copy(path_to_packages_zip_path, CANONICAL_PACKAGES_ZIP_PATH)?;
+        std::fs::copy(&path_to_packages_zip_path, &canonical_packages_zip_path)?;
+    }
+
+    // build core frontends
+    let pwd = std::env::current_dir()?;
+    let core_frontends = vec![
+        "src/register-ui",
+    ];
+
+    // for each frontend, execute build.sh
+    for frontend in core_frontends {
+        let status = std::process::Command::new("sh")
+            .current_dir(pwd.join(frontend))
+            .arg("./build.sh")
+            .status()?;
+        if !status.success() {
+            return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
+        }
     }
 
     let version = if let Ok(version) = std::env::var("DOCKER_BUILD_IMAGE_VERSION") {
@@ -41,6 +78,9 @@ fn main() -> anyhow::Result<()> {
         "none".to_string()
     };
     println!("cargo:rustc-env=DOCKER_BUILD_IMAGE_VERSION={version}");
+
+    let packages_zip_hash = compute_hash(&canonical_packages_zip_path)?;
+    println!("cargo:rustc-env=PACKAGES_ZIP_HASH={packages_zip_hash}");
 
     Ok(())
 }
