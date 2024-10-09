@@ -45,7 +45,7 @@ pub async fn vfs(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let vfs_path = format!("{home_directory_path}/vfs");
+    let vfs_path = PathBuf::from(&home_directory_path).join("vfs");
 
     fs::create_dir_all(&vfs_path)
         .await
@@ -324,7 +324,7 @@ async fn handle_request(
 
     // current prepend to filepaths needs to be: /package_id/drive/path
     let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path).await?;
-    let drive = format!("/{package_id}/{drive}");
+    let drive = format!("{package_id}/{drive}");
     let action = request.action;
     let path = PathBuf::from(&request.path);
 
@@ -347,8 +347,7 @@ async fn handle_request(
 
     let (response_body, bytes) = match action {
         VfsAction::CreateDrive => {
-            let drive_path = join_paths_safely(vfs_path, &drive);
-            fs::create_dir_all(drive_path).await?;
+            fs::create_dir_all(&base_drive).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::CreateDir => {
@@ -569,7 +568,7 @@ async fn handle_request(
                 }
             };
 
-            fs::create_dir_all(path.clone()).await?;
+            fs::create_dir_all(&path).await?;
 
             // loop through items in archive; recursively add to root
             for i in 0..zip.len() {
@@ -593,7 +592,7 @@ async fn handle_request(
                 if is_file {
                     fs::write(&local_path, &file_contents).await?;
                 } else if is_dir {
-                    fs::create_dir_all(local_path).await?;
+                    fs::create_dir_all(&local_path).await?;
                 } else {
                     return Err(VfsError::CreateDirError {
                         path: path.display().to_string(),
@@ -635,7 +634,7 @@ async fn handle_request(
 async fn parse_package_and_drive(
     path: &str,
     vfs_path: &PathBuf,
-) -> Result<(PackageId, String, String), VfsError> {
+) -> Result<(PackageId, String, PathBuf), VfsError> {
     let joined_path = join_paths_safely(&vfs_path, path);
 
     // sanitize path..
@@ -678,7 +677,10 @@ async fn parse_package_and_drive(
     };
 
     let drive = parts[1].to_string();
-    let remaining_path = parts[2..].join("/");
+    let mut remaining_path = PathBuf::new();
+    for part in &parts[2..] {
+        remaining_path = remaining_path.join(part);
+    }
 
     Ok((package_id, drive, remaining_path))
 }
@@ -984,8 +986,9 @@ fn normalize_path(path: &Path) -> PathBuf {
     ret
 }
 
-fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
-    let extension_str = Path::new(extension)
+fn join_paths_safely<P: AsRef<Path>>(base: &PathBuf, extension: P) -> PathBuf {
+    let extension_str = extension
+        .as_ref()
         .to_str()
         .unwrap_or("")
         .trim_start_matches('/');

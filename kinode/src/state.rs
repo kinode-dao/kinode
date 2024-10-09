@@ -9,7 +9,7 @@ use rocksdb::{checkpoint::Checkpoint, Options, DB};
 use std::{
     collections::{HashMap, VecDeque},
     io::Read,
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
@@ -23,7 +23,7 @@ pub async fn load_state(
     home_directory_path: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
-    let state_path = format!("{home_directory_path}/kernel");
+    let state_path = PathBuf::from(&home_directory_path).join("kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
         panic!("failed creating kernel state dir! {e:?}");
     }
@@ -244,9 +244,9 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = format!("{home_directory_path}/kernel/backup");
+            let checkpoint_dir = PathBuf::from(home_directory_path).join("kernel").join("backup");
 
-            if Path::new(&checkpoint_dir).exists() {
+            if checkpoint_dir.exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
             }
             let checkpoint = Checkpoint::new(&db).map_err(|e| StateError::RocksDBError {
@@ -397,10 +397,12 @@ async fn bootstrap(
 
         // create a new package in VFS
         let our_drive_name = [package_name, package_publisher].join(":");
-        let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
+        let pkg_path = std::path::PathBuf::from(&home_directory_path)
+            .join("vfs")
+            .join(&our_drive_name)
+            .join("pkg");
         // delete anything currently residing in the pkg folder
-        let pkg_path_buf = std::path::PathBuf::from(&pkg_path);
-        if pkg_path_buf.exists() {
+        if pkg_path.exists() {
             fs::remove_dir_all(&pkg_path).await?;
         }
         fs::create_dir_all(&pkg_path)
@@ -411,7 +413,7 @@ async fn bootstrap(
 
         // save the zip itself inside pkg folder, for sharing with others
         let mut zip_file =
-            fs::File::create(format!("{}/{}.zip", &pkg_path, &our_drive_name)).await?;
+            fs::File::create(pkg_path.join(format!("{}.zip", &our_drive_name))).await?;
         let package_zip_bytes = package.clone().into_inner().into_inner();
         zip_file.write_all(&package_zip_bytes).await?;
 
@@ -434,7 +436,7 @@ async fn bootstrap(
             };
 
             let file_path_str = file_path.to_string_lossy().to_string();
-            let full_path = Path::new(&pkg_path).join(&file_path_str);
+            let full_path = pkg_path.join(&file_path_str);
 
             if file.is_dir() {
                 // It's a directory, create it
