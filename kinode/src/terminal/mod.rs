@@ -243,10 +243,18 @@ pub async fn terminal(
         verbose_mode,
     };
 
-
     // use to trigger cleanup if receive signal to kill process
     #[cfg(unix)]
-    let (mut sigalrm, mut sighup, mut sigint, mut sigpipe, mut sigquit, mut sigterm, mut sigusr1, mut sigusr2) = (
+    let (
+        mut sigalrm,
+        mut sighup,
+        mut sigint,
+        mut sigpipe,
+        mut sigquit,
+        mut sigterm,
+        mut sigusr1,
+        mut sigusr2,
+    ) = (
         signal(SignalKind::alarm()).expect("terminal: failed to set up SIGALRM handler"),
         signal(SignalKind::hangup()).expect("terminal: failed to set up SIGHUP handler"),
         signal(SignalKind::interrupt()).expect("terminal: failed to set up SIGINT handler"),
