@@ -28,26 +28,26 @@ On certain operating systems, you may need to install these dependencies if they
 
 git clone git@github.com:kinode-dao/kinode.git
 
-# Get some stuff so we can build Wasm.
+# Install Rust and some `cargo` tools so we can build the runtime and Wasm.
 
-cd kinode
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install wasm-tools
 rustup install nightly
-rustup target add wasm32-wasi
-rustup target add wasm32-wasi --toolchain nightly
-rustup target add wasm32-wasip1
 rustup target add wasm32-wasip1 --toolchain nightly
 cargo install cargo-wasi
 
 # Install NPM so we can build frontends for "distro" packages.
 # https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-# If you want to skip this step, run cargo build with the environment variable SKIP_BUILD_FRONTEND=true
+# If you want to skip this step, build the packages with `cargo run -p build_packages -- --skip-build-frontend` to neglect building the frontends
 
-# Build the runtime, along with a number of "distro" Wasm modules.
-# The compiled binary will be at `kinode/target/debug/kinode`
-# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
+# Build the "distro" Wasm modules, then, build the runtime.
+# The compiled packages will be at `kinode/target/packages.zip`.
+# The compiled binary will be at `kinode/target/debug/kinode`.
+# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`).
 
-cargo +nightly build -p kinode
+cd kinode
+cargo run -p build_packages
+cargo build -p kinode
 ```
 
 ## Security Status

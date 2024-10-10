@@ -10,5 +10,4 @@ ENV NVM_DIR=/root/.nvm \
 WORKDIR /input
 
 # Set the default command to run the build script
-# TODO: once build is idempotent, remove the `rm -rf` line
-CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && rm -rf target/ kinode/packages/*/pkg/*wasm kinode/packages/*/*/target/ kinode/packages/*/pkg/api.zip kinode/packages/*/*/wit kinode/packages/app_store/pkg/ui kinode/packages/homepage/pkg/ui kinode/src/register-ui/build && ./scripts/build-release.py && cp -r /tmp/kinode-release/* /output && chmod 664 /output/* && rm -rf target/ kinode/packages/*/pkg/*wasm kinode/packages/*/*/target/ kinode/packages/*/pkg/api.zip kinode/packages/*/*/wit kinode/packages/app_store/pkg/ui kinode/packages/homepage/pkg/ui kinode/src/register-ui/build"]
+CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && ./scripts/build-release.py && cp -r /tmp/kinode-release/* /output && chmod 664 /output/* && find . -user root -print0 2>/dev/null | xargs -0 rm -rf"]

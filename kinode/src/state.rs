@@ -14,7 +14,8 @@ use std::{
 };
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 
-include!("../../target/bootstrapped_processes.rs");
+static PACKAGES_ZIP: &[u8] = include_bytes!("../../target/packages.zip");
+const FILE_TO_METADATA: &str = "file_to_metadata.json";
 
 pub async fn load_state(
     our_name: String,
@@ -381,7 +382,7 @@ async fn bootstrap(
         current.capabilities.extend(runtime_caps.clone());
     }
 
-    let packages = get_zipped_packages().await;
+    let packages = get_zipped_packages();
 
     for (package_metadata, mut package) in packages.clone() {
         let package_name = package_metadata.properties.package_name.as_str();
@@ -412,7 +413,7 @@ async fn bootstrap(
         let mut zip_file =
             fs::File::create(format!("{}/{}.zip", &pkg_path, &our_drive_name)).await?;
         let package_zip_bytes = package.clone().into_inner().into_inner();
-        zip_file.write_all(package_zip_bytes).await?;
+        zip_file.write_all(&package_zip_bytes).await?;
 
         // for each file in package.zip, write to vfs folder
         for i in 0..package.len() {
@@ -713,20 +714,28 @@ fn sign_cap(cap: Capability, keypair: Arc<signature::Ed25519KeyPair>) -> Vec<u8>
 }
 
 /// read in `include!()`ed .zip package files
-async fn get_zipped_packages() -> Vec<(
-    Erc721Metadata,
-    zip::ZipArchive<std::io::Cursor<&'static [u8]>>,
-)> {
+fn get_zipped_packages() -> Vec<(Erc721Metadata, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> {
     let mut packages = Vec::new();
 
-    for (package_name, metadata_bytes, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
-        if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(*bytes)) {
-            if let Ok(metadata) = serde_json::from_slice::<Erc721Metadata>(metadata_bytes) {
-                packages.push((metadata, zip));
-            } else {
-                println!("fs: metadata for package {package_name} is not valid Erc721Metadata!\r",);
-            }
-        }
+    let mut packages_zip = zip::ZipArchive::new(std::io::Cursor::new(PACKAGES_ZIP)).unwrap();
+    let mut file_to_metadata = vec![];
+    packages_zip
+        .by_name(FILE_TO_METADATA)
+        .unwrap()
+        .read_to_end(&mut file_to_metadata)
+        .unwrap();
+    let file_to_metadata: HashMap<String, Erc721Metadata> =
+        serde_json::from_slice(&file_to_metadata).unwrap();
+
+    for (file_name, metadata) in file_to_metadata {
+        let mut zip_bytes = vec![];
+        packages_zip
+            .by_name(&file_name)
+            .unwrap()
+            .read_to_end(&mut zip_bytes)
+            .unwrap();
+        let zip_archive = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).unwrap();
+        packages.push((metadata, zip_archive));
     }
 
     packages
