@@ -422,9 +422,15 @@ async fn check_caps(
                 return Ok(());
             }
 
+            #[cfg(unix)]
             let db_path = kv_path
                 .join(format!("{}", request.package_id))
                 .join(&request.db);
+            #[cfg(target_os = "windows")]
+            let db_path = kv_path
+                .join(format!("{}_{}", request.package_id._package(), request.package_id._publisher()))
+                .join(&request.db);
+
             fs::create_dir_all(&db_path).await?;
 
             let db = OptimisticTransactionDB::open_default(&db_path).map_err(rocks_to_kv_err)?;
@@ -439,9 +445,15 @@ async fn check_caps(
                 });
             }
 
+            #[cfg(unix)]
             let db_path = kv_path
                 .join(format!("{}", request.package_id))
                 .join(&request.db);
+            #[cfg(target_os = "windows")]
+            let db_path = kv_path
+                .join(format!("{}_{}", request.package_id._package(), request.package_id._publisher()))
+                .join(&request.db);
+
             open_kvs.remove(&(request.package_id.clone(), request.db.clone()));
 
             fs::remove_dir_all(&db_path).await?;

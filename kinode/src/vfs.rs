@@ -324,7 +324,11 @@ async fn handle_request(
 
     // current prepend to filepaths needs to be: /package_id/drive/path
     let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path).await?;
+    #[cfg(unix)]
     let drive = format!("{package_id}/{drive}");
+    #[cfg(target_os = "windows")]
+    let drive = format!("{}_{}/{drive}", package_id._package(), package_id._publisher());
+
     let action = request.action;
     let path = PathBuf::from(&request.path);
 

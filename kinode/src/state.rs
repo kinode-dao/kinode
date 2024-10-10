@@ -23,7 +23,7 @@ pub async fn load_state(
     home_directory_string: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
-    let home_directory_path = PathBuf::from(&home_directory_string);
+    let home_directory_path = std::fs::canonicalize(&home_directory_string)?;
     let state_path = home_directory_path.join("kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
         panic!("failed creating kernel state dir! {e:?}");
@@ -401,7 +401,10 @@ async fn bootstrap(
         let package_publisher = package_metadata.properties.publisher.as_str();
 
         // create a new package in VFS
+        #[cfg(unix)]
         let our_drive_name = [package_name, package_publisher].join(":");
+        #[cfg(target_os = "windows")]
+        let our_drive_name = [package_name, package_publisher].join("_");
         let pkg_path = home_directory_path
             .join("vfs")
             .join(&our_drive_name)

@@ -91,6 +91,7 @@ async fn make_table_and_wasi(
     let table = Table::new();
     let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
 
+    #[cfg(unix)]
     let tmp_path = home_directory_path
         .join("vfs")
         .join(format!(
@@ -99,6 +100,16 @@ async fn make_table_and_wasi(
             process_state.metadata.our.process.publisher()
         ))
         .join("tmp");
+    #[cfg(target_os = "windows")]
+    let tmp_path = home_directory_path
+        .join("vfs")
+        .join(format!(
+            "{}_{}",
+            process_state.metadata.our.process.package(),
+            process_state.metadata.our.process.publisher()
+        ))
+        .join("tmp");
+
     let tmp_path = tmp_path.to_str().unwrap();
 
     let mut wasi = WasiCtxBuilder::new();
