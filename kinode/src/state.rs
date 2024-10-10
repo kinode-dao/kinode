@@ -9,7 +9,7 @@ use rocksdb::{checkpoint::Checkpoint, Options, DB};
 use std::{
     collections::{HashMap, VecDeque},
     io::Read,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
@@ -20,10 +20,10 @@ const FILE_TO_METADATA: &str = "file_to_metadata.json";
 pub async fn load_state(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
-    let state_path = PathBuf::from(&home_directory_path).join("kernel");
+    let state_path = home_directory_path.join("kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
         panic!("failed creating kernel state dir! {e:?}");
     }
@@ -84,7 +84,7 @@ pub async fn state_sender(
     send_to_terminal: PrintSender,
     mut recv_state: MessageReceiver,
     db: DB,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> Result<(), anyhow::Error> {
     let db = Arc::new(db);
     let home_directory_path = Arc::new(home_directory_path);
@@ -159,7 +159,7 @@ async fn handle_request(
     kernel_message: KernelMessage,
     db: Arc<DB>,
     send_to_loop: &MessageSender,
-    home_directory_path: &str,
+    home_directory_path: &PathBuf,
 ) -> Result<(), StateError> {
     let KernelMessage {
         id,
@@ -244,10 +244,7 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = PathBuf::from(home_directory_path)
-                .join("kernel")
-                .join("backup");
-
+            let checkpoint_dir = home_directory_path.join("kernel").join("backup");
             if checkpoint_dir.exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
             }
@@ -305,7 +302,7 @@ async fn handle_request(
 async fn bootstrap(
     our_name: &str,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
     process_map: &mut ProcessMap,
     reverse_cap_index: &mut ReverseCapIndex,
@@ -399,7 +396,7 @@ async fn bootstrap(
 
         // create a new package in VFS
         let our_drive_name = [package_name, package_publisher].join(":");
-        let pkg_path = std::path::PathBuf::from(&home_directory_path)
+        let pkg_path = home_directory_path
             .join("vfs")
             .join(&our_drive_name)
             .join("pkg");

@@ -43,9 +43,9 @@ pub async fn vfs(
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
-    let vfs_path = PathBuf::from(&home_directory_path).join("vfs");
+    let vfs_path = home_directory_path.join("vfs");
 
     fs::create_dir_all(&vfs_path)
         .await

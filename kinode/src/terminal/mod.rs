@@ -14,6 +14,7 @@ use lib::types::core::{
 use std::{
     fs::{read_to_string, OpenOptions},
     io::BufWriter,
+    path::PathBuf,
 };
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
@@ -175,7 +176,7 @@ impl CurrentLine {
 pub async fn terminal(
     our: Identity,
     version: &str,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     mut event_loop: MessageSender,
     mut debug_event_loop: DebugSender,
     mut print_tx: PrintSender,
@@ -203,9 +204,7 @@ pub async fn terminal(
 
     // the terminal stores the most recent 1000 lines entered by user
     // in history. TODO should make history size adjustable.
-    let history_path = std::fs::canonicalize(&home_directory_path)
-        .expect("terminal: could not get path for .terminal_history file")
-        .join(".terminal_history");
+    let history_path = home_directory_path.join(".terminal_history");
     let history = read_to_string(&history_path).unwrap_or_default();
     let history_handle = OpenOptions::new()
         .append(true)
@@ -218,9 +217,7 @@ pub async fn terminal(
     // if CTRL+L is used to turn on logging, all prints to terminal
     // will also be written with their full timestamp to the .terminal_log file.
     // logging mode is always on by default
-    let log_dir_path = std::fs::canonicalize(&home_directory_path)
-        .expect("terminal: could not get path for .terminal_logs dir")
-        .join(".terminal_logs");
+    let log_dir_path = home_directory_path.join(".terminal_logs");
     let logger = utils::Logger::new(log_dir_path, max_log_size, number_log_files);
 
     let mut state = State {

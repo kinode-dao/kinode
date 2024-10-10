@@ -7,6 +7,7 @@ use lib::types::core::{
 use rocksdb::OptimisticTransactionDB;
 use std::{
     collections::{HashMap, VecDeque},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, sync::Mutex};
@@ -17,9 +18,9 @@ pub async fn kv(
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
-    let kv_path = Arc::new(format!("{home_directory_path}/kv"));
+    let kv_path = Arc::new(home_directory_path.join("kv"));
     if let Err(e) = fs::create_dir_all(&*kv_path).await {
         panic!("failed creating kv dir! {e:?}");
     }
@@ -114,7 +115,7 @@ async fn handle_request(
     txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
     send_to_loop: &MessageSender,
     send_to_caps_oracle: &CapMessageSender,
-    kv_path: &str,
+    kv_path: &PathBuf,
 ) -> Result<(), KvError> {
     let KernelMessage {
         id,
@@ -332,7 +333,7 @@ async fn check_caps(
     open_kvs: &Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
     send_to_caps_oracle: &CapMessageSender,
     request: &KvRequest,
-    kv_path: &str,
+    kv_path: &PathBuf,
 ) -> Result<(), KvError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -421,7 +422,7 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let db_path = format!("{}/{}/{}", kv_path, request.package_id, request.db);
+            let db_path = kv_path.join(format!("{}", request.package_id)).join(&request.db);
             fs::create_dir_all(&db_path).await?;
 
             let db = OptimisticTransactionDB::open_default(&db_path).map_err(rocks_to_kv_err)?;
@@ -436,7 +437,7 @@ async fn check_caps(
                 });
             }
 
-            let db_path = format!("{}/{}/{}", kv_path, request.package_id, request.db);
+            let db_path = kv_path.join(format!("{}", request.package_id)).join(&request.db);
             open_kvs.remove(&(request.package_id.clone(), request.db.clone()));
 
             fs::remove_dir_all(&db_path).await?;

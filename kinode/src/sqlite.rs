@@ -8,6 +8,7 @@ use lib::types::core::{
 use rusqlite::Connection;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, sync::Mutex};
@@ -26,9 +27,9 @@ pub async fn sqlite(
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
-    let sqlite_path = Arc::new(format!("{home_directory_path}/sqlite"));
+    let sqlite_path = Arc::new(home_directory_path.join("sqlite"));
     if let Err(e) = fs::create_dir_all(&*sqlite_path).await {
         panic!("failed creating sqlite dir! {e:?}");
     }
@@ -123,7 +124,7 @@ async fn handle_request(
     txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>>,
     send_to_loop: &MessageSender,
     send_to_caps_oracle: &CapMessageSender,
-    sqlite_path: &str,
+    sqlite_path: &PathBuf,
 ) -> Result<(), SqliteError> {
     let KernelMessage {
         id,
@@ -345,7 +346,7 @@ async fn check_caps(
     open_dbs: &Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
     send_to_caps_oracle: &CapMessageSender,
     request: &SqliteRequest,
-    sqlite_path: &str,
+    sqlite_path: &PathBuf,
 ) -> Result<(), SqliteError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -425,10 +426,10 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
+            let db_path = sqlite_path.join(format!("{}", request.package_id)).join(&request.db);
             fs::create_dir_all(&db_path).await?;
 
-            let db_file_path = format!("{}/{}.db", db_path, request.db);
+            let db_file_path = db_path.join(format!("{}.db", request.db));
 
             let db = Connection::open(db_file_path)?;
             let _ = db.execute("PRAGMA journal_mode=WAL", []);
@@ -446,7 +447,7 @@ async fn check_caps(
                 });
             }
 
-            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
+            let db_path = sqlite_path.join(format!("{}", request.package_id)).join(&request.db);
             open_dbs.remove(&(request.package_id.clone(), request.db.clone()));
 
             fs::remove_dir_all(&db_path).await?;

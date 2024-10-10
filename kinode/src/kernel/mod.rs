@@ -2,6 +2,7 @@ use lib::types::core::{self as t, KERNEL_PROCESS_ID, STATE_PROCESS_ID, VFS_PROCE
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -76,7 +77,7 @@ async fn handle_kernel_request(
     process_map: &mut t::ProcessMap,
     caps_oracle: &t::CapMessageSender,
     engine: &Engine,
-    home_directory_path: &str,
+    home_directory_path: &PathBuf,
 ) -> Option<()> {
     let t::Message::Request(request) = km.message else {
         return None;
@@ -467,7 +468,7 @@ async fn start_process(
     engine: &Engine,
     caps_oracle: &t::CapMessageSender,
     process_metadata: &StartProcessMetadata,
-    home_directory_path: &str,
+    home_directory_path: &PathBuf,
 ) -> anyhow::Result<()> {
     let (send_to_process, recv_in_process) =
         mpsc::channel::<Result<t::KernelMessage, t::WrappedSendError>>(PROCESS_CHANNEL_CAPACITY);
@@ -501,7 +502,7 @@ async fn start_process(
             km_blob_bytes,
             caps_oracle.clone(),
             engine.clone(),
-            home_directory_path.to_string(),
+            home_directory_path.clone(),
         )),
     );
     Ok(())
@@ -522,7 +523,7 @@ pub async fn kernel(
     mut network_error_recv: t::NetworkErrorReceiver,
     mut recv_debug_in_loop: t::DebugReceiver,
     send_to_net: t::MessageSender,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     runtime_extensions: Vec<(
         t::ProcessId,
         t::MessageSender,
@@ -538,7 +539,7 @@ pub async fn kernel(
     config.async_support(true);
     let engine = Engine::new(&config).unwrap();
 
-    let vfs_path = format!("{home_directory_path}/vfs");
+    let vfs_path = home_directory_path.join("vfs");
     tokio::fs::create_dir_all(&vfs_path)
         .await
         .expect("kernel startup fatal: couldn't create vfs dir");
@@ -581,7 +582,7 @@ pub async fn kernel(
         }
         // read wasm bytes directly from vfs
         let wasm_bytes =
-            match tokio::fs::read(format!("{vfs_path}/{}", persisted.wasm_bytes_handle)).await {
+            match tokio::fs::read(vfs_path.join(&persisted.wasm_bytes_handle)).await {
                 Ok(bytes) => bytes,
                 Err(e) => {
                     t::Printout::new(
@@ -641,7 +642,7 @@ pub async fn kernel(
             &engine,
             &caps_oracle_sender,
             &start_process_metadata,
-            home_directory_path.as_str(),
+            &home_directory_path,
         )
         .await
         {
