@@ -422,7 +422,9 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let db_path = kv_path.join(format!("{}", request.package_id)).join(&request.db);
+            let db_path = kv_path
+                .join(format!("{}", request.package_id))
+                .join(&request.db);
             fs::create_dir_all(&db_path).await?;
 
             let db = OptimisticTransactionDB::open_default(&db_path).map_err(rocks_to_kv_err)?;
@@ -437,7 +439,9 @@ async fn check_caps(
                 });
             }
 
-            let db_path = kv_path.join(format!("{}", request.package_id)).join(&request.db);
+            let db_path = kv_path
+                .join(format!("{}", request.package_id))
+                .join(&request.db);
             open_kvs.remove(&(request.package_id.clone(), request.db.clone()));
 
             fs::remove_dir_all(&db_path).await?;

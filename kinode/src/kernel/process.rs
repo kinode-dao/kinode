@@ -93,7 +93,8 @@ async fn make_table_and_wasi(
 
     let tmp_path = home_directory_path
         .join("vfs")
-        .join(format!("{}:{}",
+        .join(format!(
+            "{}:{}",
             process_state.metadata.our.process.package(),
             process_state.metadata.our.process.publisher()
         ))

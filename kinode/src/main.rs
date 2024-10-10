@@ -622,12 +622,9 @@ pub async fn simulate_node(
                 &decoded_keyfile.file_key,
             );
 
-            tokio::fs::write(
-                home_directory_path.join(".keys"),
-                encoded_keyfile.clone(),
-            )
-            .await
-            .expect("Failed to write keyfile");
+            tokio::fs::write(home_directory_path.join(".keys"), encoded_keyfile.clone())
+                .await
+                .expect("Failed to write keyfile");
 
             (identity, encoded_keyfile, decoded_keyfile)
         }

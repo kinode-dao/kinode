@@ -581,20 +581,19 @@ pub async fn kernel(
             continue;
         }
         // read wasm bytes directly from vfs
-        let wasm_bytes =
-            match tokio::fs::read(vfs_path.join(&persisted.wasm_bytes_handle)).await {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    t::Printout::new(
-                        0,
-                        format!("kernel: couldn't read wasm bytes for process: {process_id}: {e}"),
-                    )
-                    .send(&send_to_terminal)
-                    .await;
-                    non_rebooted_processes.insert(process_id.clone());
-                    continue;
-                }
-            };
+        let wasm_bytes = match tokio::fs::read(vfs_path.join(&persisted.wasm_bytes_handle)).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                t::Printout::new(
+                    0,
+                    format!("kernel: couldn't read wasm bytes for process: {process_id}: {e}"),
+                )
+                .send(&send_to_terminal)
+                .await;
+                non_rebooted_processes.insert(process_id.clone());
+                continue;
+            }
+        };
         if let t::OnExit::Requests(requests) = &persisted.on_exit {
             // if a persisted process had on-death-requests, we should perform them now
             // even in death, a process can only message processes it has capabilities for

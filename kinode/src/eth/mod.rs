@@ -220,9 +220,7 @@ pub async fn provider(
     // this merely describes whether our provider is available to other nodes
     // and if so, which nodes are allowed to access it (public/whitelist/blacklist)
     let access_settings: AccessSettings =
-        match tokio::fs::read_to_string(home_directory_path.join(".eth_access_settings"))
-            .await
-        {
+        match tokio::fs::read_to_string(home_directory_path.join(".eth_access_settings")).await {
             Ok(contents) => serde_json::from_str(&contents).unwrap(),
             Err(_) => {
                 let access_settings = AccessSettings {
