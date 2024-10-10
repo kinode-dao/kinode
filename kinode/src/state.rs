@@ -23,7 +23,7 @@ pub async fn load_state(
     home_directory_string: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
-    let home_directory_path = PathBuf::from(&home_directory_string);
+    let home_directory_path = std::fs::canonicalize(&home_directory_string)?;
     let state_path = home_directory_path.join("kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
         panic!("failed creating kernel state dir! {e:?}");
@@ -414,7 +414,7 @@ async fn bootstrap(
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
 
-        let drive_path = format!("/{}/pkg", &our_drive_name);
+        let drive_path = format!("{}/pkg", &our_drive_name);
 
         // save the zip itself inside pkg folder, for sharing with others
         let mut zip_file =

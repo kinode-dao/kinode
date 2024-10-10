@@ -117,13 +117,19 @@ impl ProcessId {
 impl std::str::FromStr for ProcessId {
     type Err = ProcessIdParseError;
     /// Attempts to parse a `ProcessId` from a string. To succeed, the string must contain
-    /// exactly 3 segments, separated by colons `:`. The segments must not contain colons.
+    /// exactly 3 segments, separated by colons `:` (on Unix) or underscores `_` (on Windows).
+    /// The segments must not contain these delimiters.
+    ///
     /// Please note that while any string without colons will parse successfully
     /// to create a `ProcessId`, not all strings without colons are actually
     /// valid usernames, which the `publisher_node` field of a `ProcessId` will
     /// always in practice be.
     fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        #[cfg(unix)]
         let segments: Vec<&str> = input.split(':').collect();
+        #[cfg(target_os = "windows")]
+        let segments: Vec<&str> = input.split('_').collect();
+
         if segments.len() < 3 {
             return Err(ProcessIdParseError::MissingField);
         } else if segments.len() > 3 {
@@ -155,11 +161,22 @@ impl From<(&str, &str, &str)> for ProcessId {
     }
 }
 
+#[cfg(unix)]
 impl std::fmt::Display for ProcessId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}:{}:{}",
+            self.process_name, self.package_name, self.publisher_node
+        )
+    }
+}
+#[cfg(target_os = "windows")]
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}_{}_{}",
             self.process_name, self.package_name, self.publisher_node
         )
     }
@@ -204,14 +221,19 @@ impl std::str::FromStr for PackageId {
     type Err = ProcessIdParseError;
     /// Attempt to parse a `PackageId` from a string. The string must
     /// contain exactly two segments, where segments are non-empty strings
-    /// separated by a colon (`:`). The segments cannot themselves contain colons.
+    /// separated by a colon `:` (on Unix) or underscores `_` (on Windows).
+    /// The segments must not contain these delimiters.
     ///
     /// Please note that while any string without colons will parse successfully
     /// to create a `PackageId`, not all strings without colons are actually
     /// valid usernames, which the `publisher_node` field of a `PackageId` will
     /// always in practice be.
     fn from_str(input: &str) -> Result<Self, Self::Err> {
+        #[cfg(unix)]
         let segments: Vec<&str> = input.split(':').collect();
+        #[cfg(target_os = "windows")]
+        let segments: Vec<&str> = input.split('_').collect();
+
         if segments.len() < 2 {
             return Err(ProcessIdParseError::MissingField);
         } else if segments.len() > 2 {
@@ -233,9 +255,16 @@ impl std::str::FromStr for PackageId {
     }
 }
 
+#[cfg(unix)]
 impl std::fmt::Display for PackageId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.package_name, self.publisher_node)
+    }
+}
+#[cfg(target_os = "windows")]
+impl std::fmt::Display for PackageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}_{}", self.package_name, self.publisher_node)
     }
 }
 
@@ -344,7 +373,11 @@ impl std::str::FromStr for Address {
         }
 
         // split the rest on ':' and ensure there are exactly three ':'
+        #[cfg(unix)]
         let segments: Vec<&str> = parts[1].split(':').collect();
+        #[cfg(target_os = "windows")]
+        let segments: Vec<&str> = parts[1].split('_').collect();
+
         if segments.len() < 3 {
             return Err(AddressParseError::MissingField);
         } else if segments.len() > 3 {
