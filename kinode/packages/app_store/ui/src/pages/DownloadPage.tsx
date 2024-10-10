@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { FaDownload, FaSpinner, FaChevronDown, FaChevronUp, FaRocket, FaTrash, FaPlay } from "react-icons/fa";
 import useAppsStore from "../store";
 import { MirrorSelector } from '../components';
 
 export default function DownloadPage() {
-    const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
     const {
         listings,
@@ -28,6 +27,9 @@ export default function DownloadPage() {
     const [isMirrorOnline, setIsMirrorOnline] = useState<boolean | null>(null);
     const [showCapApproval, setShowCapApproval] = useState(false);
     const [manifest, setManifest] = useState<any>(null);
+    const [isInstalling, setIsInstalling] = useState(false);
+    const [isCheckingLaunch, setIsCheckingLaunch] = useState(false);
+    const [launchPath, setLaunchPath] = useState<string | null>(null);
 
     const app = useMemo(() => listings[id || ""], [listings, id]);
     const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
@@ -101,6 +103,36 @@ export default function DownloadPage() {
         return versionData ? installedApp.our_version_hash === versionData.hash : false;
     }, [app, selectedVersion, installedApp, sortedVersions]);
 
+    const checkLaunchPath = useCallback(() => {
+        if (!app) return;
+        setIsCheckingLaunch(true);
+        const appId = `${app.package_id.package_name}:${app.package_id.publisher_node}`;
+        fetchHomepageApps().then(() => {
+            const path = getLaunchUrl(appId);
+            setLaunchPath(path);
+            setIsCheckingLaunch(false);
+            if (path) {
+                setIsInstalling(false);
+            }
+        });
+    }, [app, fetchHomepageApps, getLaunchUrl]);
+
+    useEffect(() => {
+        if (isInstalling) {
+            const checkInterval = setInterval(checkLaunchPath, 500);
+            const timeout = setTimeout(() => {
+                clearInterval(checkInterval);
+                setIsInstalling(false);
+                setIsCheckingLaunch(false);
+            }, 5000);
+
+            return () => {
+                clearInterval(checkInterval);
+                clearTimeout(timeout);
+            };
+        }
+    }, [isInstalling, checkLaunchPath]);
+
     const handleDownload = useCallback(() => {
         if (!id || !selectedMirror || !app || !selectedVersion) return;
         const versionData = sortedVersions.find(v => v.version === selectedVersion);
@@ -130,35 +162,86 @@ export default function DownloadPage() {
         }
     }, [id, app, appDownloads]);
 
-    const canDownload = useMemo(() => {
-        return selectedMirror && (isMirrorOnline === true || selectedMirror.startsWith('http')) && !isDownloading && !isDownloaded;
-    }, [selectedMirror, isMirrorOnline, isDownloading, isDownloaded]);
-
     const confirmInstall = useCallback(() => {
         if (!id || !selectedVersion) return;
         const versionData = sortedVersions.find(v => v.version === selectedVersion);
         if (versionData) {
+            setIsInstalling(true);
+            setLaunchPath(null);
             installApp(id, versionData.hash).then(() => {
-                fetchData(id);
                 setShowCapApproval(false);
                 setManifest(null);
+                fetchData(id);
             });
         }
     }, [id, selectedVersion, sortedVersions, installApp, fetchData]);
 
     const handleLaunch = useCallback(() => {
-        if (app) {
-            const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
-            if (launchUrl) {
-                window.location.href = launchUrl;
-            }
+        if (launchPath) {
+            window.location.href = launchPath;
         }
-    }, [app, getLaunchUrl]);
+    }, [launchPath]);
 
     const canLaunch = useMemo(() => {
         if (!app) return false;
         return !!getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
     }, [app, getLaunchUrl]);
+
+    const canDownload = useMemo(() => {
+        return selectedMirror && (isMirrorOnline === true || selectedMirror.startsWith('http')) && !isDownloading && !isDownloaded;
+    }, [selectedMirror, isMirrorOnline, isDownloading, isDownloaded]);
+
+    const renderActionButton = () => {
+        if (isCurrentVersionInstalled || launchPath) {
+            return (
+                <button className="action-button installed-button" disabled>
+                    <FaRocket /> Installed
+                </button>
+            );
+        }
+
+        if (isInstalling || isCheckingLaunch) {
+            return (
+                <button className="action-button installing-button" disabled>
+                    <FaSpinner className="fa-spin" /> Installing...
+                </button>
+            );
+        }
+
+        if (isDownloaded) {
+            return (
+                <button
+                    onClick={() => {
+                        const versionData = sortedVersions.find(v => v.version === selectedVersion);
+                        if (versionData) {
+                            handleInstall(versionData.version, versionData.hash);
+                        }
+                    }}
+                    className="action-button install-button"
+                >
+                    <FaRocket /> Install
+                </button>
+            );
+        }
+
+        return (
+            <button
+                onClick={handleDownload}
+                disabled={!canDownload}
+                className="action-button download-button"
+            >
+                {isDownloading ? (
+                    <>
+                        <FaSpinner className="fa-spin" /> Downloading... {downloadProgress}%
+                    </>
+                ) : (
+                    <>
+                        <FaDownload /> Download
+                    </>
+                )}
+            </button>
+        );
+    };
 
     if (!app) {
         return <div className="downloads-page"><h4>Loading app details...</h4></div>;
@@ -176,15 +259,22 @@ export default function DownloadPage() {
                         <p className="app-id">{`${app.package_id.package_name}.${app.package_id.publisher_node}`}</p>
                     </div>
                 </div>
-                {installedApp && (
+                {launchPath ? (
                     <button
                         onClick={handleLaunch}
                         className="launch-button"
-                        disabled={!canLaunch}
                     >
-                        <FaPlay /> {canLaunch ? 'Launch' : 'No UI found for app'}
+                        <FaPlay /> Launch
                     </button>
-                )}
+                ) : isInstalling || isCheckingLaunch ? (
+                    <button className="launch-button" disabled>
+                        <FaSpinner className="fa-spin" /> Checking...
+                    </button>
+                ) : installedApp ? (
+                    <button className="launch-button" disabled>
+                        No UI found for app
+                    </button>
+                ) : null}
             </div>
             <p className="app-description">{app.metadata?.description}</p>
 
@@ -207,39 +297,7 @@ export default function DownloadPage() {
                     onMirrorSelect={handleMirrorSelect}
                 />
 
-                {isCurrentVersionInstalled ? (
-                    <button className="action-button installed-button" disabled>
-                        <FaRocket /> Installed
-                    </button>
-                ) : isDownloaded ? (
-                    <button
-                        onClick={() => {
-                            const versionData = sortedVersions.find(v => v.version === selectedVersion);
-                            if (versionData) {
-                                handleInstall(versionData.version, versionData.hash);
-                            }
-                        }}
-                        className="action-button install-button"
-                    >
-                        <FaRocket /> Install
-                    </button>
-                ) : (
-                    <button
-                        onClick={handleDownload}
-                        disabled={!canDownload}
-                        className="action-button download-button"
-                    >
-                        {isDownloading ? (
-                            <>
-                                <FaSpinner className="fa-spin" /> Downloading... {downloadProgress}%
-                            </>
-                        ) : (
-                            <>
-                                <FaDownload /> Download
-                            </>
-                        )}
-                    </button>
-                )}
+                {renderActionButton()}
             </div>
 
             <div className="my-downloads">

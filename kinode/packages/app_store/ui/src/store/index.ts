@@ -218,12 +218,6 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
       });
       if (res.status === HTTP_STATUS.CREATED) {
         await get().fetchInstalled();
-
-        // hacky: a small delay (500ms) before fetching homepage apps
-        // to give the app time to add itself to the homepage
-        // might make sense to add more state and do retry logic instead.
-        await new Promise(resolve => setTimeout(resolve, 500));
-
         await get().fetchHomepageApps();
       }
     } catch (error) {

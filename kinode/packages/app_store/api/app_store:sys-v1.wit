@@ -184,6 +184,8 @@ interface downloads {
         auto-update(auto-update-request),
         /// Notify that a download is complete
         download-complete(download-complete-request),
+        /// Auto-update-download complete
+        auto-download-complete(auto-download-complete-request),
         /// Get files for a package
         get-files(option<package-id>),
         /// Remove a file
@@ -241,6 +243,12 @@ interface downloads {
         package-id: package-id,
         version-hash: string,
         err: option<download-error>,
+    }
+
+    /// Request for an auto-download complete
+    record auto-download-complete-request {
+        download-info: download-complete-request,
+        manifest-hash: string,
     }
 
     /// Represents a hash mismatch error
