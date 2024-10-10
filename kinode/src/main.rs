@@ -305,7 +305,6 @@ async fn main() {
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
     let our_name_arc = Arc::new(our.name.clone());
 
-
     let home_directory_string = matches
         .get_one::<String>("home")
         .expect("home directory required");

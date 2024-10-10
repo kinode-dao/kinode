@@ -113,13 +113,8 @@ async fn make_table_and_wasi(
         if let Ok(wasi_tempdir) =
             Dir::open_ambient_dir(tmp_path, wasi_common::sync::ambient_authority())
         {
-            wasi.preopened_dir(
-                wasi_tempdir,
-                DirPerms::all(),
-                FilePerms::all(),
-                tmp_path,
-            )
-            .env("TEMP_DIR", tmp_path);
+            wasi.preopened_dir(wasi_tempdir, DirPerms::all(), FilePerms::all(), tmp_path)
+                .env("TEMP_DIR", tmp_path);
         }
     }
 
