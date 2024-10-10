@@ -305,10 +305,15 @@ async fn main() {
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
     let our_name_arc = Arc::new(our.name.clone());
 
+
+    let home_directory_string = matches
+        .get_one::<String>("home")
+        .expect("home directory required");
     let (kernel_process_map, db, reverse_cap_index) = state::load_state(
         our.name.clone(),
         networking_keypair_arc.clone(),
-        home_directory_path.clone(),
+        home_directory_string.clone(),
+        //home_directory_path.clone(),
         runtime_extensions.clone(),
     )
     .await

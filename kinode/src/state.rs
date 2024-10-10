@@ -20,13 +20,19 @@ const FILE_TO_METADATA: &str = "file_to_metadata.json";
 pub async fn load_state(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: PathBuf,
+    home_directory_string: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
+    let home_directory_path = PathBuf::from(&home_directory_string);
     let state_path = home_directory_path.join("kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
         panic!("failed creating kernel state dir! {e:?}");
     }
+    // use String to not upset rocksdb:
+    //  * on Unix, works as expected
+    //  * on Windows, would normally use std::path to be cross-platform,
+    //    but here rocksdb appends a `/LOG` which breaks the path
+    let state_path = format!("{home_directory_string}/kernel");
 
     let mut opts = Options::default();
     opts.create_if_missing(true);
