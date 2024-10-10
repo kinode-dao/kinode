@@ -187,15 +187,8 @@ pub async fn recv_via_router(
     };
     match connect_with_handshake_via_router(&ext, &peer_id, &router_id, socket).await {
         Ok(connection) => {
-            let (peer_tx, peer_rx) = mpsc::unbounded_channel();
-            data.peers.insert(
-                peer_id.name.clone(),
-                Peer {
-                    identity: peer_id.clone(),
-                    routing_for: false,
-                    sender: peer_tx,
-                },
-            );
+            let (peer, peer_rx) = Peer::new(peer_id.clone(), false);
+            data.peers.insert(peer_id.name.clone(), peer).await;
             // maintain direct connection
             tokio::spawn(utils::maintain_connection(
                 peer_id.name,
@@ -228,12 +221,10 @@ async fn recv_connection(
         let (from_id, target_id) =
             validate_routing_request(&ext.our.name, first_message, &data.pki)?;
         return create_passthrough(
-            &ext.our,
-            &ext.our_ip,
+            &ext,
             from_id,
             target_id,
-            &data.peers,
-            &data.pending_passthroughs,
+            &data,
             PendingStream::WebSocket(socket),
         )
         .await;
@@ -272,15 +263,9 @@ async fn recv_connection(
         &their_id,
     )?;
 
-    let (peer_tx, peer_rx) = mpsc::unbounded_channel();
-    data.peers.insert(
-        their_id.name.clone(),
-        Peer {
-            identity: their_id.clone(),
-            routing_for: their_handshake.proxy_request,
-            sender: peer_tx,
-        },
-    );
+    let (peer, peer_rx) = Peer::new(their_id.clone(), their_handshake.proxy_request);
+    data.peers.insert(their_id.name.clone(), peer).await;
+
     tokio::spawn(utils::maintain_connection(
         their_handshake.name,
         data.peers,

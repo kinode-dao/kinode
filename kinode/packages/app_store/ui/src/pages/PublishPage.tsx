@@ -12,7 +12,7 @@ const NAME_INVALID = "Package name must contain only valid characters (a-z, 0-9,
 
 export default function PublishPage() {
   const { openConnectModal } = useConnectModal();
-  const { ourApps, fetchOurApps, installed, downloads } = useAppsStore();
+  const { ourApps, fetchOurApps, downloads } = useAppsStore();
   const publicClient = usePublicClient();
 
   const { address, isConnected, isConnecting } = useAccount();
