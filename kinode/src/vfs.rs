@@ -359,10 +359,7 @@ async fn handle_request(
     let path = join_paths_safely(&base_drive, &rest);
 
     #[cfg(target_os = "windows")]
-    let (path, internal_path) = (
-        internal_path_to_external(&path),
-        path,
-    );
+    let (path, internal_path) = (internal_path_to_external(&path), path);
     println!("{package_id} {drive} {rest:?}");
 
     let (response_body, bytes) = match action {
