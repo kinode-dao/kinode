@@ -583,7 +583,8 @@ pub async fn kernel(
         if persisted.wasm_bytes_handle.is_empty() {
             continue;
         }
-        let wasm_bytes_handle = persisted.wasm_bytes_handle
+        let wasm_bytes_handle = persisted
+            .wasm_bytes_handle
             .strip_prefix("/")
             .unwrap_or_else(|| &persisted.wasm_bytes_handle);
         #[cfg(unix)]
