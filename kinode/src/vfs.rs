@@ -327,10 +327,13 @@ async fn handle_request(
     #[cfg(unix)]
     let drive = format!("{package_id}/{drive}");
     #[cfg(target_os = "windows")]
-    let drive = format!(
-        "{}_{}/{drive}",
-        package_id._package(),
-        package_id._publisher()
+    let (drive, internal_drive) = (
+        format!(
+            "{}_{}/{drive}",
+            package_id._package(),
+            package_id._publisher()
+        ),
+        format!("{package_id}/{drive}"),
     );
 
     let action = request.action;
@@ -443,8 +446,6 @@ async fn handle_request(
         VfsAction::ReadDir => {
             let mut dir = fs::read_dir(&path).await?;
             let mut entries = Vec::new();
-            #[cfg(target_os = "windows")]
-            let relative_dir_path = path.strip_prefix(vfs_path).unwrap_or(&path);
             while let Some(entry) = dir.next_entry().await? {
                 let entry_path = entry.path();
                 let relative_path = entry_path.strip_prefix(vfs_path).unwrap_or(&entry_path);
@@ -455,9 +456,7 @@ async fn handle_request(
                 #[cfg(unix)]
                 let relative_path = relative_path.display().to_string();
                 #[cfg(target_os = "windows")]
-                let relative_path = replace_path_prefix(&relative_dir_path, &relative_path)
-                    .display()
-                    .to_string();
+                let relative_path = replace_path_prefix(&internal_drive, &relative_path);
 
                 let dir_entry = DirEntry {
                     path: relative_path,
@@ -707,22 +706,22 @@ fn parse_package_and_drive(
 }
 
 #[cfg(target_os = "windows")]
-fn replace_path_prefix(base_path: &Path, to_replace_path: &Path) -> PathBuf {
-    println!("initial {base_path:?} {to_replace_path:?}");
-    let base_path_parts = base_path.display().to_string();
-    let base_path_parts: Vec<&str> = base_path_parts.split('\\').collect();
+fn replace_path_prefix(base_path: &str, to_replace_path: &Path) -> String {
+    println!("initial {base_path} {to_replace_path:?}");
+    let base_path_parts: Vec<&str> = base_path.split('/').collect();
 
     let num_base_path_parts = base_path_parts.len();
 
     let to_replace_path = to_replace_path.display().to_string();
     let parts: Vec<&str> = to_replace_path.split('\\').collect();
 
-    let mut new_path = PathBuf::from(base_path);
-    println!("before {new_path:?}");
+    let mut new_path = base_path.to_string();
+    println!("before {new_path}");
     for part in parts.iter().skip(num_base_path_parts) {
-        new_path = new_path.join(part);
+        new_path.push('/');
+        new_path.push_str(part);
     }
-    println!("after {new_path:?}");
+    println!("after {new_path}");
     new_path
 }
 
