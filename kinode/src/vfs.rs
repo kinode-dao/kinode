@@ -327,7 +327,11 @@ async fn handle_request(
     #[cfg(unix)]
     let drive = format!("{package_id}/{drive}");
     #[cfg(target_os = "windows")]
-    let drive = format!("{}_{}/{drive}", package_id._package(), package_id._publisher());
+    let drive = format!(
+        "{}_{}/{drive}",
+        package_id._package(),
+        package_id._publisher()
+    );
 
     let action = request.action;
     let path = PathBuf::from(&request.path);
