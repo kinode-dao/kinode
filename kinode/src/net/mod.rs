@@ -69,7 +69,6 @@ pub async fn networking(
         peers,
         pending_passthroughs,
         active_passthroughs,
-        max_peers,
         max_passthroughs,
         fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
     };
@@ -212,7 +211,7 @@ async fn handle_local_request(
                     printout.push_str(&format!(
                         "we have connections with {} peers ({} max):\r\n",
                         data.peers.peers().len(),
-                        data.max_peers,
+                        data.peers.max_peers(),
                     ));
 
                     let now = std::time::SystemTime::now()
@@ -342,16 +341,17 @@ async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &mut NetDat
     match req {
         lib::core::FdManagerRequest::FdsLimit(fds_limit) => {
             data.fds_limit = fds_limit;
-            if data.max_peers > fds_limit {
-                data.max_peers = fds_limit;
-            }
+            data.peers.set_max_peers(fds_limit);
             // TODO combine with max_peers check
+            // only update passthrough limit if it's higher than the new fds limit
+            // most nodes have passthroughs disabled, meaning this will keep it at 0
             if data.max_passthroughs > fds_limit {
                 data.max_passthroughs = fds_limit;
             }
             // TODO cull passthroughs too
             if data.peers.peers().len() >= data.fds_limit as usize {
                 let diff = data.peers.peers().len() - data.fds_limit as usize;
+                println!("net: culling {diff} peer(s)\r\n");
                 data.peers.cull(diff).await;
             }
         }

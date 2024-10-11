@@ -6,25 +6,40 @@ use tokio::sync::mpsc;
 
 /// if target is a peer, queue to be routed
 /// otherwise, create peer and initiate routing
-pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) {
+pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, mut km: KernelMessage) {
     if let Some(mut peer) = data.peers.get_mut(&km.target.node) {
-        peer.sender.send(km).expect("net: peer sender was dropped");
-        peer.set_last_message();
-    } else {
-        let Some(peer_id) = data.pki.get(&km.target.node) else {
-            return utils::error_offline(km, &ext.network_error_tx).await;
-        };
-        let (mut peer, peer_rx) = Peer::new(peer_id.clone(), false);
-        // send message to be routed
-        peer.send(km);
-        data.peers.insert(peer_id.name.clone(), peer).await;
-        tokio::spawn(connect_to_peer(
-            ext.clone(),
-            data.clone(),
-            peer_id.clone(),
-            peer_rx,
-        ));
+        match peer.send(km) {
+            Ok(()) => {
+                peer.set_last_message();
+                return;
+            }
+            Err(e_km) => {
+                // peer connection was closed, remove it and try to reconnect
+                data.peers.remove(&peer.identity.name).await;
+                km = e_km.0;
+            }
+        }
     }
+    let Some(peer_id) = data.pki.get(&km.target.node) else {
+        return utils::error_offline(km, &ext.network_error_tx).await;
+    };
+    let (mut peer, peer_rx) = Peer::new(peer_id.clone(), false);
+    // send message to be routed
+    match peer.send(km) {
+        Ok(()) => {
+            peer.set_last_message();
+        }
+        Err(e_km) => {
+            return utils::error_offline(e_km.0, &ext.network_error_tx).await;
+        }
+    };
+    data.peers.insert(peer_id.name.clone(), peer).await;
+    tokio::spawn(connect_to_peer(
+        ext.clone(),
+        data.clone(),
+        peer_id.clone(),
+        peer_rx,
+    ));
 }
 
 /// based on peer's identity, either use one of their
