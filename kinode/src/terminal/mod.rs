@@ -1,7 +1,7 @@
 use chrono::{Datelike, Local, Timelike};
 use crossterm::{
     cursor,
-    event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers},
+    event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute, style,
     style::Print,
     terminal::{self, ClearType},
@@ -678,6 +678,9 @@ async fn handle_event(
         //  KEY: handle keypress events
         //
         Event::Key(k) => {
+            if k.kind == KeyEventKind::Release {
+                return Ok(false);
+            }
             match k.code {
                 //
                 //  CHAR: write a single character
