@@ -372,7 +372,7 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     Ok(())
 }
 
-/// returns True if runtime should exit due to CTRL+C or CTRL+D
+/// returns true if runtime should exit due to CTRL+C or CTRL+D
 async fn handle_event(
     our: &Identity,
     event: Event,
@@ -383,19 +383,14 @@ async fn handle_event(
 ) -> anyhow::Result<bool> {
     let State {
         stdout,
-        command_history,
         win_cols,
         win_rows,
         current_line,
-        in_step_through,
-        search_depth,
-        logging_mode,
-        verbose_mode,
         ..
     } = state;
     // lock here so that runtime can still use println! without freezing..
     // can lock before loop later if we want to reduce overhead
-    let mut stdout = stdout.lock();
+    let stdout = stdout.lock();
     match event {
         //
         // RESIZE: resize is super annoying because this event trigger often
@@ -435,19 +430,71 @@ async fn handle_event(
                 *win_cols - current_line.prompt_len as u16,
             );
         }
+        Event::Key(key_event) => {
+            if let Some(should_exit) = handle_key_event(
+                our,
+                key_event,
+                state,
+                event_loop,
+                debug_event_loop,
+                print_tx,
+                stdout,
+            ).await? {
+                return Ok(should_exit);
+            }
+        }
+        _ => {
+            // some terminal event we don't care about, yet
+        }
+    }
+    if state.search_mode {
+        state.search(&our.name)?;
+    } else {
+        state.display_current_input_line(false)?;
+    }
+    Ok(false)
+}
+
+/// returns Some(true) if runtime should exit due to CTRL+C or CTRL+D,
+///         Some(false) if caller should simple return `false`
+///         None if caller should fall through
+async fn handle_key_event(
+    our: &Identity,
+    key_event: KeyEvent,
+    state: &mut State,
+    event_loop: &mut MessageSender,
+    debug_event_loop: &mut DebugSender,
+    print_tx: &mut PrintSender,
+    mut stdout: std::io::StdoutLock<'static>,
+) -> anyhow::Result<Option<bool>> {
+    if key_event.kind == KeyEventKind::Release {
+        return Ok(Some(false));
+    }
+    let State {
+        command_history,
+        win_cols,
+        win_rows,
+        current_line,
+        in_step_through,
+        search_depth,
+        logging_mode,
+        verbose_mode,
+        ..
+    } = state;
+    match key_event {
         //
         // CTRL+C, CTRL+D: turn off the node
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('c'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        })
-        | Event::Key(KeyEvent {
+        }
+        | KeyEvent {
             code: KeyCode::Char('d'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             execute!(
                 stdout,
                 // print goes immediately above the dedicated input line at bottom
@@ -455,16 +502,16 @@ async fn handle_event(
                 terminal::Clear(ClearType::CurrentLine),
                 Print("exit code received"),
             )?;
-            return Ok(true);
+            return Ok(Some(true));
         }
         //
         // CTRL+V: toggle through verbosity modes
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('v'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             // go from low to high, then reset to 0
             match verbose_mode {
                 0 => *verbose_mode = 1,
@@ -500,16 +547,16 @@ async fn handle_event(
             )
             .send(&print_tx)
             .await;
-            return Ok(false);
+            return Ok(Some(false));
         }
         //
         // CTRL+J: toggle debug mode -- makes system-level event loop step-through
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('j'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             let _ = debug_event_loop.send(DebugCommand::ToggleStepthrough).await;
             *in_step_through = !*in_step_through;
             Printout::new(
@@ -524,27 +571,27 @@ async fn handle_event(
             )
             .send(&print_tx)
             .await;
-            return Ok(false);
+            return Ok(Some(false));
         }
         //
         // CTRL+S: step through system-level event loop (when in step-through mode)
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('s'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             let _ = debug_event_loop.send(DebugCommand::Step).await;
-            return Ok(false);
+            return Ok(Some(false));
         }
         //
         //  CTRL+L: toggle logging mode
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('l'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             *logging_mode = !*logging_mode;
             Printout::new(
                 0,
@@ -552,21 +599,21 @@ async fn handle_event(
             )
             .send(&print_tx)
             .await;
-            return Ok(false);
+            return Ok(Some(false));
         }
         //
         //  UP / CTRL+P: go up one command in history
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Up, ..
-        })
-        | Event::Key(KeyEvent {
+        }
+        | KeyEvent {
             code: KeyCode::Char('p'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             if state.search_mode {
-                return Ok(false);
+                return Ok(Some(false));
             }
             // go up one command in history
             match command_history.get_prev(&current_line.line) {
@@ -583,22 +630,22 @@ async fn handle_event(
                 }
             }
             state.display_current_input_line(true)?;
-            return Ok(false);
+            return Ok(Some(false));
         }
         //
         //  DOWN / CTRL+N: go down one command in history
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Down,
             ..
-        })
-        | Event::Key(KeyEvent {
+        }
+        | KeyEvent {
             code: KeyCode::Char('n'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             if state.search_mode {
-                return Ok(false);
+                return Ok(Some(false));
             }
             // go down one command in history
             match command_history.get_next() {
@@ -615,18 +662,18 @@ async fn handle_event(
                 }
             }
             state.display_current_input_line(true)?;
-            return Ok(false);
+            return Ok(Some(false));
         }
         //
         //  CTRL+A: jump to beginning of line
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('a'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             if state.search_mode {
-                return Ok(false);
+                return Ok(Some(false));
             }
             current_line.line_col = 0;
             current_line.cursor_col = 0;
@@ -634,13 +681,13 @@ async fn handle_event(
         //
         //  CTRL+E: jump to end of line
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('e'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             if state.search_mode {
-                return Ok(false);
+                return Ok(Some(false));
             }
             current_line.line_col = current_line.line.graphemes(true).count();
             current_line.cursor_col = std::cmp::min(
@@ -652,11 +699,11 @@ async fn handle_event(
         //  CTRL+R: enter search mode
         //  if already in search mode, increase search depth
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('r'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             if state.search_mode {
                 *search_depth += 1;
             }
@@ -665,11 +712,11 @@ async fn handle_event(
         //
         //  CTRL+G: exit search mode
         //
-        Event::Key(KeyEvent {
+        KeyEvent {
             code: KeyCode::Char('g'),
             modifiers: KeyModifiers::CONTROL,
             ..
-        }) => {
+        } => {
             // just show true current line as usual
             state.search_mode = false;
             *search_depth = 0;
@@ -677,10 +724,7 @@ async fn handle_event(
         //
         //  KEY: handle keypress events
         //
-        Event::Key(k) => {
-            if k.kind == KeyEventKind::Release {
-                return Ok(false);
-            }
+        k => {
             match k.code {
                 //
                 //  CHAR: write a single character
@@ -697,7 +741,7 @@ async fn handle_event(
                 //
                 KeyCode::Backspace => {
                     if current_line.line_col == 0 {
-                        return Ok(false);
+                        return Ok(Some(false));
                     } else {
                         current_line.line_col -= 1;
                         let c = current_line.delete_char();
@@ -709,7 +753,7 @@ async fn handle_event(
                 //
                 KeyCode::Delete => {
                     if current_line.line_col == current_line.line.graphemes(true).count() {
-                        return Ok(false);
+                        return Ok(Some(false));
                     }
                     current_line.delete_char();
                 }
@@ -720,7 +764,7 @@ async fn handle_event(
                     if current_line.cursor_col as usize == 0 {
                         if current_line.line_col == 0 {
                             // at the very beginning of the current typed line
-                            return Ok(false);
+                            return Ok(Some(false));
                         } else {
                             // virtual scroll leftward through line
                             current_line.line_col -= 1;
@@ -736,7 +780,7 @@ async fn handle_event(
                         if current_line.line_col != 0 {
                             current_line.line_col -= 1;
                         }
-                        return Ok(false);
+                        return Ok(Some(false));
                     }
                 }
                 //
@@ -745,7 +789,7 @@ async fn handle_event(
                 KeyCode::Right => {
                     if current_line.line_col == current_line.line.graphemes(true).count() {
                         // at the very end of the current typed line
-                        return Ok(false);
+                        return Ok(Some(false));
                     };
                     if (current_line.cursor_col + current_line.prompt_len as u16) < (*win_cols - 1)
                     {
@@ -757,7 +801,7 @@ async fn handle_event(
                         execute!(stdout, cursor::MoveRight(width))?;
                         current_line.cursor_col += width;
                         current_line.line_col += 1;
-                        return Ok(false);
+                        return Ok(Some(false));
                     } else {
                         // virtual scroll rightward through line
                         current_line.line_col += 1;
@@ -811,14 +855,6 @@ async fn handle_event(
                 }
             }
         }
-        _ => {
-            // some terminal event we don't care about, yet
-        }
     }
-    if state.search_mode {
-        state.search(&our.name)?;
-    } else {
-        state.display_current_input_line(false)?;
-    }
-    Ok(false)
+    Ok(None)
 }
