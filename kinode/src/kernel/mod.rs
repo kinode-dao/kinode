@@ -580,13 +580,18 @@ pub async fn kernel(
         if persisted.wasm_bytes_handle.is_empty() {
             continue;
         }
+        #[cfg(unix)]
+        let path = vfs_path.join(&persisted.wasm_bytes_handle);
+        #[cfg(target_os = "windows")]
+        let path = vfs_path.join(persisted.wasm_bytes_handle.replace(":", "_"));
+
         // read wasm bytes directly from vfs
-        let wasm_bytes = match tokio::fs::read(vfs_path.join(&persisted.wasm_bytes_handle)).await {
+        let wasm_bytes = match tokio::fs::read(&path).await {
             Ok(bytes) => bytes,
             Err(e) => {
                 t::Printout::new(
                     0,
-                    format!("kernel: couldn't read wasm bytes for process: {process_id}: {e}"),
+                    format!("kernel: couldn't read wasm bytes for process: {process_id} at {path:?}: {e}"),
                 )
                 .send(&send_to_terminal)
                 .await;

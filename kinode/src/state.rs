@@ -417,7 +417,7 @@ async fn bootstrap(
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
 
-        let drive_path = format!("/{}/pkg", &our_drive_name);
+        let drive_path = format!("/{}/pkg", [package_name, package_publisher].join(":"));
 
         // save the zip itself inside pkg folder, for sharing with others
         let mut zip_file =
