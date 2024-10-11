@@ -360,7 +360,8 @@ async fn handle_request(
 
     #[cfg(target_os = "windows")]
     let (path, internal_path) = (internal_path_to_external(&path), path);
-    println!("{package_id} {drive} {rest:?}");
+    #[cfg(target_os = "windows")]
+    println!("{package_id} {drive} {rest:?} :: {path:?} <-> {internal_path:?}");
 
     let (response_body, bytes) = match action {
         VfsAction::CreateDrive => {
@@ -662,9 +663,9 @@ fn parse_package_and_drive(
     path: &str,
     vfs_path: &PathBuf,
 ) -> Result<(PackageId, String, PathBuf), VfsError> {
-    println!("ppad: {path} {vfs_path:?}\r");
+    //println!("ppad: {path} {vfs_path:?}\r");
     let joined_path = join_paths_safely(&vfs_path, path);
-    println!("ppad: {joined_path:?}\r");
+    //println!("ppad: {joined_path:?}\r");
 
     // sanitize path..
     let normalized_path = normalize_path(&joined_path);
@@ -673,7 +674,7 @@ fn parse_package_and_drive(
             error: format!("input path tries to escape parent vfs directory: {path}"),
         })?;
     }
-    println!("ppad: {normalized_path:?}\r");
+    //println!("ppad: {normalized_path:?}\r");
 
     // extract original path.
     let path = normalized_path
@@ -683,13 +684,13 @@ fn parse_package_and_drive(
         })?
         .display()
         .to_string();
-    println!("ppad: {path}\r");
+    //println!("ppad: {path}\r");
 
     #[cfg(unix)]
     let mut parts: Vec<&str> = path.split('/').collect();
     #[cfg(target_os = "windows")]
     let mut parts: Vec<&str> = path.split('\\').collect();
-    println!("ppad: {parts:?}\r");
+    //println!("ppad: {parts:?}\r");
 
     if parts[0].is_empty() {
         parts.remove(0);
@@ -722,7 +723,8 @@ fn parse_package_and_drive(
 
 #[cfg(target_os = "windows")]
 fn internal_path_to_external(internal: &Path) -> PathBuf {
-    let parts: Vec<&str> = internal.display().to_string().split('\\').collect();
+    let parts = internal.display().to_string();
+    let parts: Vec<&str> = parts.split('\\').collect();
     let mut external = PathBuf::new();
     for part in parts {
         external = external.join(part.replace(":", "_"));
@@ -732,7 +734,7 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
 
 #[cfg(target_os = "windows")]
 fn replace_path_prefix(base_path: &str, to_replace_path: &Path) -> String {
-    println!("initial {base_path} {to_replace_path:?}");
+    //println!("initial {base_path} {to_replace_path:?}");
     let base_path_parts: Vec<&str> = base_path.split('/').collect();
 
     let num_base_path_parts = base_path_parts.len();
@@ -741,12 +743,12 @@ fn replace_path_prefix(base_path: &str, to_replace_path: &Path) -> String {
     let parts: Vec<&str> = to_replace_path.split('\\').collect();
 
     let mut new_path = base_path.to_string();
-    println!("before {new_path}");
+    //println!("before {new_path}");
     for part in parts.iter().skip(num_base_path_parts) {
         new_path.push('/');
         new_path.push_str(part);
     }
-    println!("after {new_path}");
+    //println!("after {new_path}");
     new_path
 }
 
