@@ -706,25 +706,23 @@ fn parse_package_and_drive(
     Ok((package_id, drive, remaining_path))
 }
 
+#[cfg(target_os = "windows")]
 fn replace_path_prefix(base_path: &Path, to_replace_path: &Path) -> PathBuf {
+    println!("initial {base_path:?} {to_replace_path:?}");
     let base_path_parts = base_path.display().to_string();
-    #[cfg(unix)]
-    let base_path_parts: Vec<&str> = base_path_parts.split('/').collect();
-    #[cfg(target_os = "windows")]
     let base_path_parts: Vec<&str> = base_path_parts.split('\\').collect();
 
     let num_base_path_parts = base_path_parts.len();
 
     let to_replace_path = to_replace_path.display().to_string();
-    #[cfg(unix)]
-    let parts: Vec<&str> = to_replace_path.split('/').collect();
-    #[cfg(target_os = "windows")]
     let parts: Vec<&str> = to_replace_path.split('\\').collect();
 
     let mut new_path = PathBuf::from(base_path);
+    println!("before {new_path:?}");
     for part in parts.iter().skip(num_base_path_parts) {
         new_path = new_path.join(part);
     }
+    println!("after {new_path:?}");
     new_path
 }
 
