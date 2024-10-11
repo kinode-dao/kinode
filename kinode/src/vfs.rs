@@ -662,7 +662,10 @@ async fn parse_package_and_drive(
         .display()
         .to_string();
 
+    #[cfg(unix)]
     let mut parts: Vec<&str> = path.split('/').collect();
+    #[cfg(target_os = "windows")]
+    let mut parts: Vec<&str> = path.split('\\').collect();
 
     if parts[0].is_empty() {
         parts.remove(0);
