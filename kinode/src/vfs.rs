@@ -652,7 +652,9 @@ fn parse_package_and_drive(
     path: &str,
     vfs_path: &PathBuf,
 ) -> Result<(PackageId, String, PathBuf), VfsError> {
+    println!("ppad: {path} {vfs_path:?}\r");
     let joined_path = join_paths_safely(&vfs_path, path);
+    println!("ppad: {joined_path}\r");
 
     // sanitize path..
     let normalized_path = normalize_path(&joined_path);
@@ -661,6 +663,7 @@ fn parse_package_and_drive(
             error: format!("input path tries to escape parent vfs directory: {path}"),
         })?;
     }
+    println!("ppad: {normalized_path}\r");
 
     // extract original path.
     let path = normalized_path
@@ -670,11 +673,13 @@ fn parse_package_and_drive(
         })?
         .display()
         .to_string();
+    println!("ppad: {path}\r");
 
     #[cfg(unix)]
     let mut parts: Vec<&str> = path.split('/').collect();
     #[cfg(target_os = "windows")]
     let mut parts: Vec<&str> = path.split('\\').collect();
+    println!("ppad: {parts:?}\r");
 
     if parts[0].is_empty() {
         parts.remove(0);
