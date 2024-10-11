@@ -801,8 +801,7 @@ async fn check_caps(
         }
         VfsAction::CopyFile { new_path } | VfsAction::Rename { new_path } => {
             // these have 2 paths to validate
-            let (new_package_id, new_drive, _rest) =
-                parse_package_and_drive(new_path, &vfs_path)?;
+            let (new_package_id, new_drive, _rest) = parse_package_and_drive(new_path, &vfs_path)?;
 
             let new_drive = format!("/{new_package_id}/{new_drive}");
             // if both new and old path are within the package_id path, ok
