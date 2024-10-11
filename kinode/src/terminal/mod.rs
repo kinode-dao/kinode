@@ -439,7 +439,9 @@ async fn handle_event(
                 debug_event_loop,
                 print_tx,
                 stdout,
-            ).await? {
+            )
+            .await?
+            {
                 return Ok(should_exit);
             }
         }

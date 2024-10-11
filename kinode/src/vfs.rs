@@ -654,7 +654,7 @@ fn parse_package_and_drive(
 ) -> Result<(PackageId, String, PathBuf), VfsError> {
     println!("ppad: {path} {vfs_path:?}\r");
     let joined_path = join_paths_safely(&vfs_path, path);
-    println!("ppad: {joined_path}\r");
+    println!("ppad: {joined_path:?}\r");
 
     // sanitize path..
     let normalized_path = normalize_path(&joined_path);
@@ -663,7 +663,7 @@ fn parse_package_and_drive(
             error: format!("input path tries to escape parent vfs directory: {path}"),
         })?;
     }
-    println!("ppad: {normalized_path}\r");
+    println!("ppad: {normalized_path:?}\r");
 
     // extract original path.
     let path = normalized_path
