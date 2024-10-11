@@ -323,7 +323,7 @@ async fn handle_request(
     }
 
     // current prepend to filepaths needs to be: /package_id/drive/path
-    let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path).await?;
+    let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path)?;
     #[cfg(unix)]
     let drive = format!("{package_id}/{drive}");
     #[cfg(target_os = "windows")]
@@ -443,14 +443,22 @@ async fn handle_request(
         VfsAction::ReadDir => {
             let mut dir = fs::read_dir(&path).await?;
             let mut entries = Vec::new();
+            #[cfg(target_os = "windows")]
+            let relative_dir_path = path.strip_prefix(vfs_path).unwrap_or(&path);
             while let Some(entry) = dir.next_entry().await? {
                 let entry_path = entry.path();
                 let relative_path = entry_path.strip_prefix(vfs_path).unwrap_or(&entry_path);
 
                 let metadata = entry.metadata().await?;
                 let file_type = get_file_type(&metadata);
+
+                #[cfg(unix)]
+                let relative_path = relative_path.display().to_string();
+                #[cfg(target_os = "windows")]
+                let relative_path = replace_path_prefix(&relative_dir_path, &relative_path);
+
                 let dir_entry = DirEntry {
-                    path: relative_path.display().to_string(),
+                    path: relative_path,
                     file_type,
                 };
                 entries.push(dir_entry);
@@ -639,7 +647,7 @@ async fn handle_request(
     Ok(())
 }
 
-async fn parse_package_and_drive(
+fn parse_package_and_drive(
     path: &str,
     vfs_path: &PathBuf,
 ) -> Result<(PackageId, String, PathBuf), VfsError> {
@@ -694,6 +702,28 @@ async fn parse_package_and_drive(
     }
 
     Ok((package_id, drive, remaining_path))
+}
+
+fn replace_path_prefix(base_path: &Path, to_replace_path: &Path) -> PathBuf {
+    let base_path_parts = base_path.display().to_string();
+    #[cfg(unix)]
+    let base_path_parts: Vec<&str> = base_path_parts.split('/').collect();
+    #[cfg(target_os = "windows")]
+    let base_path_parts: Vec<&str> = base_path_parts.split('\\').collect();
+
+    let num_base_path_parts = base_path_parts.len();
+
+    let to_replace_path = to_replace_path.display().to_string();
+    #[cfg(unix)]
+    let parts: Vec<&str> = to_replace_path.split('/').collect();
+    #[cfg(target_os = "windows")]
+    let parts: Vec<&str> = to_replace_path.split('\\').collect();
+
+    let mut new_path = PathBuf::from(base_path);
+    for part in parts.iter().skip(num_base_path_parts) {
+        new_path = new_path.join(part);
+    }
+    new_path
 }
 
 async fn check_caps(
@@ -772,7 +802,7 @@ async fn check_caps(
         VfsAction::CopyFile { new_path } | VfsAction::Rename { new_path } => {
             // these have 2 paths to validate
             let (new_package_id, new_drive, _rest) =
-                parse_package_and_drive(new_path, &vfs_path).await?;
+                parse_package_and_drive(new_path, &vfs_path)?;
 
             let new_drive = format!("/{new_package_id}/{new_drive}");
             // if both new and old path are within the package_id path, ok
@@ -1002,7 +1032,8 @@ fn join_paths_safely<P: AsRef<Path>>(base: &PathBuf, extension: P) -> PathBuf {
         .as_ref()
         .to_str()
         .unwrap_or("")
-        .trim_start_matches('/');
+        .trim_start_matches('/')
+        .trim_start_matches('\\');
 
     let extension_path = Path::new(extension_str);
     base.join(extension_path)
