@@ -726,8 +726,15 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
     let parts = internal.display().to_string();
     let parts: Vec<&str> = parts.split('\\').collect();
     let mut external = PathBuf::new();
-    for part in parts {
-        external = external.join(part.replace(":", "_"));
+    let is_drive = regex::Regex::new(r"^[A-Za-z]:$").unwrap();
+    for (i, part) in parts.iter().enumerate() {
+        external = external.join(
+            if i == 0 && is_drive.is_match(part) {
+                part
+            } else {
+                part.replace(":", "_")
+            }
+        );
     }
     external
 }
