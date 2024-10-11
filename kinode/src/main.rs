@@ -76,9 +76,12 @@ async fn main() {
     let home_directory_path = matches
         .get_one::<String>("home")
         .expect("home directory required");
-    create_home_directory(&home_directory_path).await;
+    if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
+        panic!("failed to create home directory: {e:?}");
+    }
     let home_directory_path = std::fs::canonicalize(&home_directory_path)
         .expect("specified home directory {home_directory_path} not found");
+    println!("home at {home_directory_path:?}\r");
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
     #[cfg(not(feature = "simulation-mode"))]
@@ -105,7 +108,7 @@ async fn main() {
 
     // default eth providers/routers
     let mut eth_provider_config: lib::eth::SavedConfigs = if let Ok(contents) =
-        tokio::fs::read_to_string(home_directory_path.join(".eth_providers")).await
+        tokio::fs::read_to_string(&home_directory_path.join(".eth_providers")).await
     {
         if let Ok(contents) = serde_json::from_str(&contents) {
             println!("loaded saved eth providers\r");
@@ -200,7 +203,7 @@ async fn main() {
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
         fake_node_name.cloned(),
         password.cloned(),
-        home_directory_path,
+        &home_directory_path,
         (
             ws_tcp_handle.expect("need ws networking for simulation mode"),
             ws_flag_used,
@@ -633,13 +636,6 @@ pub async fn simulate_node(
             (identity, encoded_keyfile, decoded_keyfile)
         }
     }
-}
-
-async fn create_home_directory(home_directory_path: &str) {
-    if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {e:?}");
-    }
-    println!("home at {home_directory_path}\r");
 }
 
 /// build the command line interface for kinode

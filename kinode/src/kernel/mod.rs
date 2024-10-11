@@ -539,7 +539,10 @@ pub async fn kernel(
     config.async_support(true);
     let engine = Engine::new(&config).unwrap();
 
+    println!("{home_directory_path:?}\r");
     let vfs_path = home_directory_path.join("vfs");
+    println!("{vfs_path:?}\r");
+
     tokio::fs::create_dir_all(&vfs_path)
         .await
         .expect("kernel startup fatal: couldn't create vfs dir");
@@ -580,10 +583,13 @@ pub async fn kernel(
         if persisted.wasm_bytes_handle.is_empty() {
             continue;
         }
+        let wasm_bytes_handle = persisted.wasm_bytes_handle
+            .strip_prefix("/")
+            .unwrap_or_else(|| &persisted.wasm_bytes_handle);
         #[cfg(unix)]
-        let path = vfs_path.join(&persisted.wasm_bytes_handle);
+        let path = vfs_path.join(wasm_bytes_handle);
         #[cfg(target_os = "windows")]
-        let path = vfs_path.join(persisted.wasm_bytes_handle.replace(":", "_"));
+        let path = vfs_path.join(wasm_bytes_handle.replace(":", "_"));
 
         // read wasm bytes directly from vfs
         let wasm_bytes = match tokio::fs::read(&path).await {
