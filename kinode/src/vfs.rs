@@ -728,8 +728,8 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
     let mut external = PathBuf::new();
     let is_drive = regex::Regex::new(r"^[A-Za-z]:$").unwrap();
     for (i, part) in parts.iter().enumerate() {
-        external = external.join(if i == 0 && is_drive.is_match(part) {
-            part
+        external = external.join(if i <= 1 && is_drive.is_match(part) {
+            part.to_string()
         } else {
             part.replace(":", "_")
         });
