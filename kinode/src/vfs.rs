@@ -455,7 +455,9 @@ async fn handle_request(
                 #[cfg(unix)]
                 let relative_path = relative_path.display().to_string();
                 #[cfg(target_os = "windows")]
-                let relative_path = replace_path_prefix(&relative_dir_path, &relative_path);
+                let relative_path = replace_path_prefix(&relative_dir_path, &relative_path)
+                    .display()
+                    .to_string();
 
                 let dir_entry = DirEntry {
                     path: relative_path,
