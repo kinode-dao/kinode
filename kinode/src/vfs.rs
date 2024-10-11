@@ -324,17 +324,19 @@ async fn handle_request(
 
     // current prepend to filepaths needs to be: /package_id/drive/path
     let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path)?;
-    #[cfg(unix)]
     let drive = format!("{package_id}/{drive}");
-    #[cfg(target_os = "windows")]
-    let (drive, internal_drive) = (
-        format!(
-            "{}_{}/{drive}",
-            package_id._package(),
-            package_id._publisher()
-        ),
-        format!("{package_id}/{drive}"),
-    );
+    //#[cfg(unix)]
+    //let drive = format!("{package_id}/{drive}");
+    //#[cfg(target_os = "windows")]
+    //let (drive, internal_drive) = (
+    //    format!(
+    //        "{}_{}/{drive}",
+    //        package_id._package(),
+    //        package_id._publisher()
+    //    ),
+    //    format!("{package_id}/{drive}"),
+    //);
+    //println!("drive, rest: {drive}, {rest:?}");
 
     let action = request.action;
     let path = PathBuf::from(&request.path);
@@ -356,8 +358,18 @@ async fn handle_request(
     let base_drive = join_paths_safely(&vfs_path, &drive);
     let path = join_paths_safely(&base_drive, &rest);
 
+    #[cfg(target_os = "windows")]
+    let (path, internal_path) = (
+        internal_path_to_external(&path),
+        path,
+    );
+    println!("{package_id} {drive} {rest:?}");
+
     let (response_body, bytes) = match action {
         VfsAction::CreateDrive => {
+            #[cfg(target_os = "windows")]
+            let base_drive = internal_path_to_external(&base_drive);
+
             fs::create_dir_all(&base_drive).await?;
             (VfsResponse::Ok, None)
         }
@@ -453,10 +465,11 @@ async fn handle_request(
                 let metadata = entry.metadata().await?;
                 let file_type = get_file_type(&metadata);
 
-                #[cfg(unix)]
                 let relative_path = relative_path.display().to_string();
-                #[cfg(target_os = "windows")]
-                let relative_path = replace_path_prefix(&internal_drive, &relative_path);
+                //#[cfg(unix)]
+                //let relative_path = relative_path.display().to_string();
+                //#[cfg(target_os = "windows")]
+                //let relative_path = replace_path_prefix(&internal_drive, &relative_path);
 
                 let dir_entry = DirEntry {
                     path: relative_path,
@@ -708,6 +721,16 @@ fn parse_package_and_drive(
     }
 
     Ok((package_id, drive, remaining_path))
+}
+
+#[cfg(target_os = "windows")]
+fn internal_path_to_external(internal: &Path) -> PathBuf {
+    let parts: Vec<&str> = internal.display().to_string().split('\\').collect();
+    let mut external = PathBuf::new();
+    for part in parts {
+        external = external.join(part.replace(":", "_"));
+    }
+    external
 }
 
 #[cfg(target_os = "windows")]
