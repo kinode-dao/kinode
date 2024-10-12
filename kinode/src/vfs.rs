@@ -723,17 +723,31 @@ fn parse_package_and_drive(
 
 #[cfg(target_os = "windows")]
 fn internal_path_to_external(internal: &Path) -> PathBuf {
-    let parts = internal.display().to_string();
-    let parts: Vec<&str> = parts.split('\\').collect();
     let mut external = PathBuf::new();
-    let is_drive = regex::Regex::new(r"^[A-Za-z]:$").unwrap();
-    for (i, part) in parts.iter().enumerate() {
-        external = external.join(if i <= 1 && is_drive.is_match(part) {
-            part.to_string()
-        } else {
-            part.replace(":", "_")
-        });
+    for component in internal.components() {
+        match component {
+            RootDir | CurDir | ParentDir => {}
+            Prefix(prefix) => {
+                external.join(prefix);
+            }
+            Normal(item) => {
+                external = external
+                    .join(item.to_string_lossy().into_owned().replace(":", "_"));
+            }
+        }
     }
+
+    //let parts = internal.display().to_string();
+    //let parts: Vec<&str> = parts.split('\\').collect();
+    //let mut external = PathBuf::new();
+    //let is_drive = regex::Regex::new(r"^[A-Za-z]:$").unwrap();
+    //for (i, part) in parts.iter().enumerate() {
+    //    external = external.join(if i <= 1 && is_drive.is_match(part) {
+    //        part.to_string()
+    //    } else {
+    //        part.replace(":", "_")
+    //    });
+    //}
     external
 }
 
