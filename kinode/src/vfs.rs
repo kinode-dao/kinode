@@ -757,7 +757,7 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
 
 #[cfg(target_os = "windows")]
 fn replace_path_prefix(base_path: &Path, to_replace_path: &Path) -> String {
-    println!("initial {base_path} {to_replace_path:?}");
+    println!("initial {base_path:?} {to_replace_path:?}");
     let base_path = base_path.display().to_string();
     let base_path_parts: Vec<&str> = base_path.split('\\').collect();
 
@@ -766,7 +766,7 @@ fn replace_path_prefix(base_path: &Path, to_replace_path: &Path) -> String {
     let to_replace_path = to_replace_path.display().to_string();
     let parts: Vec<&str> = to_replace_path.split('\\').collect();
 
-    let mut new_path = base_path.to_string();
+    let mut new_path = base_path.to_string().replace("\\", "/");
     //println!("before {new_path}");
     for part in parts.iter().skip(num_base_path_parts) {
         new_path.push('/');
