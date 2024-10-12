@@ -728,7 +728,8 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
         match component {
             Component::RootDir | Component::CurDir | Component::ParentDir => {}
             Component::Prefix(prefix) => {
-                external.join(prefix);
+                external = component.as_ref().clone();
+                //external.join(prefix);
             }
             Component::Normal(item) => {
                 external = external.join(item.to_string_lossy().into_owned().replace(":", "_"));
