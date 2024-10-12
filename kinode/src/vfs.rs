@@ -726,11 +726,11 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
     let mut external = PathBuf::new();
     for component in internal.components() {
         match component {
-            RootDir | CurDir | ParentDir => {}
-            Prefix(prefix) => {
+            Component::RootDir | Component::CurDir | Component::ParentDir => {}
+            Component::Prefix(prefix) => {
                 external.join(prefix);
             }
-            Normal(item) => {
+            Component::Normal(item) => {
                 external = external.join(item.to_string_lossy().into_owned().replace(":", "_"));
             }
         }
