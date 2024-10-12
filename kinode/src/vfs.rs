@@ -731,8 +731,7 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
                 external.join(prefix);
             }
             Normal(item) => {
-                external = external
-                    .join(item.to_string_lossy().into_owned().replace(":", "_"));
+                external = external.join(item.to_string_lossy().into_owned().replace(":", "_"));
             }
         }
     }
