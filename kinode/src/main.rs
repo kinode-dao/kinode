@@ -713,11 +713,11 @@ fn build_command() -> Command {
         )
         .arg(
             arg!(--"max-peers" <MAX_PEERS> "Maximum number of peers to hold active connections with (default 32)")
-                .value_parser(value_parser!(u32)),
+                .value_parser(value_parser!(u64)),
         )
         .arg(
             arg!(--"max-passthroughs" <MAX_PASSTHROUGHS> "Maximum number of passthroughs serve as a router (default 0)")
-                .value_parser(value_parser!(u32)),
+                .value_parser(value_parser!(u64)),
         )
         .arg(
             arg!(--"soft-ulimit" <SOFT_ULIMIT> "Enforce a static maximum number of file descriptors (default fetched from system)")
