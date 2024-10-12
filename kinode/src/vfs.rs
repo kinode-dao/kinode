@@ -463,11 +463,15 @@ async fn handle_request(
                 let metadata = entry.metadata().await?;
                 let file_type = get_file_type(&metadata);
 
+                #[cfg(unix)]
                 let relative_path = relative_path.display().to_string();
-                //#[cfg(unix)]
-                //let relative_path = relative_path.display().to_string();
-                //#[cfg(target_os = "windows")]
-                //let relative_path = replace_path_prefix(&internal_drive, &relative_path);
+                #[cfg(target_os = "windows")]
+                let relative_path = {
+                    let internal_path = internal_path
+                        .strip_prefix(vfs_path)
+                        .unwrap_or(&internal_path);
+                    replace_path_prefix(&internal_path, &relative_path)
+                };
 
                 let dir_entry = DirEntry {
                     path: relative_path,
@@ -727,9 +731,9 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
     for component in internal.components() {
         match component {
             Component::RootDir | Component::CurDir | Component::ParentDir => {}
-            Component::Prefix(prefix) => {
-                external = component.as_ref().clone();
-                //external.join(prefix);
+            Component::Prefix(_) => {
+                let component: &Path = component.as_ref();
+                external = component.to_path_buf();
             }
             Component::Normal(item) => {
                 external = external.join(item.to_string_lossy().into_owned().replace(":", "_"));
@@ -752,9 +756,10 @@ fn internal_path_to_external(internal: &Path) -> PathBuf {
 }
 
 #[cfg(target_os = "windows")]
-fn replace_path_prefix(base_path: &str, to_replace_path: &Path) -> String {
-    //println!("initial {base_path} {to_replace_path:?}");
-    let base_path_parts: Vec<&str> = base_path.split('/').collect();
+fn replace_path_prefix(base_path: &Path, to_replace_path: &Path) -> String {
+    println!("initial {base_path} {to_replace_path:?}");
+    let base_path = base_path.display().to_string();
+    let base_path_parts: Vec<&str> = base_path.split('\\').collect();
 
     let num_base_path_parts = base_path_parts.len();
 
@@ -767,7 +772,7 @@ fn replace_path_prefix(base_path: &str, to_replace_path: &Path) -> String {
         new_path.push('/');
         new_path.push_str(part);
     }
-    //println!("after {new_path}");
+    println!("after {new_path}");
     new_path
 }
 
