@@ -1,13 +1,15 @@
 use lib::types::core::{
-    Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
+    Address, Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
+    NET_PROCESS_ID,
 };
 use {
     dashmap::DashMap,
     ring::signature::Ed25519KeyPair,
     serde::{Deserialize, Serialize},
+    std::sync::atomic::AtomicU64,
     std::sync::Arc,
     tokio::net::TcpStream,
-    tokio::sync::mpsc::UnboundedSender,
+    tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender},
     tokio_tungstenite::{MaybeTlsStream, WebSocketStream},
 };
 
@@ -54,15 +56,107 @@ pub struct RoutingRequest {
     pub target: NodeId,
 }
 
-pub type Peers = Arc<DashMap<String, Peer>>;
+#[derive(Clone)]
+pub struct Peers {
+    max_peers: Arc<AtomicU64>,
+    send_to_loop: MessageSender,
+    peers: Arc<DashMap<String, Peer>>,
+}
+
+impl Peers {
+    pub fn new(max_peers: u64, send_to_loop: MessageSender) -> Self {
+        Self {
+            max_peers: Arc::new(max_peers.into()),
+            send_to_loop,
+            peers: Arc::new(DashMap::new()),
+        }
+    }
+
+    pub fn peers(&self) -> &DashMap<String, Peer> {
+        &self.peers
+    }
+
+    pub fn max_peers(&self) -> u64 {
+        self.max_peers.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_max_peers(&self, max_peers: u64) {
+        self.max_peers
+            .store(max_peers, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn get(&self, name: &str) -> Option<dashmap::mapref::one::Ref<'_, String, Peer>> {
+        self.peers.get(name)
+    }
+
+    pub fn get_mut(
+        &self,
+        name: &str,
+    ) -> std::option::Option<dashmap::mapref::one::RefMut<'_, String, Peer>> {
+        self.peers.get_mut(name)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.peers.contains_key(name)
+    }
+
+    /// when a peer is inserted, if the total number of peers exceeds the limit,
+    /// remove the one with the oldest last_message.
+    pub async fn insert(&self, name: String, peer: Peer) {
+        self.peers.insert(name, peer);
+        if self.peers.len() as u64 > self.max_peers.load(std::sync::atomic::Ordering::Relaxed) {
+            let oldest = self
+                .peers
+                .iter()
+                .min_by_key(|p| p.last_message)
+                .unwrap()
+                .key()
+                .clone();
+            self.remove(&oldest).await;
+            crate::fd_manager::send_fd_manager_hit_fds_limit(
+                &Address::new("our", NET_PROCESS_ID.clone()),
+                &self.send_to_loop,
+            )
+            .await;
+        }
+    }
+
+    pub async fn remove(&self, name: &str) -> Option<(String, Peer)> {
+        self.peers.remove(name)
+    }
+
+    /// close the n oldest connections
+    pub async fn cull(&self, n: usize) {
+        let mut to_remove = Vec::with_capacity(n);
+        let mut sorted_peers: Vec<_> = self.peers.iter().collect();
+        sorted_peers.sort_by_key(|p| p.last_message);
+        to_remove.extend(sorted_peers.iter().take(n));
+        for peer in to_remove {
+            self.remove(&peer.identity.name).await;
+        }
+        crate::fd_manager::send_fd_manager_hit_fds_limit(
+            &Address::new("our", NET_PROCESS_ID.clone()),
+            &self.send_to_loop,
+        )
+        .await;
+    }
+}
+
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
 
 /// (from, target) -> from's socket
-pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), PendingStream>>;
+///
+/// only used by routers
+pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), (PendingStream, u64)>>;
 pub enum PendingStream {
     WebSocket(WebSocketStream<MaybeTlsStream<TcpStream>>),
     Tcp(TcpStream),
 }
+
+/// (from, target)
+///
+/// only used by routers
+pub type ActivePassthroughs = Arc<DashMap<(NodeId, NodeId), (u64, KillSender)>>;
 
 impl PendingStream {
     pub fn is_ws(&self) -> bool {
@@ -73,15 +167,55 @@ impl PendingStream {
     }
 }
 
-#[derive(Clone)]
+type KillSender = tokio::sync::mpsc::Sender<()>;
+
 pub struct Peer {
     pub identity: Identity,
     /// If true, we are routing for them and have a RoutingClientConnection
     /// associated with them. We can send them prompts to establish Passthroughs.
     pub routing_for: bool,
     pub sender: UnboundedSender<KernelMessage>,
+    /// unix timestamp of last message sent *or* received
+    pub last_message: u64,
 }
 
+impl Peer {
+    /// Create a new Peer.
+    /// If `routing_for` is true, we are routing for them.
+    pub fn new(identity: Identity, routing_for: bool) -> (Self, UnboundedReceiver<KernelMessage>) {
+        let (peer_tx, peer_rx) = tokio::sync::mpsc::unbounded_channel();
+        (
+            Self {
+                identity,
+                routing_for,
+                sender: peer_tx,
+                last_message: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs(),
+            },
+            peer_rx,
+        )
+    }
+
+    /// Send a message to the peer.
+    pub fn send(
+        &mut self,
+        km: KernelMessage,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<KernelMessage>> {
+        self.sender.send(km)?;
+        self.set_last_message();
+        Ok(())
+    }
+
+    /// Update the last message time to now.
+    pub fn set_last_message(&mut self) {
+        self.last_message = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+}
 /// [`Identity`], with additional fields for networking.
 #[derive(Clone)]
 pub struct IdentityExt {
@@ -98,5 +232,10 @@ pub struct IdentityExt {
 pub struct NetData {
     pub pki: OnchainPKI,
     pub peers: Peers,
+    /// only used by routers
     pub pending_passthroughs: PendingPassthroughs,
+    /// only used by routers
+    pub active_passthroughs: ActivePassthroughs,
+    pub max_passthroughs: u64,
+    pub fds_limit: u64,
 }

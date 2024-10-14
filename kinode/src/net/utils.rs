@@ -1,10 +1,10 @@
 use crate::net::types::{
-    HandshakePayload, OnchainPKI, Peers, PendingPassthroughs, PendingStream, RoutingRequest,
-    TCP_PROTOCOL, WS_PROTOCOL,
+    ActivePassthroughs, HandshakePayload, IdentityExt, NetData, OnchainPKI, PendingStream,
+    RoutingRequest, TCP_PROTOCOL, WS_PROTOCOL,
 };
 use lib::types::core::{
     Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
-    NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
+    NodeId, NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
     WrappedSendError,
 };
 use {
@@ -27,27 +27,82 @@ pub const MESSAGE_MAX_SIZE: u32 = 10_485_800;
 
 pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// 30 minute idle timeout for connections
+pub const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1800);
+
 pub async fn create_passthrough(
-    our: &Identity,
-    our_ip: &str,
+    ext: &IdentityExt,
     from_id: Identity,
     target_id: Identity,
-    peers: &Peers,
-    pending_passthroughs: &PendingPassthroughs,
+    data: &NetData,
     socket_1: PendingStream,
 ) -> anyhow::Result<()> {
+    // if we already are at the max number of passthroughs, reject
+    if data.max_passthroughs == 0 {
+        return Err(anyhow::anyhow!(
+            "passthrough denied: this node has disallowed passthroughs. Start node with `--max-passthroughs <VAL>` to allow passthroughs"
+        ));
+    }
+    // remove pending before checking bound because otherwise we stop
+    //  ourselves from matching pending if this connection will be
+    //  the max_passthroughs passthrough
+    let maybe_pending = data
+        .pending_passthroughs
+        .remove(&(target_id.name.clone(), from_id.name.clone()));
+    if data.active_passthroughs.len() + data.pending_passthroughs.len()
+        >= data.max_passthroughs as usize
+    {
+        let oldest_active = data.active_passthroughs.iter().min_by_key(|p| p.0);
+        let (oldest_active_key, oldest_active_time, oldest_active_kill_sender) = match oldest_active
+        {
+            None => (None, get_now(), None),
+            Some(oldest_active) => {
+                let (oldest_active_key, oldest_active_val) = oldest_active.pair();
+                let oldest_active_key = oldest_active_key.clone();
+                let (oldest_active_time, oldest_active_kill_sender) = oldest_active_val.clone();
+                (
+                    Some(oldest_active_key),
+                    oldest_active_time,
+                    Some(oldest_active_kill_sender),
+                )
+            }
+        };
+        let oldest_pending = data.pending_passthroughs.iter().min_by_key(|p| p.1);
+        let (oldest_pending_key, oldest_pending_time) = match oldest_pending {
+            None => (None, get_now()),
+            Some(oldest_pending) => {
+                let (oldest_pending_key, oldest_pending_val) = oldest_pending.pair();
+                let oldest_pending_key = oldest_pending_key.clone();
+                let (_, oldest_pending_time) = oldest_pending_val;
+                (Some(oldest_pending_key), oldest_pending_time.clone())
+            }
+        };
+        if oldest_active_time < oldest_pending_time {
+            // active key is oldest
+            oldest_active_kill_sender.unwrap().send(()).await.unwrap();
+            data.active_passthroughs.remove(&oldest_active_key.unwrap());
+        } else {
+            // pending key is oldest
+            data.pending_passthroughs
+                .remove(&oldest_pending_key.unwrap());
+        }
+    }
     // if the target has already generated a pending passthrough for this source,
     // immediately match them
-    if let Some(((_target, _from), pending_stream)) =
-        pending_passthroughs.remove(&(target_id.name.clone(), from_id.name.clone()))
-    {
-        tokio::spawn(maintain_passthrough(socket_1, pending_stream));
+    if let Some(((from, target), (pending_stream, _))) = maybe_pending {
+        tokio::spawn(maintain_passthrough(
+            from,
+            target,
+            socket_1,
+            pending_stream,
+            data.active_passthroughs.clone(),
+        ));
         return Ok(());
     }
     if socket_1.is_tcp() {
         if let Some((ip, tcp_port)) = target_id.tcp_routing() {
             // create passthrough to direct node over tcp
-            let tcp_url = make_conn_url(our_ip, ip, tcp_port, TCP_PROTOCOL)?;
+            let tcp_url = make_conn_url(&ext.our_ip, ip, tcp_port, TCP_PROTOCOL)?;
             let Ok(Ok(stream_2)) =
                 time::timeout(TIMEOUT, tokio::net::TcpStream::connect(tcp_url.to_string())).await
             else {
@@ -57,13 +112,19 @@ pub async fn create_passthrough(
                     from_id.name
                 ));
             };
-            tokio::spawn(maintain_passthrough(socket_1, PendingStream::Tcp(stream_2)));
+            tokio::spawn(maintain_passthrough(
+                from_id.name,
+                target_id.name,
+                socket_1,
+                PendingStream::Tcp(stream_2),
+                data.active_passthroughs.clone(),
+            ));
             return Ok(());
         }
     } else if socket_1.is_ws() {
         if let Some((ip, ws_port)) = target_id.ws_routing() {
             // create passthrough to direct node over websocket
-            let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
+            let ws_url = make_conn_url(&ext.our_ip, ip, ws_port, WS_PROTOCOL)?;
             let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
             else {
                 return Err(anyhow::anyhow!(
@@ -73,14 +134,17 @@ pub async fn create_passthrough(
                 ));
             };
             tokio::spawn(maintain_passthrough(
+                from_id.name,
+                target_id.name,
                 socket_1,
                 PendingStream::WebSocket(socket_2),
+                data.active_passthroughs.clone(),
             ));
             return Ok(());
         }
     }
     // create passthrough to indirect node that we do routing for
-    let target_peer = peers.get(&target_id.name).ok_or(anyhow::anyhow!(
+    let target_peer = data.peers.get(&target_id.name).ok_or(anyhow::anyhow!(
         "can't route to {}, not a peer, for passthrough requested by {}",
         target_id.name,
         from_id.name
@@ -97,7 +161,7 @@ pub async fn create_passthrough(
     target_peer.sender.send(
         KernelMessage::builder()
             .id(rand::random())
-            .source((our.name.as_str(), "net", "distro", "sys"))
+            .source((ext.our.name.as_str(), "net", "distro", "sys"))
             .target((target_id.name.as_str(), "net", "distro", "sys"))
             .message(Message::Request(Request {
                 inherit: false,
@@ -113,12 +177,23 @@ pub async fn create_passthrough(
     // or if the target node connects to us with a matching passthrough.
     // TODO it is currently possible to have dangling passthroughs in the map
     // if the target is "connected" to us but nonresponsive.
-    pending_passthroughs.insert((from_id.name, target_id.name), socket_1);
+    let now = get_now();
+    data.pending_passthroughs
+        .insert((from_id.name, target_id.name), (socket_1, now));
     Ok(())
 }
 
 /// cross the streams -- spawn on own task
-pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStream) {
+pub async fn maintain_passthrough(
+    from: NodeId,
+    target: NodeId,
+    socket_1: PendingStream,
+    socket_2: PendingStream,
+    active_passthroughs: ActivePassthroughs,
+) {
+    let now = get_now();
+    let (kill_sender, mut kill_receiver) = tokio::sync::mpsc::channel(1);
+    active_passthroughs.insert((from.clone(), target.clone()), (now, kill_sender));
     match (socket_1, socket_2) {
         (PendingStream::Tcp(socket_1), PendingStream::Tcp(socket_2)) => {
             // do not use bidirectional because if one side closes,
@@ -129,6 +204,7 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
             tokio::select! {
                 _ = copy(&mut r1, &mut w2) => {},
                 _ = copy(&mut r2, &mut w1) => {},
+                _ = kill_receiver.recv() => {},
             }
         }
         (PendingStream::WebSocket(mut socket_1), PendingStream::WebSocket(mut socket_2)) => {
@@ -163,6 +239,7 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
                             break
                         }
                     }
+                    _ = kill_receiver.recv() => break,
                 }
             }
             let _ = socket_1.close(None).await;
@@ -170,9 +247,9 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
         }
         _ => {
             // these foolish combinations must never occur
-            return;
         }
     }
+    active_passthroughs.remove(&(from, target));
 }
 
 pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI) {
@@ -358,4 +435,12 @@ pub async fn print_loud(print_tx: &PrintSender, content: &str) {
 /// Create a terminal printout at verbosity level 2.
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
     Printout::new(2, content).send(print_tx).await;
+}
+
+pub fn get_now() -> u64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    now
 }

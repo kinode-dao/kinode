@@ -392,7 +392,9 @@ async fn handle_event(
                 cursor::MoveTo(0, height),
                 terminal::Clear(ClearType::CurrentLine)
             )?;
-            *win_cols = width - 1;
+            // since we subtract prompt_len from win_cols, win_cols must always
+            // be >= prompt_len
+            *win_cols = std::cmp::max(width - 1, current_line.prompt_len as u16);
             *win_rows = height;
             if current_line.cursor_col + current_line.prompt_len as u16 > *win_cols {
                 current_line.cursor_col = *win_cols - current_line.prompt_len as u16;

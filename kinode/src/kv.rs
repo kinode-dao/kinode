@@ -1,8 +1,10 @@
+use crate::vfs::UniqueQueue;
 use dashmap::DashMap;
 use lib::types::core::{
-    Address, CapMessage, CapMessageSender, Capability, KernelMessage, KvAction, KvError, KvRequest,
-    KvResponse, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
-    Printout, ProcessId, Request, Response, KV_PROCESS_ID,
+    Address, CapMessage, CapMessageSender, Capability, FdManagerRequest, KernelMessage, KvAction,
+    KvError, KvRequest, KvResponse, LazyLoadBlob, Message, MessageReceiver, MessageSender,
+    PackageId, PrintSender, Printout, ProcessId, Request, Response, FD_MANAGER_PROCESS_ID,
+    KV_PROCESS_ID,
 };
 use rocksdb::OptimisticTransactionDB;
 use std::{
@@ -10,6 +12,81 @@ use std::{
     sync::Arc,
 };
 use tokio::{fs, sync::Mutex};
+
+#[derive(Clone)]
+struct KvState {
+    our: Arc<Address>,
+    kv_path: Arc<String>,
+    send_to_loop: MessageSender,
+    send_to_terminal: PrintSender,
+    open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
+    /// access order of dbs, used to cull if we hit the fds limit
+    access_order: Arc<Mutex<UniqueQueue<(PackageId, String)>>>,
+    txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
+    fds_limit: u64,
+}
+
+impl KvState {
+    pub fn new(
+        our: Address,
+        send_to_terminal: PrintSender,
+        send_to_loop: MessageSender,
+        home_directory_path: String,
+    ) -> Self {
+        Self {
+            our: Arc::new(our),
+            kv_path: Arc::new(format!("{home_directory_path}/kv")),
+            send_to_loop,
+            send_to_terminal,
+            open_kvs: Arc::new(DashMap::new()),
+            access_order: Arc::new(Mutex::new(UniqueQueue::new())),
+            txs: Arc::new(DashMap::new()),
+            fds_limit: 10,
+        }
+    }
+
+    pub async fn open_db(&mut self, package_id: PackageId, db: String) -> Result<(), KvError> {
+        let key = (package_id.clone(), db.clone());
+        if self.open_kvs.contains_key(&key) {
+            let mut access_order = self.access_order.lock().await;
+            access_order.remove(&key);
+            access_order.push_back(key);
+            return Ok(());
+        }
+
+        if self.open_kvs.len() as u64 >= self.fds_limit {
+            // close least recently used db
+            let key = self.access_order.lock().await.pop_front().unwrap();
+            self.remove_db(key.0, key.1).await;
+        }
+
+        let db_path = format!("{}/{}/{}", self.kv_path.as_str(), package_id, db);
+        fs::create_dir_all(&db_path).await?;
+
+        self.open_kvs.insert(
+            key,
+            OptimisticTransactionDB::open_default(&db_path).map_err(rocks_to_kv_err)?,
+        );
+        let mut access_order = self.access_order.lock().await;
+        access_order.push_back((package_id, db));
+        Ok(())
+    }
+
+    pub async fn remove_db(&mut self, package_id: PackageId, db: String) {
+        self.open_kvs.remove(&(package_id.clone(), db.to_string()));
+        let mut access_order = self.access_order.lock().await;
+        access_order.remove(&(package_id, db));
+    }
+
+    pub async fn remove_least_recently_used_dbs(&mut self, n: u64) {
+        for _ in 0..n {
+            let mut lock = self.access_order.lock().await;
+            let key = lock.pop_front().unwrap();
+            drop(lock);
+            self.remove_db(key.0, key.1).await;
+        }
+    }
+}
 
 pub async fn kv(
     our_node: Arc<String>,
@@ -19,28 +96,41 @@ pub async fn kv(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let kv_path = Arc::new(format!("{home_directory_path}/kv"));
-    if let Err(e) = fs::create_dir_all(&*kv_path).await {
+    let our = Address::new(our_node.as_str(), KV_PROCESS_ID.clone());
+
+    crate::fd_manager::send_fd_manager_request_fds_limit(&our, &send_to_loop).await;
+
+    let mut state = KvState::new(our, send_to_terminal, send_to_loop, home_directory_path);
+
+    if let Err(e) = fs::create_dir_all(state.kv_path.as_str()).await {
         panic!("failed creating kv dir! {e:?}");
     }
-
-    let open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>> =
-        Arc::new(DashMap::new());
-    let txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>> = Arc::new(DashMap::new());
 
     let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> = HashMap::new();
 
     while let Some(km) = recv_from_loop.recv().await {
-        if *our_node != km.source.node {
+        if state.our.node != km.source.node {
             Printout::new(
                 1,
                 format!(
-                    "kv: got request from {}, but requests must come from our node {our_node}",
-                    km.source.node
+                    "kv: got request from {}, but requests must come from our node {}",
+                    km.source.node, state.our.node,
                 ),
             )
-            .send(&send_to_terminal)
+            .send(&state.send_to_terminal)
             .await;
+            continue;
+        }
+
+        if km.source.process == *FD_MANAGER_PROCESS_ID {
+            if let Err(e) = handle_fd_request(km, &mut state).await {
+                Printout::new(
+                    1,
+                    format!("kv: got request from fd_manager that errored: {e:?}"),
+                )
+                .send(&state.send_to_terminal)
+                .await;
+            };
             continue;
         }
 
@@ -55,13 +145,8 @@ pub async fn kv(
         }
 
         // clone Arcs
-        let our_node = our_node.clone();
-        let send_to_loop = send_to_loop.clone();
-        let send_to_terminal = send_to_terminal.clone();
+        let mut state = state.clone();
         let send_to_caps_oracle = send_to_caps_oracle.clone();
-        let open_kvs = open_kvs.clone();
-        let txs = txs.clone();
-        let kv_path = kv_path.clone();
 
         tokio::spawn(async move {
             let mut queue_lock = queue.lock().await;
@@ -69,23 +154,13 @@ pub async fn kv(
                 let (km_id, km_rsvp) =
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
-                if let Err(e) = handle_request(
-                    &our_node,
-                    km,
-                    open_kvs,
-                    txs,
-                    &send_to_loop,
-                    &send_to_caps_oracle,
-                    &kv_path,
-                )
-                .await
-                {
+                if let Err(e) = handle_request(km, &mut state, &send_to_caps_oracle).await {
                     Printout::new(1, format!("kv: {e}"))
-                        .send(&send_to_terminal)
+                        .send(&state.send_to_terminal)
                         .await;
                     KernelMessage::builder()
                         .id(km_id)
-                        .source((our_node.as_str(), KV_PROCESS_ID.clone()))
+                        .source(state.our.as_ref().clone())
                         .target(km_rsvp)
                         .message(Message::Response((
                             Response {
@@ -98,7 +173,7 @@ pub async fn kv(
                         )))
                         .build()
                         .unwrap()
-                        .send(&send_to_loop)
+                        .send(&state.send_to_loop)
                         .await;
                 }
             }
@@ -108,13 +183,9 @@ pub async fn kv(
 }
 
 async fn handle_request(
-    our_node: &str,
     km: KernelMessage,
-    open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
-    txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
-    send_to_loop: &MessageSender,
+    state: &mut KvState,
     send_to_caps_oracle: &CapMessageSender,
-    kv_path: &str,
 ) -> Result<(), KvError> {
     let KernelMessage {
         id,
@@ -145,15 +216,12 @@ async fn handle_request(
         }
     };
 
-    check_caps(
-        our_node,
-        &source,
-        &open_kvs,
-        send_to_caps_oracle,
-        &request,
-        kv_path,
-    )
-    .await?;
+    check_caps(&source, state, send_to_caps_oracle, &request).await?;
+
+    // always open to ensure db exists
+    state
+        .open_db(request.package_id.clone(), request.db.clone())
+        .await?;
 
     let (body, bytes) = match &request.action {
         KvAction::Open => {
@@ -165,7 +233,7 @@ async fn handle_request(
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Get { key } => {
-            let db = match open_kvs.get(&(request.package_id, request.db)) {
+            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
@@ -190,14 +258,14 @@ async fn handle_request(
         }
         KvAction::BeginTx => {
             let tx_id = rand::random::<u64>();
-            txs.insert(tx_id, Vec::new());
+            state.txs.insert(tx_id, Vec::new());
             (
                 serde_json::to_vec(&KvResponse::BeginTx { tx_id }).unwrap(),
                 None,
             )
         }
         KvAction::Set { key, tx_id } => {
-            let db = match open_kvs.get(&(request.package_id, request.db)) {
+            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
@@ -214,7 +282,7 @@ async fn handle_request(
                     db.put(key, blob.bytes).map_err(rocks_to_kv_err)?;
                 }
                 Some(tx_id) => {
-                    let mut tx = match txs.get_mut(tx_id) {
+                    let mut tx = match state.txs.get_mut(tx_id) {
                         None => {
                             return Err(KvError::NoTx);
                         }
@@ -227,7 +295,7 @@ async fn handle_request(
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Delete { key, tx_id } => {
-            let db = match open_kvs.get(&(request.package_id, request.db)) {
+            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
@@ -238,7 +306,7 @@ async fn handle_request(
                     db.delete(key).map_err(rocks_to_kv_err)?;
                 }
                 Some(tx_id) => {
-                    let mut tx = match txs.get_mut(tx_id) {
+                    let mut tx = match state.txs.get_mut(tx_id) {
                         None => {
                             return Err(KvError::NoTx);
                         }
@@ -250,14 +318,14 @@ async fn handle_request(
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Commit { tx_id } => {
-            let db = match open_kvs.get(&(request.package_id, request.db)) {
+            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
                 Some(db) => db,
             };
 
-            let txs = match txs.remove(tx_id).map(|(_, tx)| tx) {
+            let txs = match state.txs.remove(tx_id).map(|(_, tx)| tx) {
                 None => {
                     return Err(KvError::NoTx);
                 }
@@ -291,7 +359,7 @@ async fn handle_request(
         }
         KvAction::Backup => {
             // looping through open dbs and flushing their memtables
-            for db_ref in open_kvs.iter() {
+            for db_ref in state.open_kvs.iter() {
                 let db = db_ref.value();
                 db.flush().map_err(rocks_to_kv_err)?;
             }
@@ -302,7 +370,7 @@ async fn handle_request(
     if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
         KernelMessage::builder()
             .id(id)
-            .source((our_node, KV_PROCESS_ID.clone()))
+            .source(state.our.as_ref().clone())
             .target(target)
             .message(Message::Response((
                 Response {
@@ -319,7 +387,7 @@ async fn handle_request(
             }))
             .build()
             .unwrap()
-            .send(send_to_loop)
+            .send(&state.send_to_loop)
             .await;
     }
 
@@ -327,12 +395,10 @@ async fn handle_request(
 }
 
 async fn check_caps(
-    our_node: &str,
     source: &Address,
-    open_kvs: &Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
+    state: &mut KvState,
     send_to_caps_oracle: &CapMessageSender,
     request: &KvRequest,
-    kv_path: &str,
 ) -> Result<(), KvError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -345,17 +411,14 @@ async fn check_caps(
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.to_string(),
-                            process: KV_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::json!({
+                    cap: Capability::new(
+                        state.our.as_ref().clone(),
+                        serde_json::json!({
                             "kind": "write",
                             "db": request.db.to_string(),
                         })
                         .to_string(),
-                    },
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;
@@ -371,17 +434,14 @@ async fn check_caps(
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.to_string(),
-                            process: KV_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::json!({
+                    cap: Capability::new(
+                        state.our.as_ref().clone(),
+                        serde_json::json!({
                             "kind": "read",
                             "db": request.db.to_string(),
                         })
                         .to_string(),
-                    },
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;
@@ -403,7 +463,7 @@ async fn check_caps(
             add_capability(
                 "read",
                 &request.db.to_string(),
-                &our_node,
+                &state.our,
                 &source,
                 send_to_caps_oracle,
             )
@@ -411,22 +471,22 @@ async fn check_caps(
             add_capability(
                 "write",
                 &request.db.to_string(),
-                &our_node,
+                &state.our,
                 &source,
                 send_to_caps_oracle,
             )
             .await?;
 
-            if open_kvs.contains_key(&(request.package_id.clone(), request.db.clone())) {
+            if state
+                .open_kvs
+                .contains_key(&(request.package_id.clone(), request.db.clone()))
+            {
                 return Ok(());
             }
 
-            let db_path = format!("{}/{}/{}", kv_path, request.package_id, request.db);
-            fs::create_dir_all(&db_path).await?;
-
-            let db = OptimisticTransactionDB::open_default(&db_path).map_err(rocks_to_kv_err)?;
-
-            open_kvs.insert((request.package_id.clone(), request.db.clone()), db);
+            state
+                .open_db(request.package_id.clone(), request.db.clone())
+                .await?;
             Ok(())
         }
         KvAction::RemoveDb { .. } => {
@@ -436,28 +496,57 @@ async fn check_caps(
                 });
             }
 
-            let db_path = format!("{}/{}/{}", kv_path, request.package_id, request.db);
-            open_kvs.remove(&(request.package_id.clone(), request.db.clone()));
+            state
+                .remove_db(request.package_id.clone(), request.db.clone())
+                .await;
 
-            fs::remove_dir_all(&db_path).await?;
+            fs::remove_dir_all(format!(
+                "{}/{}/{}",
+                state.kv_path, request.package_id, request.db
+            ))
+            .await?;
+
             Ok(())
         }
         KvAction::Backup { .. } => Ok(()),
     }
 }
 
+async fn handle_fd_request(km: KernelMessage, state: &mut KvState) -> anyhow::Result<()> {
+    let Message::Request(Request { body, .. }) = km.message else {
+        return Err(anyhow::anyhow!("not a request"));
+    };
+
+    let request: FdManagerRequest = serde_json::from_slice(&body)?;
+
+    match request {
+        FdManagerRequest::FdsLimit(new_fds_limit) => {
+            state.fds_limit = new_fds_limit;
+            if state.open_kvs.len() as u64 >= state.fds_limit {
+                crate::fd_manager::send_fd_manager_hit_fds_limit(&state.our, &state.send_to_loop)
+                    .await;
+                state
+                    .remove_least_recently_used_dbs(state.open_kvs.len() as u64 - state.fds_limit)
+                    .await;
+            }
+        }
+        _ => {
+            return Err(anyhow::anyhow!("non-Cull FdManagerRequest"));
+        }
+    }
+
+    Ok(())
+}
+
 async fn add_capability(
     kind: &str,
     db: &str,
-    our_node: &str,
+    our: &Address,
     source: &Address,
     send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), KvError> {
     let cap = Capability {
-        issuer: Address {
-            node: our_node.to_string(),
-            process: KV_PROCESS_ID.clone(),
-        },
+        issuer: our.clone(),
         params: serde_json::json!({ "kind": kind, "db": db }).to_string(),
     };
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();

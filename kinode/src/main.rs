@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 mod eth;
 #[cfg(feature = "simulation-mode")]
 mod fakenet;
+pub mod fd_manager;
 mod http;
 mod kernel;
 mod keygen;
@@ -40,10 +41,15 @@ const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
+const FD_MANAGER_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WS_MIN_PORT: u16 = 9_000;
 const TCP_MIN_PORT: u16 = 10_000;
 const MAX_PORT: u16 = 65_535;
+
+const DEFAULT_MAX_PEERS: u64 = 32;
+const DEFAULT_MAX_PASSTHROUGHS: u64 = 0;
+
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
@@ -184,6 +190,9 @@ async fn main() {
     // vfs maintains metadata about files in fs for processes
     let (vfs_message_sender, vfs_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(VFS_CHANNEL_CAPACITY);
+    // fd_manager makes sure we don't overrun the `ulimit -n`: max number of file descriptors
+    let (fd_manager_sender, fd_manager_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(FD_MANAGER_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
@@ -291,6 +300,12 @@ async fn main() {
             None,
             false,
         ),
+        (
+            ProcessId::new(Some("fd_manager"), "distro", "sys"),
+            fd_manager_sender,
+            None,
+            false,
+        ),
     ];
 
     /*
@@ -351,6 +366,12 @@ async fn main() {
         print_sender.clone(),
         net_message_receiver,
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
+        *matches
+            .get_one::<u64>("max-peers")
+            .unwrap_or(&DEFAULT_MAX_PEERS),
+        *matches
+            .get_one::<u64>("max-passthroughs")
+            .unwrap_or(&DEFAULT_MAX_PASSTHROUGHS),
     ));
     tasks.spawn(state::state_sender(
         our_name_arc.clone(),
@@ -359,6 +380,13 @@ async fn main() {
         state_receiver,
         db,
         home_directory_path.clone(),
+    ));
+    tasks.spawn(fd_manager::fd_manager(
+        our_name_arc.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        fd_manager_receiver,
+        matches.get_one::<u64>("soft-ulimit").copied(),
     ));
     tasks.spawn(kv::kv(
         our_name_arc.clone(),
@@ -686,6 +714,18 @@ fn build_command() -> Command {
         )
         .arg(
             arg!(--"number-log-files" <NUMBER_LOG_FILES> "Number of logs to rotate (default 4)")
+                .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"max-peers" <MAX_PEERS> "Maximum number of peers to hold active connections with (default 32)")
+                .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"max-passthroughs" <MAX_PASSTHROUGHS> "Maximum number of passthroughs serve as a router (default 0)")
+                .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"soft-ulimit" <SOFT_ULIMIT> "Enforce a static maximum number of file descriptors (default fetched from system)")
                 .value_parser(value_parser!(u64)),
         );
 

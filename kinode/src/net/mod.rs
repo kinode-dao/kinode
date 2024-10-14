@@ -1,9 +1,13 @@
-use lib::types::core::{
-    Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
-    NetworkErrorSender, NodeRouting, PrintSender,
+use lib::{
+    core::Address,
+    types::core::{
+        Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
+        NetworkErrorSender, NodeRouting, PrintSender, NET_PROCESS_ID,
+    },
 };
 use types::{
-    IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL, WS_PROTOCOL,
+    ActivePassthroughs, IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL,
+    WS_PROTOCOL,
 };
 use {dashmap::DashMap, ring::signature::Ed25519KeyPair, std::sync::Arc, tokio::task::JoinSet};
 
@@ -31,8 +35,18 @@ pub async fn networking(
     network_error_tx: NetworkErrorSender,
     print_tx: PrintSender,
     kernel_message_rx: MessageReceiver,
-    _reveal_ip: bool, // only used if indirect
+    // only used if indirect -- TODO use
+    _reveal_ip: bool,
+    max_peers: u64,
+    // only used by routers
+    max_passthroughs: u64,
 ) -> anyhow::Result<()> {
+    crate::fd_manager::send_fd_manager_request_fds_limit(
+        &Address::new(&our.name, NET_PROCESS_ID.clone()),
+        &kernel_message_tx,
+    )
+    .await;
+
     let ext = IdentityExt {
         our: Arc::new(our),
         our_ip: Arc::new(our_ip),
@@ -45,14 +59,18 @@ pub async fn networking(
     // start by initializing the structs where we'll store PKI in memory
     // and store a mapping of peers we have an active route for
     let pki: OnchainPKI = Arc::new(DashMap::new());
-    let peers: Peers = Arc::new(DashMap::new());
+    let peers: Peers = Peers::new(max_peers, ext.kernel_message_tx.clone());
     // only used by routers
     let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
+    let active_passthroughs: ActivePassthroughs = Arc::new(DashMap::new());
 
     let net_data = NetData {
         pki,
         peers,
         pending_passthroughs,
+        active_passthroughs,
+        max_passthroughs,
+        fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
     };
 
     let mut tasks = JoinSet::<anyhow::Result<()>>::new();
@@ -107,12 +125,12 @@ pub async fn networking(
 async fn local_recv(
     ext: IdentityExt,
     mut kernel_message_rx: MessageReceiver,
-    data: NetData,
+    mut data: NetData,
 ) -> anyhow::Result<()> {
     while let Some(km) = kernel_message_rx.recv().await {
         if km.target.node == ext.our.name {
             // handle messages sent to us
-            handle_message(&ext, km, &data).await;
+            handle_message(&ext, km, &mut data).await;
         } else {
             connect::send_to_peer(&ext, &data, km).await;
         }
@@ -120,7 +138,7 @@ async fn local_recv(
     Err(anyhow::anyhow!("net: kernel message channel was dropped"))
 }
 
-async fn handle_message(ext: &IdentityExt, km: KernelMessage, data: &NetData) {
+async fn handle_message(ext: &IdentityExt, km: KernelMessage, data: &mut NetData) {
     match &km.message {
         lib::core::Message::Request(request) => handle_request(ext, &km, &request.body, data).await,
         lib::core::Message::Response((response, _context)) => {
@@ -133,7 +151,7 @@ async fn handle_request(
     ext: &IdentityExt,
     km: &KernelMessage,
     request_body: &[u8],
-    data: &NetData,
+    data: &mut NetData,
 ) {
     if km.source.node == ext.our.name {
         handle_local_request(ext, km, request_body, data).await;
@@ -149,11 +167,12 @@ async fn handle_local_request(
     ext: &IdentityExt,
     km: &KernelMessage,
     request_body: &[u8],
-    data: &NetData,
+    data: &mut NetData,
 ) {
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Err(_e) => {
-            // ignore
+            // only other possible message is from fd_manager -- handle here
+            handle_fdman(km, request_body, data).await;
         }
         Ok(NetAction::ConnectionRequest(_)) => {
             // we shouldn't get these locally, ignore
@@ -171,6 +190,7 @@ async fn handle_local_request(
                 NetAction::GetPeers => (
                     NetResponse::Peers(
                         data.peers
+                            .peers()
                             .iter()
                             .map(|p| p.identity.clone())
                             .collect::<Vec<Identity>>(),
@@ -189,19 +209,31 @@ async fn handle_local_request(
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(
-                        "we have connections with {} peers:\r\n",
-                        data.peers.len()
+                        "we have connections with {} peers ({} max):\r\n",
+                        data.peers.peers().len(),
+                        data.peers.max_peers(),
                     ));
-                    for peer in data.peers.iter() {
+
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+                    for peer in data.peers.peers().iter() {
                         printout.push_str(&format!(
-                            "    {}, routing_for={}\r\n",
-                            peer.identity.name, peer.routing_for,
+                            "    {},{} last message {}s ago\r\n",
+                            peer.identity.name,
+                            if peer.routing_for { " (routing)" } else { "" },
+                            now.saturating_sub(peer.last_message)
                         ));
                     }
-                    printout.push_str(&format!(
-                        "we have {} entries in the PKI\r\n",
-                        data.pki.len()
-                    ));
+
+                    if data.max_passthroughs > 0 {
+                        printout.push_str(&format!(
+                            "we allow {} max passthroughs\r\n",
+                            data.max_passthroughs
+                        ));
+                    }
+
                     if !data.pending_passthroughs.is_empty() {
                         printout.push_str(&format!(
                             "we have {} pending passthroughs:\r\n",
@@ -211,6 +243,21 @@ async fn handle_local_request(
                             printout.push_str(&format!("    {} -> {}\r\n", p.key().0, p.key().1));
                         }
                     }
+
+                    if !data.active_passthroughs.is_empty() {
+                        printout.push_str(&format!(
+                            "we have {} active passthroughs:\r\n",
+                            data.active_passthroughs.len()
+                        ));
+                        for p in data.active_passthroughs.iter() {
+                            printout.push_str(&format!("    {} -> {}\r\n", p.key().0, p.key().1));
+                        }
+                    }
+
+                    printout.push_str(&format!(
+                        "we have {} entries in the PKI\r\n",
+                        data.pki.len()
+                    ));
 
                     (NetResponse::Diagnostics(printout), None)
                 }
@@ -281,6 +328,34 @@ async fn handle_local_request(
                 .send(&ext.kernel_message_tx)
                 .await;
         }
+    }
+}
+
+async fn handle_fdman(km: &KernelMessage, request_body: &[u8], data: &mut NetData) {
+    if km.source.process != *lib::core::FD_MANAGER_PROCESS_ID {
+        return;
+    }
+    let Ok(req) = serde_json::from_slice::<lib::core::FdManagerRequest>(request_body) else {
+        return;
+    };
+    match req {
+        lib::core::FdManagerRequest::FdsLimit(fds_limit) => {
+            data.fds_limit = fds_limit;
+            data.peers.set_max_peers(fds_limit);
+            // TODO combine with max_peers check
+            // only update passthrough limit if it's higher than the new fds limit
+            // most nodes have passthroughs disabled, meaning this will keep it at 0
+            if data.max_passthroughs > fds_limit {
+                data.max_passthroughs = fds_limit;
+            }
+            // TODO cull passthroughs too
+            if data.peers.peers().len() >= data.fds_limit as usize {
+                let diff = data.peers.peers().len() - data.fds_limit as usize;
+                println!("net: culling {diff} peer(s)\r\n");
+                data.peers.cull(diff).await;
+            }
+        }
+        _ => return,
     }
 }
 

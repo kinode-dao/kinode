@@ -474,7 +474,10 @@ fn serve_paths(
                 &our.node().to_string(),
             ) {
                 Ok(_) => {
-                    println!("successfully installed package: {:?}", process_package_id);
+                    println!(
+                        "successfully installed {}:{}",
+                        process_package_id.package_name, process_package_id.publisher_node
+                    );
                     Ok((StatusCode::CREATED, None, vec![]))
                 }
                 Err(e) => Ok((
