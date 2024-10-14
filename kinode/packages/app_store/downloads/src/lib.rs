@@ -42,9 +42,9 @@
 //! mechanism is implemented in the FT worker for improved modularity and performance.
 //!
 use crate::kinode::process::downloads::{
-    AutoUpdateRequest, DirEntry, DownloadCompleteRequest, DownloadError, DownloadRequests,
-    DownloadResponses, Entry, FileEntry, HashMismatch, LocalDownloadRequest, RemoteDownloadRequest,
-    RemoveFileRequest,
+    AutoDownloadCompleteRequest, AutoUpdateRequest, DirEntry, DownloadCompleteRequest,
+    DownloadError, DownloadRequests, DownloadResponses, Entry, FileEntry, HashMismatch,
+    LocalDownloadRequest, RemoteDownloadRequest, RemoveFileRequest,
 };
 use std::{collections::HashSet, io::Read, str::FromStr};
 
@@ -245,7 +245,7 @@ fn handle_message(
                 // if we have a pending auto_install, forward that context to the main process.
                 // it will check if the caps_hashes match (no change in capabilities), and auto_install if it does.
 
-                let context = if auto_updates.remove(&(
+                let manifest_hash = if auto_updates.remove(&(
                     req.package_id.clone().to_process_lib(),
                     req.version_hash.clone(),
                 )) {
@@ -253,7 +253,7 @@ fn handle_message(
                         req.package_id.clone().to_process_lib(),
                         req.version_hash.clone(),
                     ) {
-                        Ok(manifest_hash) => Some(manifest_hash.as_bytes().to_vec()),
+                        Ok(manifest_hash) => Some(manifest_hash),
                         Err(e) => {
                             print_to_terminal(
                                 1,
@@ -267,13 +267,26 @@ fn handle_message(
                 };
 
                 // pushed to UI via websockets
-                let mut request = Request::to(("our", "main", "app_store", "sys"))
-                    .body(serde_json::to_vec(&req)?);
+                Request::to(("our", "main", "app_store", "sys"))
+                    .body(serde_json::to_vec(&req)?)
+                    .send()?;
 
-                if let Some(ctx) = context {
-                    request = request.context(ctx);
+                // trigger auto-update install trigger to main:app_store:sys
+                if let Some(manifest_hash) = manifest_hash {
+                    let auto_download_complete_req = AutoDownloadCompleteRequest {
+                        download_info: req.clone(),
+                        manifest_hash,
+                    };
+                    print_to_terminal(
+                        1,
+                        &format!(
+                            "auto_update download complete: triggering install on main:app_store:sys"
+                        ),
+                    );
+                    Request::to(("our", "main", "app_store", "sys"))
+                        .body(serde_json::to_vec(&auto_download_complete_req)?)
+                        .send()?;
                 }
-                request.send()?;
             }
             DownloadRequests::GetFiles(maybe_id) => {
                 // if not local, throw to the boonies.

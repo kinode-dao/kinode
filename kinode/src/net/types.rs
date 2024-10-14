@@ -6,6 +6,7 @@ use {
     dashmap::DashMap,
     ring::signature::Ed25519KeyPair,
     serde::{Deserialize, Serialize},
+    std::sync::atomic::AtomicU64,
     std::sync::Arc,
     tokio::net::TcpStream,
     tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -57,7 +58,7 @@ pub struct RoutingRequest {
 
 #[derive(Clone)]
 pub struct Peers {
-    max_peers: u64,
+    max_peers: Arc<AtomicU64>,
     send_to_loop: MessageSender,
     peers: Arc<DashMap<String, Peer>>,
 }
@@ -65,7 +66,7 @@ pub struct Peers {
 impl Peers {
     pub fn new(max_peers: u64, send_to_loop: MessageSender) -> Self {
         Self {
-            max_peers,
+            max_peers: Arc::new(max_peers.into()),
             send_to_loop,
             peers: Arc::new(DashMap::new()),
         }
@@ -73,6 +74,15 @@ impl Peers {
 
     pub fn peers(&self) -> &DashMap<String, Peer> {
         &self.peers
+    }
+
+    pub fn max_peers(&self) -> u64 {
+        self.max_peers.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn set_max_peers(&self, max_peers: u64) {
+        self.max_peers
+            .store(max_peers, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn get(&self, name: &str) -> Option<dashmap::mapref::one::Ref<'_, String, Peer>> {
@@ -94,7 +104,7 @@ impl Peers {
     /// remove the one with the oldest last_message.
     pub async fn insert(&self, name: String, peer: Peer) {
         self.peers.insert(name, peer);
-        if self.peers.len() > self.max_peers as usize {
+        if self.peers.len() as u64 > self.max_peers.load(std::sync::atomic::Ordering::Relaxed) {
             let oldest = self
                 .peers
                 .iter()
@@ -102,7 +112,7 @@ impl Peers {
                 .unwrap()
                 .key()
                 .clone();
-            self.peers.remove(&oldest);
+            self.remove(&oldest).await;
             crate::fd_manager::send_fd_manager_hit_fds_limit(
                 &Address::new("our", NET_PROCESS_ID.clone()),
                 &self.send_to_loop,
@@ -122,7 +132,7 @@ impl Peers {
         sorted_peers.sort_by_key(|p| p.last_message);
         to_remove.extend(sorted_peers.iter().take(n));
         for peer in to_remove {
-            self.peers.remove(&peer.identity.name);
+            self.remove(&peer.identity.name).await;
         }
         crate::fd_manager::send_fd_manager_hit_fds_limit(
             &Address::new("our", NET_PROCESS_ID.clone()),
@@ -189,9 +199,13 @@ impl Peer {
     }
 
     /// Send a message to the peer.
-    pub fn send(&mut self, km: KernelMessage) {
-        self.sender.send(km).expect("net: peer sender was dropped");
+    pub fn send(
+        &mut self,
+        km: KernelMessage,
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<KernelMessage>> {
+        self.sender.send(km)?;
         self.set_last_message();
+        Ok(())
     }
 
     /// Update the last message time to now.
@@ -222,7 +236,6 @@ pub struct NetData {
     pub pending_passthroughs: PendingPassthroughs,
     /// only used by routers
     pub active_passthroughs: ActivePassthroughs,
-    pub max_peers: u64,
     pub max_passthroughs: u64,
     pub fds_limit: u64,
 }

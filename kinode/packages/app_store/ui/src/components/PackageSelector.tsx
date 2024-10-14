@@ -6,7 +6,7 @@ interface PackageSelectorProps {
 }
 
 const PackageSelector: React.FC<PackageSelectorProps> = ({ onPackageSelect }) => {
-    const { installed } = useAppsStore();
+    const { installed, fetchInstalled } = useAppsStore();
     const [selectedPackage, setSelectedPackage] = useState<string>("");
     const [customPackage, setCustomPackage] = useState<string>("");
     const [isCustomPackageSelected, setIsCustomPackageSelected] = useState(false);
@@ -17,6 +17,10 @@ const PackageSelector: React.FC<PackageSelectorProps> = ({ onPackageSelect }) =>
             onPackageSelect(packageName, publisherId);
         }
     }, [selectedPackage, onPackageSelect]);
+
+    useEffect(() => {
+        fetchInstalled();
+    }, []);
 
     const handlePackageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const value = e.target.value;

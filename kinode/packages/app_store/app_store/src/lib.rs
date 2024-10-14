@@ -30,7 +30,7 @@
 //! It delegates these responsibilities to the downloads and chain processes respectively.
 //!
 use crate::kinode::process::downloads::{
-    DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
+    AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
 };
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
@@ -65,6 +65,7 @@ pub enum Req {
     LocalRequest(LocalRequest),
     Progress(ProgressUpdate),
     DownloadComplete(DownloadCompleteRequest),
+    AutoDownloadComplete(AutoDownloadCompleteRequest),
     Http(http::server::HttpServerRequest),
 }
 
@@ -161,6 +162,40 @@ fn handle_message(
                     },
                 );
             }
+            Req::AutoDownloadComplete(req) => {
+                if !message.is_local(&our) {
+                    return Err(anyhow::anyhow!(
+                        "auto download complete from non-local node"
+                    ));
+                }
+                // auto_install case:
+                // the downloads process has given us the new package manifest's
+                // capability hashes, and the old package's capability hashes.
+                // we can use these to determine if the new package has the same
+                // capabilities as the old one, and if so, auto-install it.
+
+                let manifest_hash = req.manifest_hash;
+                let package_id = req.download_info.package_id;
+                let version_hash = req.download_info.version_hash;
+
+                if let Some(package) = state.packages.get(&package_id.clone().to_process_lib()) {
+                    if package.manifest_hash == Some(manifest_hash) {
+                        print_to_terminal(1, "auto_install:main, manifest_hash match");
+                        if let Err(e) =
+                            utils::install(&package_id, None, &version_hash, state, &our.node)
+                        {
+                            print_to_terminal(1, &format!("error auto_installing package: {e}"));
+                        } else {
+                            println!(
+                                "auto_installed update for package: {:?}",
+                                &package_id.to_process_lib()
+                            );
+                        }
+                    } else {
+                        print_to_terminal(1, "auto_install:main, manifest_hash do not match");
+                    }
+                }
+            }
             Req::DownloadComplete(req) => {
                 if !message.is_local(&our) {
                     return Err(anyhow::anyhow!("download complete from non-local node"));
@@ -182,41 +217,6 @@ fn handle_message(
                         .unwrap(),
                     },
                 );
-
-                // auto_install case:
-                // the downloads process has given us the new package manifest's
-                // capability hashes, and the old package's capability hashes.
-                // we can use these to determine if the new package has the same
-                // capabilities as the old one, and if so, auto-install it.
-                if let Some(context) = message.context() {
-                    let manifest_hash = String::from_utf8(context.to_vec())?;
-                    if let Some(package) =
-                        state.packages.get(&req.package_id.clone().to_process_lib())
-                    {
-                        if package.manifest_hash == Some(manifest_hash) {
-                            print_to_terminal(1, "auto_install:main, manifest_hash match");
-                            if let Err(e) = utils::install(
-                                &req.package_id,
-                                None,
-                                &req.version_hash,
-                                state,
-                                &our.node,
-                            ) {
-                                print_to_terminal(
-                                    1,
-                                    &format!("error auto_installing package: {e}"),
-                                );
-                            } else {
-                                println!(
-                                    "auto_installed update for package: {:?}",
-                                    &req.package_id.to_process_lib()
-                                );
-                            }
-                        } else {
-                            print_to_terminal(1, "auto_install:main, manifest_hash do not match");
-                        }
-                    }
-                }
             }
         }
     } else {
