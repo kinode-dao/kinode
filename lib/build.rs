@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 const KIT_CACHE: &str = "/tmp/kinode-kit-cache";
 const KINODE_WIT_0_7_0_URL: &str =
@@ -24,7 +24,7 @@ async fn download_file(url: &str, path: &Path) -> anyhow::Result<()> {
 
         // Check if response status is 200 (OK)
         if response.status() != reqwest::StatusCode::OK {
-            return Err(eyre!(
+            return Err(anyhow::anyhow!(
                 "Failed to download file: HTTP Status {}",
                 response.status()
             ));
@@ -47,7 +47,7 @@ async fn download_file(url: &str, path: &Path) -> anyhow::Result<()> {
     }
     fs::create_dir_all(
         path.parent()
-            .ok_or_else(|| eyre!("path doesn't have parent"))?,
+            .ok_or_else(|| anyhow::anyhow!("path doesn't have parent"))?,
     )?;
     fs::write(path, &content)?;
     Ok(())
