@@ -537,7 +537,7 @@ async fn check_caps(
                     request.package_id._package(),
                     request.package_id._publisher()
                 ))
-                .join(&db);
+                .join(&request.db);
 
             fs::remove_dir_all(&db_path).await?;
 
