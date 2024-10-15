@@ -54,18 +54,20 @@ fn main() -> anyhow::Result<()> {
         std::fs::copy(&path_to_packages_zip_path, &canonical_packages_zip_path)?;
     }
 
-    // build core frontends
-    let pwd = std::env::current_dir()?;
-    let core_frontends = vec!["src/register-ui"];
+    if !std::env::var("SKIP_BUILD_FRONTEND").is_ok() {
+        // build core frontends
+        let pwd = std::env::current_dir()?;
+        let core_frontends = vec!["src/register-ui"];
 
-    // for each frontend, execute build.sh
-    for frontend in core_frontends {
-        let status = std::process::Command::new("sh")
-            .current_dir(pwd.join(frontend))
-            .arg("./build.sh")
-            .status()?;
-        if !status.success() {
-            return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
+        // for each frontend, execute build.sh
+        for frontend in core_frontends {
+            let status = std::process::Command::new("sh")
+                .current_dir(pwd.join(frontend))
+                .arg("./build.sh")
+                .status()?;
+            if !status.success() {
+                return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
+            }
         }
     }
 

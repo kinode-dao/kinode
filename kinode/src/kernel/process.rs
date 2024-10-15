@@ -2,6 +2,7 @@ use crate::KERNEL_PROCESS_ID;
 use lib::{types::core as t, v0::ProcessV0, Process};
 use std::{
     collections::{HashMap, VecDeque},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, task::JoinHandle};
@@ -84,18 +85,32 @@ impl WasiView for ProcessWasiV0 {
 }
 
 async fn make_table_and_wasi(
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     process_state: &ProcessState,
 ) -> (Table, WasiCtx, MemoryOutputPipe) {
     let table = Table::new();
     let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
 
-    let tmp_path = format!(
-        "{}/vfs/{}:{}/tmp",
-        home_directory_path,
-        process_state.metadata.our.process.package(),
-        process_state.metadata.our.process.publisher()
-    );
+    #[cfg(unix)]
+    let tmp_path = home_directory_path
+        .join("vfs")
+        .join(format!(
+            "{}:{}",
+            process_state.metadata.our.process.package(),
+            process_state.metadata.our.process.publisher()
+        ))
+        .join("tmp");
+    #[cfg(target_os = "windows")]
+    let tmp_path = home_directory_path
+        .join("vfs")
+        .join(format!(
+            "{}_{}",
+            process_state.metadata.our.process.package(),
+            process_state.metadata.our.process.publisher()
+        ))
+        .join("tmp");
+
+    let tmp_path = tmp_path.to_str().unwrap();
 
     let mut wasi = WasiCtxBuilder::new();
 
@@ -107,15 +122,10 @@ async fn make_table_and_wasi(
     .await
     {
         if let Ok(wasi_tempdir) =
-            Dir::open_ambient_dir(tmp_path.clone(), wasi_common::sync::ambient_authority())
+            Dir::open_ambient_dir(tmp_path, wasi_common::sync::ambient_authority())
         {
-            wasi.preopened_dir(
-                wasi_tempdir,
-                DirPerms::all(),
-                FilePerms::all(),
-                tmp_path.clone(),
-            )
-            .env("TEMP_DIR", tmp_path);
+            wasi.preopened_dir(wasi_tempdir, DirPerms::all(), FilePerms::all(), tmp_path)
+                .env("TEMP_DIR", tmp_path);
         }
     }
 
@@ -125,7 +135,7 @@ async fn make_table_and_wasi(
 async fn make_component(
     engine: Engine,
     wasm_bytes: &[u8],
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     process_state: ProcessState,
 ) -> anyhow::Result<(Process, Store<ProcessWasi>, MemoryOutputPipe)> {
     let component =
@@ -219,7 +229,7 @@ pub async fn make_process_loop(
     wasm_bytes: Vec<u8>,
     caps_oracle: t::CapMessageSender,
     engine: Engine,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
     // before process can be instantiated, need to await 'run' message from kernel
     let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();

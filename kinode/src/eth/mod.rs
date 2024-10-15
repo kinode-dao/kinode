@@ -9,6 +9,7 @@ use lib::types::core::*;
 use lib::types::eth::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -148,7 +149,7 @@ struct ModuleState {
     /// the name of this node
     our: Arc<String>,
     /// the home directory path
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     /// the access settings for this provider
     access_settings: AccessSettings,
     /// the set of providers we have available for all chains
@@ -207,7 +208,7 @@ fn valid_method(method: &str) -> Option<&'static str> {
 /// for the entire module.
 pub async fn provider(
     our: String,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     configs: SavedConfigs,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
@@ -219,7 +220,7 @@ pub async fn provider(
     // this merely describes whether our provider is available to other nodes
     // and if so, which nodes are allowed to access it (public/whitelist/blacklist)
     let access_settings: AccessSettings =
-        match tokio::fs::read_to_string(format!("{}/.eth_access_settings", home_directory_path))
+        match tokio::fs::read_to_string(home_directory_path.join(".eth_access_settings"))
             .await
         {
             Ok(contents) => serde_json::from_str(&contents).unwrap(),
@@ -1052,7 +1053,7 @@ async fn handle_eth_config_action(
     // save providers and/or access settings, depending on necessity, to disk
     if save_settings {
         if let Ok(()) = tokio::fs::write(
-            format!("{}/.eth_access_settings", state.home_directory_path),
+            state.home_directory_path.join(".eth_access_settings"),
             serde_json::to_string(&state.access_settings).unwrap(),
         )
         .await
@@ -1062,7 +1063,7 @@ async fn handle_eth_config_action(
     }
     if save_providers {
         if let Ok(()) = tokio::fs::write(
-            format!("{}/.eth_providers", state.home_directory_path),
+            state.home_directory_path.join(".eth_access_settings"),
             serde_json::to_string(&providers_to_saved_configs(&state.providers)).unwrap(),
         )
         .await

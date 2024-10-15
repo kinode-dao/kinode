@@ -9,7 +9,7 @@ use rocksdb::{checkpoint::Checkpoint, Options, DB};
 use std::{
     collections::{HashMap, VecDeque},
     io::Read,
-    path::Path,
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
@@ -20,13 +20,19 @@ const FILE_TO_METADATA: &str = "file_to_metadata.json";
 pub async fn load_state(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
+    home_directory_string: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
-    let state_path = format!("{home_directory_path}/kernel");
+    let home_directory_path = std::fs::canonicalize(&home_directory_string)?;
+    let state_path = home_directory_path.join("kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
         panic!("failed creating kernel state dir! {e:?}");
     }
+    // use String to not upset rocksdb:
+    //  * on Unix, works as expected
+    //  * on Windows, would normally use std::path to be cross-platform,
+    //    but here rocksdb appends a `/LOG` which breaks the path
+    let state_path = format!("{home_directory_string}/kernel");
 
     let mut opts = Options::default();
     opts.create_if_missing(true);
@@ -84,7 +90,7 @@ pub async fn state_sender(
     send_to_terminal: PrintSender,
     mut recv_state: MessageReceiver,
     db: DB,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> Result<(), anyhow::Error> {
     let db = Arc::new(db);
     let home_directory_path = Arc::new(home_directory_path);
@@ -159,7 +165,7 @@ async fn handle_request(
     kernel_message: KernelMessage,
     db: Arc<DB>,
     send_to_loop: &MessageSender,
-    home_directory_path: &str,
+    home_directory_path: &PathBuf,
 ) -> Result<(), StateError> {
     let KernelMessage {
         id,
@@ -244,9 +250,8 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = format!("{home_directory_path}/kernel/backup");
-
-            if Path::new(&checkpoint_dir).exists() {
+            let checkpoint_dir = home_directory_path.join("kernel".join("backup");
+            if checkpoint_dir.exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
             }
             let checkpoint = Checkpoint::new(&db).map_err(|e| StateError::RocksDBError {
@@ -303,7 +308,7 @@ async fn handle_request(
 async fn bootstrap(
     our_name: &str,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
     process_map: &mut ProcessMap,
     reverse_cap_index: &mut ReverseCapIndex,
@@ -396,22 +401,28 @@ async fn bootstrap(
         let package_publisher = package_metadata.properties.publisher.as_str();
 
         // create a new package in VFS
+        #[cfg(unix)]
         let our_drive_name = [package_name, package_publisher].join(":");
-        let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
+        #[cfg(target_os = "windows")]
+        let our_drive_name = [package_name, package_publisher].join("_");
+        let pkg_path = home_directory_path
+            .join("vfs")
+            .join(&our_drive_name)
+            .join("pkg");
+
         // delete anything currently residing in the pkg folder
-        let pkg_path_buf = std::path::PathBuf::from(&pkg_path);
-        if pkg_path_buf.exists() {
+        if pkg_path.exists() {
             fs::remove_dir_all(&pkg_path).await?;
         }
         fs::create_dir_all(&pkg_path)
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
 
-        let drive_path = format!("/{}/pkg", &our_drive_name);
+        let drive_path = format!("/{}/pkg", [package_name, package_publisher].join(":"));
 
         // save the zip itself inside pkg folder, for sharing with others
         let mut zip_file =
-            fs::File::create(format!("{}/{}.zip", &pkg_path, &our_drive_name)).await?;
+            fs::File::create(pkg_path.join(format!("{}.zip", &our_drive_name)).await?;
         let package_zip_bytes = package.clone().into_inner().into_inner();
         zip_file.write_all(&package_zip_bytes).await?;
 
@@ -434,7 +445,7 @@ async fn bootstrap(
             };
 
             let file_path_str = file_path.to_string_lossy().to_string();
-            let full_path = Path::new(&pkg_path).join(&file_path_str);
+            let full_path = pkg_path.join(&file_path_str);
 
             if file.is_dir() {
                 // It's a directory, create it

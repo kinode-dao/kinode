@@ -111,7 +111,7 @@ async fn connect_via_router(
         routers
     };
     for router_name in &routers_shuffled {
-        if router_name.as_ref() == ext.our.name {
+        if router_name == &ext.our.name {
             // we can't route through ourselves
             continue;
         }
