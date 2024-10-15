@@ -527,6 +527,20 @@ async fn check_caps(
                 .remove_db(request.package_id.clone(), request.db.clone())
                 .await;
 
+            #[cfg(unix)]
+            let db_path = state.sqlite_path.join(format!("{package_id}")).join(&db);
+            #[cfg(target_os = "windows")]
+            let db_path = state
+                .sqlite_path
+                .join(format!(
+                    "{}_{}",
+                    package_id._package(),
+                    package_id._publisher()
+                ))
+                .join(&db);
+
+            fs::remove_dir_all(&db_path).await?;
+
             Ok(())
         }
         SqliteAction::Backup => {
