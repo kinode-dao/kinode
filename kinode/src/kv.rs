@@ -64,10 +64,14 @@ impl KvState {
         #[cfg(unix)]
         let db_path = self.kv_path.join(format!("{package_id}")).join(&db);
         #[cfg(target_os = "windows")]
-        let db_path = self.kv_path
-            .join(format!("{}_{}", package_id._package(), package_id._publisher()))
+        let db_path = self
+            .kv_path
+            .join(format!(
+                "{}_{}",
+                package_id._package(),
+                package_id._publisher()
+            ))
             .join(&db);
-
 
         fs::create_dir_all(&db_path).await?;
 
@@ -509,12 +513,18 @@ async fn check_caps(
                 .await;
 
             #[cfg(unix)]
-            let db_path = state.kv_path
+            let db_path = state
+                .kv_path
                 .join(format!("{}", request.package_id))
                 .join(&request.db);
             #[cfg(target_os = "windows")]
-            let db_path = state.kv_path
-                .join(format!("{}_{}", request.package_id._package(), request.package_id._publisher()))
+            let db_path = state
+                .kv_path
+                .join(format!(
+                    "{}_{}",
+                    request.package_id._package(),
+                    request.package_id._publisher()
+                ))
                 .join(&request.db);
 
             fs::remove_dir_all(&db_path).await?;

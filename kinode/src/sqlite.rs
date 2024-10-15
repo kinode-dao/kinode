@@ -72,8 +72,13 @@ impl SqliteState {
         #[cfg(unix)]
         let db_path = self.sqlite_path.join(format!("{package_id}")).join(&db);
         #[cfg(target_os = "windows")]
-        let db_path = self.sqlite_path
-            .join(format!("{}_{}", package_id._package(), package_id._publisher()))
+        let db_path = self
+            .sqlite_path
+            .join(format!(
+                "{}_{}",
+                package_id._package(),
+                package_id._publisher()
+            ))
             .join(&db);
 
         fs::create_dir_all(&db_path).await?;
