@@ -6,9 +6,15 @@ use lib::types::core::{
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 
+#[cfg(unix)]
 const DEFAULT_MAX_OPEN_FDS: u64 = 180;
-const DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE: u64 = 90;
+#[cfg(target_os = "windows")]
+const DEFAULT_MAX_OPEN_FDS: u64 = 7_000;
+
+#[cfg(unix)]
 const SYS_RESERVED_FDS: u64 = 30;
+
+const DEFAULT_FDS_AS_FRACTION_OF_ULIMIT_PERCENTAGE: u64 = 90;
 const DEFAULT_UPDATE_ULIMIT_SECS: u64 = 3600;
 const _DEFAULT_CULL_FRACTION_DENOMINATOR: u64 = 2;
 
@@ -46,6 +52,7 @@ impl State {
         }
     }
 
+    #[cfg(unix)]
     fn update_max_fds_from_ulimit(&mut self, ulimit_max_fds: u64) {
         let Mode::DynamicMax {
             ref max_fds_as_fraction_of_ulimit_percentage,
@@ -104,7 +111,18 @@ pub async fn fd_manager(
     mut recv_from_loop: MessageReceiver,
     static_max_fds: Option<u64>,
 ) -> anyhow::Result<()> {
+    // Windows does not allow querying of max fds allowed.
+    //  However, it allows some 16m, will expectation of actual
+    //  max number open nearer to 10k; set to 7k which should be plenty.
+    //  https://techcommunity.microsoft.com/t5/windows-blog-archive/pushing-the-limits-of-windows-handles/ba-p/723848
+    #[cfg(target_os = "windows")]
+    let static_max_fds = match static_max_fds {
+        Some(smf) => Some(smf),
+        None => Some(DEFAULT_MAX_OPEN_FDS),
+    };
+
     let mut state = State::new(static_max_fds);
+    #[cfg(unix)]
     let mut interval = {
         // in code block to release the reference into state
         let Mode::DynamicMax {
@@ -117,12 +135,12 @@ pub async fn fd_manager(
         tokio::time::interval(tokio::time::Duration::from_secs(*update_ulimit_secs))
     };
     loop {
+        #[cfg(unix)]
         tokio::select! {
             Some(message) = recv_from_loop.recv() => {
                 match handle_message(
                     &our_node,
                     message,
-                    &mut interval,
                     &mut state,
                     &send_to_loop,
                 ).await {
@@ -151,13 +169,31 @@ pub async fn fd_manager(
                 }
             }
         }
+        #[cfg(target_os = "windows")]
+        if let Some(message) = recv_from_loop.recv().await {
+            match handle_message(
+                &our_node,
+                message,
+                &mut state,
+                &send_to_loop,
+            ).await {
+                Ok(Some(to_print)) => {
+                    Printout::new(2, to_print).send(&send_to_terminal).await;
+                }
+                Err(e) => {
+                    Printout::new(1, &format!("handle_message error: {e:?}"))
+                        .send(&send_to_terminal)
+                        .await;
+                }
+                _ => {}
+            }
+        }
     }
 }
 
 async fn handle_message(
     our_node: &str,
     km: KernelMessage,
-    _interval: &mut tokio::time::Interval,
     state: &mut State,
     send_to_loop: &MessageSender,
 ) -> anyhow::Result<Option<String>> {
@@ -282,11 +318,27 @@ async fn handle_message(
     Ok(return_value)
 }
 
+#[cfg(unix)]
 async fn update_max_fds(state: &mut State) -> anyhow::Result<u64> {
     let ulimit_max_fds = get_max_fd_limit()
         .map_err(|_| anyhow::anyhow!("Couldn't update max fd limit: ulimit failed"))?;
     state.update_max_fds_from_ulimit(ulimit_max_fds);
     Ok(ulimit_max_fds)
+}
+
+#[cfg(unix)]
+fn get_max_fd_limit() -> anyhow::Result<u64> {
+    let mut rlim = libc::rlimit {
+        rlim_cur: 0, // Current limit
+        rlim_max: 0, // Maximum limit value
+    };
+
+    // RLIMIT_NOFILE is the resource indicating the maximum file descriptor number.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) } == 0 {
+        Ok(rlim.rlim_cur as u64)
+    } else {
+        Err(anyhow::anyhow!("Failed to get the resource limit."))
+    }
 }
 
 async fn send_all_fds_limits(our_node: &str, send_to_loop: &MessageSender, state: &State) {
@@ -306,20 +358,6 @@ async fn send_all_fds_limits(our_node: &str, send_to_loop: &MessageSender, state
             .unwrap()
             .send(send_to_loop)
             .await;
-    }
-}
-
-fn get_max_fd_limit() -> anyhow::Result<u64> {
-    let mut rlim = libc::rlimit {
-        rlim_cur: 0, // Current limit
-        rlim_max: 0, // Maximum limit value
-    };
-
-    // RLIMIT_NOFILE is the resource indicating the maximum file descriptor number.
-    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) } == 0 {
-        Ok(rlim.rlim_cur as u64)
-    } else {
-        Err(anyhow::anyhow!("Failed to get the resource limit."))
     }
 }
 
