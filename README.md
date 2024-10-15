@@ -1,7 +1,7 @@
 <p align="center">
     <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/24c7982b-9d76-419a-96dc-ec4a25dda562">
     <br />
-    <img src="https://img.shields.io/twitter/follow/kinodeOS">
+    <img src="https://img.shields.io/twitter/follow/Kinode">
 
 </p>
 
@@ -49,6 +49,8 @@ cd kinode
 cargo run -p build_packages
 cargo build -p kinode
 ```
+
+[To build on Windows](https://gist.github.com/nick1udwig/f2d39a3fc6ccc7f7ad2912e8d3aeaae0)
 
 ## Security Status
 
