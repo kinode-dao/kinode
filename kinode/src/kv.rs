@@ -110,7 +110,7 @@ pub async fn kv(
 
     let mut state = KvState::new(our, send_to_terminal, send_to_loop, home_directory_path);
 
-    if let Err(e) = fs::create_dir_all(&state.kv_path).await {
+    if let Err(e) = fs::create_dir_all(&*state.kv_path).await {
         panic!("failed creating kv dir! {e:?}");
     }
 

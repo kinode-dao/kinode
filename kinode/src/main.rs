@@ -9,7 +9,7 @@ use lib::types::core::{
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
-std::path::Path;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -663,13 +663,6 @@ pub async fn simulate_node(
             (identity, encoded_keyfile, decoded_keyfile)
         }
     }
-}
-
-async fn create_home_directory(home_directory_path: &str) {
-    if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {e:?}");
-    }
-    println!("home at {home_directory_path}\r");
 }
 
 /// build the command line interface for kinode

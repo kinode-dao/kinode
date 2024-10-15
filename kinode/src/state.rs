@@ -250,7 +250,7 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = home_directory_path.join("kernel".join("backup");
+            let checkpoint_dir = home_directory_path.join("kernel").join("backup");
             if checkpoint_dir.exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
             }
@@ -422,7 +422,7 @@ async fn bootstrap(
 
         // save the zip itself inside pkg folder, for sharing with others
         let mut zip_file =
-            fs::File::create(pkg_path.join(format!("{}.zip", &our_drive_name)).await?;
+            fs::File::create(pkg_path.join(format!("{}.zip", &our_drive_name))).await?;
         let package_zip_bytes = package.clone().into_inner().into_inner();
         zip_file.write_all(&package_zip_bytes).await?;
 

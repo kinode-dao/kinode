@@ -1409,7 +1409,7 @@ dependencies = [
  "anyhow",
  "clap",
  "fs-err",
- "kit 0.7.7",
+ "kit",
  "serde_json",
  "tokio",
  "walkdir",
@@ -3670,6 +3670,7 @@ dependencies = [
  "open",
  "public-ip",
  "rand 0.8.5",
+ "regex",
  "reqwest",
  "ring",
  "rmp-serde",
@@ -3750,43 +3751,6 @@ dependencies = [
 
 [[package]]
 name = "kit"
-version = "0.7.6"
-source = "git+https://github.com/kinode-dao/kit?tag=v0.7.6#da6676d79dfdaf47c00ce1d24874fd52de44f717"
-dependencies = [
- "alloy 0.1.4",
- "alloy-sol-macro",
- "alloy-sol-types",
- "anyhow",
- "base64 0.21.7",
- "cargo_metadata",
- "clap",
- "color-eyre",
- "dirs 5.0.1",
- "fs-err",
- "git2",
- "hex",
- "kinode_process_lib 0.9.2",
- "nix 0.27.1",
- "regex",
- "reqwest",
- "rpassword",
- "semver 1.0.23",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "toml",
- "tracing",
- "tracing-appender",
- "tracing-error",
- "tracing-subscriber",
- "walkdir",
- "wit-bindgen",
- "zip 0.6.6",
-]
-
-[[package]]
-name = "kit"
 version = "0.7.7"
 source = "git+https://github.com/kinode-dao/kit?rev=9c94b4b#9c94b4bd3f2a9dc2eabb2da9bc2ef5e6eb07af9d"
 dependencies = [
@@ -3861,13 +3825,15 @@ name = "lib"
 version = "0.9.7"
 dependencies = [
  "alloy 0.2.1",
- "kit 0.7.6",
+ "anyhow",
  "lazy_static",
  "rand 0.8.5",
+ "reqwest",
  "ring",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "wasmtime",
@@ -4778,7 +4744,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_xorshift 0.3.0",
- "regex-syntax 0.8.4",
+ "regex-syntax 0.8.5",
  "rusty-fork",
  "tempfile",
  "unarray",
@@ -5074,14 +5040,14 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.6"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4219d74c6b67a3654a9fbebc4b419e22126d13d2f3c4a07ee0cb61ff79a79619"
+checksum = "38200e5ee88914975b69f657f0801b6f6dccafd44fd9326302a4aaeecfacb1d8"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.7",
- "regex-syntax 0.8.4",
+ "regex-automata 0.4.8",
+ "regex-syntax 0.8.5",
 ]
 
 [[package]]
@@ -5095,13 +5061,13 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.7"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38caf58cc5ef2fed281f89292ef23f6365465ed9a41b7a7754eb4e26496c92df"
+checksum = "368758f23274712b504848e9d5a6f010445cc8b87a7cdb4d7cbee666c1288da3"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.8.4",
+ "regex-syntax 0.8.5",
 ]
 
 [[package]]
@@ -5112,9 +5078,9 @@ checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.4"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
+checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "reqwest"

@@ -178,7 +178,7 @@ async fn make_component(
 async fn make_component_v0(
     engine: Engine,
     wasm_bytes: &[u8],
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     process_state: ProcessState,
 ) -> anyhow::Result<(ProcessV0, Store<ProcessWasiV0>, MemoryOutputPipe)> {
     let component =

@@ -667,7 +667,7 @@ async fn handle_request(
     Ok(())
 }
 
-async fn parse_package_and_drive(
+fn parse_package_and_drive(
     path: &str,
     vfs_path: &PathBuf,
 ) -> Result<(PackageId, String, PathBuf), VfsError> {

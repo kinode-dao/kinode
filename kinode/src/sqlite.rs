@@ -78,7 +78,7 @@ impl SqliteState {
 
         fs::create_dir_all(&db_path).await?;
 
-        let db_file_path = format!("{}/{}.db", db_path, db);
+        let db_file_path = format!("{}.db", db);
 
         let db_conn = Connection::open(db_file_path)?;
         let _ = db_conn.execute("PRAGMA journal_mode=WAL", []);
@@ -120,7 +120,7 @@ pub async fn sqlite(
 
     let mut state = SqliteState::new(our, send_to_terminal, send_to_loop, home_directory_path);
 
-    if let Err(e) = fs::create_dir_all(&state.sqlite_path).await {
+    if let Err(e) = fs::create_dir_all(&*state.sqlite_path).await {
         panic!("failed creating sqlite dir! {e:?}");
     }
 
@@ -521,15 +521,6 @@ async fn check_caps(
             state
                 .remove_db(request.package_id.clone(), request.db.clone())
                 .await;
-
-            #[cfg(unix)]
-            let db_path = state.sqlite_path
-                .join(format!("{}", request.package_id))
-                .join(&request.db);
-            #[cfg(target_os = "windows")]
-            let db_path = state.sqlite_path
-                .join(format!("{}_{}", request.package_id._package(), request.package_id._publisher()))
-                .join(&request.db);
 
             Ok(())
         }
