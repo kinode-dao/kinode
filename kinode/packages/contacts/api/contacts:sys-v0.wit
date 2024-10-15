@@ -1,0 +1,35 @@
+interface contacts {
+    enum capabilities {
+        read-name-only,
+        read,
+        add,
+        remove,
+    }
+
+    variant contacts-request {
+        get-names,                                // requires read-names-only
+        get-all-contacts,                         // requires read
+        get-contact(string),                      // requires read
+        add-contact(string),                      // requires add
+        // tuple<node, field, value>
+        add-field(tuple<string, string, string>), // requires add
+        remove-contact(string),                   // requires remove
+        // tuple<node, field>
+        remove-field(tuple<string, string>),      // requires remove
+    }
+
+    variant contacts-response {
+        get-names(list<string>),
+        get-all-contacts, // JSON all-contacts dict in blob
+        get-contact, // JSON contact dict in blob
+        add-contact,
+        add-field,
+        remove-contact,
+        remove-field,
+    }
+}
+
+world contacts-sys-v0 {
+    import contacts;
+    include process-v0;
+}

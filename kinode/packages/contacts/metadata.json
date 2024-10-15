@@ -1,6 +1,6 @@
 {
     "name": "Contacts",
-    "description": "Store and manage your contacts.",
+    "description": "Save and manage your Kinode OS contacts.",
     "image": "",
     "properties": {
         "package_name": "contacts",

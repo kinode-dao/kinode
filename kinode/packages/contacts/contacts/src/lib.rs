@@ -1,6 +1,7 @@
+use crate::kinode::process::contacts::{ContactsRequest, ContactsResponse};
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, homepage, http, kernel_types, net, println, Address,
-    LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError, SendErrorKind,
+    await_message, call_init, get_blob, get_typed_state, homepage, http, println, set_state,
+    Address, LazyLoadBlob, Message, NodeId, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,33 +9,77 @@ use std::collections::HashMap;
 const ICON: &str = include_str!("icon");
 
 #[derive(Debug, Serialize, Deserialize)]
+struct Contact(HashMap<String, serde_json::Value>);
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Contacts(HashMap<NodeId, Contact>);
+
+#[derive(Debug, Serialize, Deserialize)]
 struct ContactsState {
     our: Address,
+    contacts: Contacts,
 }
 
 impl ContactsState {
     fn new(our: Address) -> Self {
-        Self { our }
+        get_typed_state(|bytes| serde_json::from_slice(bytes)).unwrap_or(Self {
+            our,
+            contacts: Contacts(HashMap::new()),
+        })
+    }
+
+    fn save(&self) {
+        set_state(&serde_json::to_vec(&self).expect("Failed to serialize contacts state!"));
+    }
+
+    fn contacts(&self) -> &Contacts {
+        &self.contacts
+    }
+
+    fn get_contact(&self, node: NodeId) -> Option<&Contact> {
+        self.contacts.0.get(&node)
+    }
+
+    fn add_contact(&mut self, node: NodeId) {
+        self.contacts.0.insert(node, Contact(HashMap::new()));
+    }
+
+    fn remove_contact(&mut self, node: NodeId) {
+        self.contacts.0.remove(&node);
+    }
+
+    fn add_field(&mut self, node: NodeId, field: String, value: serde_json::Value) {
+        self.contacts
+            .0
+            .entry(node)
+            .or_insert_with(|| Contact(HashMap::new()))
+            .0
+            .insert(field, value);
+    }
+
+    fn remove_field(&mut self, node: NodeId, field: String) {
+        if let Some(contact) = self.contacts.0.get_mut(&node) {
+            contact.0.remove(&field);
+        }
     }
 }
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "contacts-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
 });
 
 call_init!(initialize);
 fn initialize(our: Address) {
-    // add ourselves to the homepage
     homepage::add_to_homepage("Contacts", Some(ICON), Some("/"), None);
 
-    // Grab our state, then enter the main event loop.
     let mut state: ContactsState = ContactsState::new(our);
 
     let mut http_server = http::server::HttpServer::new(5);
 
-    // Serve the index.html and other UI files found in pkg/ui at the root path.
-    // Serving securely at `settings-sys` subdomain
+    // serve the frontend on a secure subdomain
     http_server
         .serve_ui(
             &state.our,
@@ -52,8 +97,8 @@ fn initialize(our: Address) {
 fn main_loop(state: &mut ContactsState, http_server: &mut http::server::HttpServer) {
     loop {
         match await_message() {
-            Err(send_error) => {
-                println!("got send error: {send_error:?}");
+            Err(_send_error) => {
+                // ignore send errors, local-only process
                 continue;
             }
             Ok(Message::Request {
@@ -84,44 +129,25 @@ fn handle_request(
     body: &[u8],
     state: &mut ContactsState,
     http_server: &mut http::server::HttpServer,
-) -> SettingsResponse {
+) -> Option<ContactsResponse> {
     // source node is ALWAYS ourselves since networking is disabled
     if source.process == "http_server:distro:sys" {
         // receive HTTP requests and websocket connection messages from our server
-        let server_request = http_server
-            .parse_request(body)
-            .map_err(|_| SettingsError::MalformedRequest)?;
+        let server_request = http_server.parse_request(body).unwrap();
 
         http_server.handle_request(
             server_request,
-            |req| {
-                let result = handle_http_request(state, &req);
-                match result {
-                    Ok((resp, blob)) => (resp, blob),
-                    Err(e) => {
-                        println!("error handling HTTP request: {e}");
-                        (
-                            http::server::HttpResponse {
-                                status: 500,
-                                headers: HashMap::new(),
-                            },
-                            Some(LazyLoadBlob {
-                                mime: Some("application/text".to_string()),
-                                bytes: e.to_string().as_bytes().to_vec(),
-                            }),
-                        )
-                    }
-                }
-            },
+            |req| handle_http_request(state, &req),
             |_channel_id, _message_type, _blob| {
                 // we don't expect websocket messages
             },
         );
-        Ok(None)
+        None
     } else {
-        let settings_request = serde_json::from_slice::<SettingsRequest>(body)
-            .map_err(|_| SettingsError::MalformedRequest)?;
-        handle_settings_request(state, settings_request)
+        // let settings_request = serde_json::from_slice::<SettingsRequest>(body)
+        //     .map_err(|_| SettingsError::MalformedRequest)?;
+        // handle_settings_request(state, settings_request)
+        None
     }
 }
 
@@ -129,163 +155,62 @@ fn handle_request(
 fn handle_http_request(
     state: &mut ContactsState,
     http_request: &http::server::IncomingHttpRequest,
-) -> anyhow::Result<(http::server::HttpResponse, Option<LazyLoadBlob>)> {
-    match http_request.method()?.as_str() {
+) -> (http::server::HttpResponse, Option<LazyLoadBlob>) {
+    match http_request.method().unwrap().as_str() {
         "GET" => {
-            state.fetch()?;
-            Ok((
+            // state.fetch().unwrap();
+            (
                 http::server::HttpResponse::new(http::StatusCode::OK)
                     .header("Content-Type", "application/json"),
                 Some(LazyLoadBlob::new(
                     Some("application/json"),
-                    serde_json::to_vec(&state)?,
+                    serde_json::to_vec(&state).unwrap(),
                 )),
-            ))
+            )
         }
         "POST" => {
-            let Some(blob) = get_blob() else {
-                return Err(anyhow::anyhow!("malformed request"));
-            };
-            let request = serde_json::from_slice::<SettingsRequest>(&blob.bytes)?;
-            let response = handle_settings_request(state, request);
-            Ok((
+            let blob = get_blob().unwrap();
+            let request = serde_json::from_slice::<ContactsRequest>(&blob.bytes).unwrap();
+            let response = handle_contacts_request(state, request);
+            let response: Option<String> = Some("ok".to_string());
+            (
                 http::server::HttpResponse::new(http::StatusCode::OK)
                     .header("Content-Type", "application/json"),
                 match response {
-                    Ok(Some(data)) => Some(LazyLoadBlob::new(
+                    Some(data) => Some(LazyLoadBlob::new(
                         Some("application/json"),
-                        serde_json::to_vec(&data)?,
+                        serde_json::to_vec(&data).unwrap(),
                     )),
-                    Ok(None) => None,
-                    Err(e) => Some(LazyLoadBlob::new(
-                        Some("application/json"),
-                        serde_json::to_vec(&e)?,
-                    )),
+                    None => None,
                 },
-            ))
+            )
         }
         // Any other method will be rejected.
-        _ => Ok((
+        _ => (
             http::server::HttpResponse::new(http::StatusCode::METHOD_NOT_ALLOWED),
             None,
-        )),
+        ),
     }
 }
 
-fn handle_settings_request(
-    state: &mut SettingsState,
-    request: SettingsRequest,
-) -> SettingsResponse {
+fn handle_contacts_request(
+    state: &mut ContactsState,
+    request: ContactsRequest,
+) -> ContactsResponse {
     match request {
-        SettingsRequest::Hi {
-            node,
-            content,
-            timeout,
-        } => {
-            if let Err(SendError { kind, .. }) = Request::to((&node, "net", "distro", "sys"))
-                .body(content.into_bytes())
-                .send_and_await_response(timeout)
-                .unwrap()
-            {
-                match kind {
-                    SendErrorKind::Timeout => {
-                        println!("message to {node} timed out");
-                        return Err(SettingsError::HiTimeout);
-                    }
-                    SendErrorKind::Offline => {
-                        println!("{node} is offline or does not exist");
-                        return Err(SettingsError::HiOffline);
-                    }
-                }
-            } else {
-                return Ok(None);
-            }
-        }
-        SettingsRequest::PeerId(node) => {
-            // get peer info
-            match Request::to(("our", "net", "distro", "sys"))
-                .body(rmp_serde::to_vec(&net::NetAction::GetPeer(node)).unwrap())
-                .send_and_await_response(30)
-                .unwrap()
-            {
-                Ok(msg) => match rmp_serde::from_slice::<net::NetResponse>(msg.body()) {
-                    Ok(net::NetResponse::Peer(Some(peer))) => {
-                        println!("got peer info: {peer:?}");
-                        return Ok(Some(SettingsData::PeerId(peer)));
-                    }
-                    Ok(net::NetResponse::Peer(None)) => {
-                        println!("peer not found");
-                        return Ok(None);
-                    }
-                    _ => {
-                        return Err(SettingsError::KernelNonresponsive);
-                    }
-                },
-                Err(_) => {
-                    return Err(SettingsError::KernelNonresponsive);
-                }
-            }
-        }
-        SettingsRequest::EthConfig(action) => {
-            match Request::to(("our", "eth", "distro", "sys"))
-                .body(serde_json::to_vec(&action).unwrap())
-                .send_and_await_response(30)
-                .unwrap()
-            {
-                Ok(msg) => match serde_json::from_slice::<eth::EthConfigResponse>(msg.body()) {
-                    Ok(eth::EthConfigResponse::PermissionDenied) => {
-                        return Err(SettingsError::KernelNonresponsive);
-                    }
-                    Ok(other) => {
-                        println!("eth config action succeeded: {other:?}");
-                    }
-                    Err(_) => {
-                        return Err(SettingsError::KernelNonresponsive);
-                    }
-                },
-                Err(_) => {
-                    return Err(SettingsError::KernelNonresponsive);
-                }
-            }
-        }
-        SettingsRequest::Shutdown => {
-            // shutdown the node IMMEDIATELY!
-            Request::to(("our", "kernel", "distro", "sys"))
-                .body(serde_json::to_vec(&kernel_types::KernelCommand::Shutdown).unwrap())
-                .send()
-                .unwrap();
-        }
-        SettingsRequest::KillProcess(pid) => {
-            // kill a process
-            if let Err(_) = Request::to(("our", "kernel", "distro", "sys"))
-                .body(serde_json::to_vec(&kernel_types::KernelCommand::KillProcess(pid)).unwrap())
-                .send_and_await_response(30)
-                .unwrap()
-            {
-                return SettingsResponse::Err(SettingsError::KernelNonresponsive);
-            }
-        }
-        SettingsRequest::SetStylesheet(stylesheet) => {
-            let Ok(()) = kinode_process_lib::vfs::File {
-                path: "/homepage:sys/pkg/kinode.css".to_string(),
-                timeout: 5,
-            }
-            .write(stylesheet.as_bytes()) else {
-                return SettingsResponse::Err(SettingsError::KernelNonresponsive);
-            };
-            Request::to(("our", "homepage", "homepage", "sys"))
-                .body(
-                    serde_json::json!({ "SetStylesheet": stylesheet })
-                        .to_string()
-                        .as_bytes(),
-                )
-                .send()
-                .unwrap();
-            state.stylesheet = Some(stylesheet);
-            return SettingsResponse::Ok(None);
-        }
+        ContactsRequest::GetNames => ContactsResponse::GetNames(
+            state
+                .contacts()
+                .0
+                .keys()
+                .map(|node| node.to_string())
+                .collect(),
+        ),
+        ContactsRequest::GetAllContacts => ContactsResponse::GetAllContacts,
+        ContactsRequest::GetContact(node) => ContactsResponse::GetContact,
+        ContactsRequest::AddContact(node) => ContactsResponse::AddContact,
+        ContactsRequest::AddField((node, field, value)) => ContactsResponse::AddField,
+        ContactsRequest::RemoveContact(node) => ContactsResponse::RemoveContact,
+        ContactsRequest::RemoveField((node, field)) => ContactsResponse::RemoveField,
     }
-
-    state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
-    SettingsResponse::Ok(None)
 }
