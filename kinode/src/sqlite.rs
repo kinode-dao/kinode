@@ -528,14 +528,14 @@ async fn check_caps(
                 .await;
 
             #[cfg(unix)]
-            let db_path = state.sqlite_path.join(format!("{package_id}")).join(&db);
+            let db_path = state.sqlite_path.join(format!("{}", request.package_id)).join(&request.db);
             #[cfg(target_os = "windows")]
             let db_path = state
                 .sqlite_path
                 .join(format!(
                     "{}_{}",
-                    package_id._package(),
-                    package_id._publisher()
+                    request.package_id._package(),
+                    request.package_id._publisher()
                 ))
                 .join(&db);
 
