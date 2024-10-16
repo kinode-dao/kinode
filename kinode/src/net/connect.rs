@@ -15,7 +15,8 @@ pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, mut km: KernelMessa
             }
             Err(e_km) => {
                 // peer connection was closed, remove it and try to reconnect
-                data.peers.remove(&peer.identity.name).await;
+                drop(peer);
+                data.peers.remove(&e_km.0.target.node).await;
                 km = e_km.0;
             }
         }
