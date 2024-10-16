@@ -1,7 +1,7 @@
 [package]
 name = "kinode_lib"
 authors = ["KinodeDAO"]
-version = "0.9.6"
+version = "0.9.7"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
 homepage = "https://kinode.org"
@@ -27,6 +27,7 @@ members = [
     "kinode/packages/terminal/kill", "kinode/packages/terminal/m", "kinode/packages/terminal/top",
     "kinode/packages/terminal/net_diagnostics", "kinode/packages/terminal/peer", "kinode/packages/terminal/peers",
     "kinode/packages/tester/tester",
+    "scripts/build_packages",
 ]
 default-members = ["lib"]
 resolver = "2"

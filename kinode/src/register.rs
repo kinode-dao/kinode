@@ -94,9 +94,14 @@ pub async fn register(
     let ws_port = warp::any().map(move || (ws_port, ws_flag_used));
     let tcp_port = warp::any().map(move || (tcp_port, tcp_flag_used));
 
+    #[cfg(unix)]
     let static_files =
         warp::path("assets").and(static_dir::static_dir!("src/register-ui/build/assets/"));
+    #[cfg(target_os = "windows")]
+    let static_files =
+        warp::path("assets").and(static_dir::static_dir!("src\\register-ui\\build\\assets\\"));
 
+    #[cfg(unix)]
     let react_app = warp::path::end()
         .or(warp::path("login"))
         .or(warp::path("commit-os-name"))
@@ -108,6 +113,18 @@ pub async fn register(
         .or(warp::path("custom-register"))
         .and(warp::get())
         .map(move |_| warp::reply::html(include_str!("register-ui/build/index.html")));
+    #[cfg(target_os = "windows")]
+    let react_app = warp::path::end()
+        .or(warp::path("login"))
+        .or(warp::path("commit-os-name"))
+        .or(warp::path("mint-os-name"))
+        .or(warp::path("claim-invite"))
+        .or(warp::path("reset"))
+        .or(warp::path("import-keyfile"))
+        .or(warp::path("set-password"))
+        .or(warp::path("custom-register"))
+        .and(warp::get())
+        .map(move |_| warp::reply::html(include_str!("register-ui\\build\\index.html")));
 
     let boot_provider = provider.clone();
     let login_provider = provider.clone();
