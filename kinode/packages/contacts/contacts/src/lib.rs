@@ -110,9 +110,10 @@ fn main_loop(state: &mut ContactsState, http_server: &mut http::server::HttpServ
                 if source.node() != state.our.node {
                     continue; // ignore messages from other nodes
                 }
-                let response = handle_request(&source, &body, state, http_server);
+                let response_and_blob = handle_request(&source, &body, state, http_server);
                 // state.ws_update(http_server);
-                if expects_response.is_some() {
+                if expects_response.is_some() && response_and_blob.is_some() {
+                    let (response, blob) = response_and_blob.unwrap();
                     Response::new()
                         .body(serde_json::to_vec(&response).unwrap())
                         .send()
@@ -171,15 +172,14 @@ fn handle_http_request(
         "POST" => {
             let blob = get_blob().unwrap();
             let request = serde_json::from_slice::<ContactsRequest>(&blob.bytes).unwrap();
-            let response = handle_contacts_request(state, request);
-            let response: Option<String> = Some("ok".to_string());
+            let (_response, blob) = handle_contacts_request(state, request);
             (
                 http::server::HttpResponse::new(http::StatusCode::OK)
                     .header("Content-Type", "application/json"),
-                match response {
-                    Some(data) => Some(LazyLoadBlob::new(
+                match blob {
+                    Some(blob) => Some(LazyLoadBlob::new(
                         Some("application/json"),
-                        serde_json::to_vec(&data).unwrap(),
+                        serde_json::to_vec(&blob.bytes).unwrap(),
                     )),
                     None => None,
                 },
@@ -196,8 +196,8 @@ fn handle_http_request(
 fn handle_contacts_request(
     state: &mut ContactsState,
     request: ContactsRequest,
-) -> ContactsResponse {
-    match request {
+) -> (ContactsResponse, Option<LazyLoadBlob>) {
+    let response = match request {
         ContactsRequest::GetNames => ContactsResponse::GetNames(
             state
                 .contacts()
@@ -212,5 +212,6 @@ fn handle_contacts_request(
         ContactsRequest::AddField((node, field, value)) => ContactsResponse::AddField,
         ContactsRequest::RemoveContact(node) => ContactsResponse::RemoveContact,
         ContactsRequest::RemoveField((node, field)) => ContactsResponse::RemoveField,
-    }
+    };
+    (response, None)
 }
