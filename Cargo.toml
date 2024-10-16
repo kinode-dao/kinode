@@ -27,7 +27,8 @@ members = [
     "kinode/packages/terminal/help", "kinode/packages/terminal/hi", "kinode/packages/terminal/kfetch",
     "kinode/packages/terminal/kill", "kinode/packages/terminal/m", "kinode/packages/terminal/top",
     "kinode/packages/terminal/net_diagnostics", "kinode/packages/terminal/peer", "kinode/packages/terminal/peers",
-    "kinode/packages/tester/tester", "scripts/build_packages",
+    "kinode/packages/tester/tester",
+    "scripts/build_packages",
 ]
 default-members = ["lib"]
 resolver = "2"

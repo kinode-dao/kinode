@@ -9,6 +9,7 @@ use lib::types::core::{
 use rocksdb::OptimisticTransactionDB;
 use std::{
     collections::{HashMap, VecDeque},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, sync::Mutex};
@@ -16,7 +17,7 @@ use tokio::{fs, sync::Mutex};
 #[derive(Clone)]
 struct KvState {
     our: Arc<Address>,
-    kv_path: Arc<String>,
+    kv_path: Arc<PathBuf>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
@@ -31,11 +32,11 @@ impl KvState {
         our: Address,
         send_to_terminal: PrintSender,
         send_to_loop: MessageSender,
-        home_directory_path: String,
+        home_directory_path: PathBuf,
     ) -> Self {
         Self {
             our: Arc::new(our),
-            kv_path: Arc::new(format!("{home_directory_path}/kv")),
+            kv_path: Arc::new(home_directory_path.join("kv")),
             send_to_loop,
             send_to_terminal,
             open_kvs: Arc::new(DashMap::new()),
@@ -60,7 +61,18 @@ impl KvState {
             self.remove_db(key.0, key.1).await;
         }
 
-        let db_path = format!("{}/{}/{}", self.kv_path.as_str(), package_id, db);
+        #[cfg(unix)]
+        let db_path = self.kv_path.join(format!("{package_id}")).join(&db);
+        #[cfg(target_os = "windows")]
+        let db_path = self
+            .kv_path
+            .join(format!(
+                "{}_{}",
+                package_id._package(),
+                package_id._publisher()
+            ))
+            .join(&db);
+
         fs::create_dir_all(&db_path).await?;
 
         self.open_kvs.insert(
@@ -94,7 +106,7 @@ pub async fn kv(
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
     let our = Address::new(our_node.as_str(), KV_PROCESS_ID.clone());
 
@@ -102,7 +114,7 @@ pub async fn kv(
 
     let mut state = KvState::new(our, send_to_terminal, send_to_loop, home_directory_path);
 
-    if let Err(e) = fs::create_dir_all(state.kv_path.as_str()).await {
+    if let Err(e) = fs::create_dir_all(&*state.kv_path).await {
         panic!("failed creating kv dir! {e:?}");
     }
 
@@ -500,11 +512,22 @@ async fn check_caps(
                 .remove_db(request.package_id.clone(), request.db.clone())
                 .await;
 
-            fs::remove_dir_all(format!(
-                "{}/{}/{}",
-                state.kv_path, request.package_id, request.db
-            ))
-            .await?;
+            #[cfg(unix)]
+            let db_path = state
+                .kv_path
+                .join(format!("{}", request.package_id))
+                .join(&request.db);
+            #[cfg(target_os = "windows")]
+            let db_path = state
+                .kv_path
+                .join(format!(
+                    "{}_{}",
+                    request.package_id._package(),
+                    request.package_id._publisher()
+                ))
+                .join(&request.db);
+
+            fs::remove_dir_all(&db_path).await?;
 
             Ok(())
         }

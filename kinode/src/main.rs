@@ -9,6 +9,7 @@ use lib::types::core::{
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -81,7 +82,12 @@ async fn main() {
     let home_directory_path = matches
         .get_one::<String>("home")
         .expect("home directory required");
-    create_home_directory(&home_directory_path).await;
+    if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
+        panic!("failed to create home directory: {e:?}");
+    }
+    let home_directory_path = std::fs::canonicalize(&home_directory_path)
+        .expect("specified home directory {home_directory_path} not found");
+    println!("home at {home_directory_path:?}\r");
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
     #[cfg(not(feature = "simulation-mode"))]
@@ -108,7 +114,7 @@ async fn main() {
 
     // default eth providers/routers
     let mut eth_provider_config: lib::eth::SavedConfigs = if let Ok(contents) =
-        tokio::fs::read_to_string(format!("{}/.eth_providers", home_directory_path)).await
+        tokio::fs::read_to_string(home_directory_path.join(".eth_providers")).await
     {
         if let Ok(contents) = serde_json::from_str(&contents) {
             println!("loaded saved eth providers\r");
@@ -128,7 +134,7 @@ async fn main() {
         });
         // save the new provider config
         tokio::fs::write(
-            format!("{}/.eth_providers", home_directory_path),
+            home_directory_path.join(".eth_providers"),
             serde_json::to_string(&eth_provider_config).unwrap(),
         )
         .await
@@ -206,7 +212,7 @@ async fn main() {
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
         fake_node_name.cloned(),
         password.cloned(),
-        home_directory_path,
+        &home_directory_path,
         (
             ws_tcp_handle.expect("need ws networking for simulation mode"),
             ws_flag_used,
@@ -317,10 +323,13 @@ async fn main() {
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
     let our_name_arc = Arc::new(our.name.clone());
 
+    let home_directory_string = matches
+        .get_one::<String>("home")
+        .expect("home directory required");
     let (kernel_process_map, db, reverse_cap_index) = state::load_state(
         our.name.clone(),
         networking_keypair_arc.clone(),
-        home_directory_path.clone(),
+        home_directory_string.clone(),
         runtime_extensions.clone(),
     )
     .await
@@ -458,7 +467,7 @@ async fn main() {
         quit = terminal::terminal(
             our.clone(),
             VERSION,
-            home_directory_path.into(),
+            home_directory_path.clone(),
             kernel_message_sender.clone(),
             kernel_debug_message_sender,
             print_sender.clone(),
@@ -567,7 +576,7 @@ async fn setup_networking(
 pub async fn simulate_node(
     fake_node_name: Option<String>,
     password: Option<String>,
-    home_directory_path: &str,
+    home_directory_path: &Path,
     (ws_networking, _ws_used): (tokio::net::TcpListener, bool),
     fakechain_port: Option<u16>,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -578,7 +587,7 @@ pub async fn simulate_node(
                     panic!("Fake node must be booted with either a --fake-node-name, --password, or both.");
                 }
                 Some(password) => {
-                    let keyfile = tokio::fs::read(format!("{home_directory_path}/.keys"))
+                    let keyfile = tokio::fs::read(home_directory_path.join(".keys"))
                         .await
                         .expect("could not read keyfile");
                     let decoded = keygen::decode_keyfile(&keyfile, &password)
@@ -647,23 +656,13 @@ pub async fn simulate_node(
                 &decoded_keyfile.file_key,
             );
 
-            tokio::fs::write(
-                format!("{home_directory_path}/.keys"),
-                encoded_keyfile.clone(),
-            )
-            .await
-            .expect("Failed to write keyfile");
+            tokio::fs::write(home_directory_path.join(".keys"), encoded_keyfile.clone())
+                .await
+                .expect("Failed to write keyfile");
 
             (identity, encoded_keyfile, decoded_keyfile)
         }
     }
-}
-
-async fn create_home_directory(home_directory_path: &str) {
-    if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {e:?}");
-    }
-    println!("home at {home_directory_path}\r");
 }
 
 /// build the command line interface for kinode
@@ -777,7 +776,7 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
 /// that updates their PKI info on-chain.
 #[cfg(not(feature = "simulation-mode"))]
 async fn serve_register_fe(
-    home_directory_path: &str,
+    home_directory_path: &Path,
     our_ip: String,
     ws_networking: (Option<tokio::net::TcpListener>, bool),
     tcp_networking: (Option<tokio::net::TcpListener>, bool),
@@ -787,7 +786,7 @@ async fn serve_register_fe(
 ) -> (Identity, Vec<u8>, Keyfile) {
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<bool>();
 
-    let disk_keyfile: Option<Vec<u8>> = tokio::fs::read(format!("{}/.keys", home_directory_path))
+    let disk_keyfile: Option<Vec<u8>> = tokio::fs::read(home_directory_path.join(".keys"))
         .await
         .ok();
 
@@ -810,7 +809,7 @@ async fn serve_register_fe(
         }
     };
 
-    tokio::fs::write(format!("{home_directory_path}/.keys"), &encoded_keyfile)
+    tokio::fs::write(home_directory_path.join(".keys"), &encoded_keyfile)
         .await
         .unwrap();
 
@@ -824,7 +823,7 @@ async fn serve_register_fe(
 
 #[cfg(not(feature = "simulation-mode"))]
 async fn login_with_password(
-    home_directory_path: &str,
+    home_directory_path: &Path,
     our_ip: String,
     ws_networking: (Option<tokio::net::TcpListener>, bool),
     tcp_networking: (Option<tokio::net::TcpListener>, bool),
@@ -836,7 +835,7 @@ async fn login_with_password(
         sha2::{Digest, Sha256},
     };
 
-    let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
+    let disk_keyfile: Vec<u8> = tokio::fs::read(home_directory_path.join(".keys"))
         .await
         .expect("could not read keyfile");
 
@@ -878,7 +877,7 @@ async fn login_with_password(
     .await
     .expect("information used to boot does not match information onchain");
 
-    tokio::fs::write(format!("{home_directory_path}/.keys"), &disk_keyfile)
+    tokio::fs::write(home_directory_path.join(".keys"), &disk_keyfile)
         .await
         .unwrap();
 

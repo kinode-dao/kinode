@@ -15,7 +15,8 @@ pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, mut km: KernelMessa
             }
             Err(e_km) => {
                 // peer connection was closed, remove it and try to reconnect
-                data.peers.remove(&peer.identity.name).await;
+                drop(peer);
+                data.peers.remove(&e_km.0.target.node).await;
                 km = e_km.0;
             }
         }
@@ -111,7 +112,7 @@ async fn connect_via_router(
         routers
     };
     for router_name in &routers_shuffled {
-        if router_name.as_ref() == ext.our.name {
+        if router_name == &ext.our.name {
             // we can't route through ourselves
             continue;
         }
