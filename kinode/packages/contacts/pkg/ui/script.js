@@ -1,14 +1,5 @@
 const APP_PATH = '/contacts:contacts:sys/ask';
 
-// Fetch initial data and populate the UI
-function init() {
-    fetch(APP_PATH)
-        .then(response => response.json())
-        .then(data => {
-            populate(data);
-        });
-}
-
 function api_call(body) {
     fetch(APP_PATH, {
         method: 'POST',
@@ -64,9 +55,6 @@ document.getElementById('add-contact').addEventListener('submit', (e) => {
         console.error('Error:', error);
     });
 })
-
-// Call init to start the application
-init();
 
 // Setup WebSocket connection
 const wsProtocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
