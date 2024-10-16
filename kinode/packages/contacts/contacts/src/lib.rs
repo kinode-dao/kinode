@@ -1,7 +1,7 @@
 use crate::kinode::process::contacts::{ContactsRequest, ContactsResponse};
 use kinode_process_lib::{
-    await_message, call_init, get_blob, get_typed_state, homepage, http, println, set_state,
-    Address, LazyLoadBlob, Message, NodeId, Response,
+    await_message, call_init, eth, get_blob, get_typed_state, homepage, http, kimap, kiprintln,
+    set_state, Address, LazyLoadBlob, Message, NodeId, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,6 +17,7 @@ struct Contacts(HashMap<NodeId, Contact>);
 #[derive(Debug, Serialize, Deserialize)]
 struct ContactsState {
     our: Address,
+    kimap: kimap::Kimap,
     contacts: Contacts,
 }
 
@@ -24,6 +25,7 @@ impl ContactsState {
     fn new(our: Address) -> Self {
         get_typed_state(|bytes| serde_json::from_slice(bytes)).unwrap_or(Self {
             our,
+            kimap: kimap::Kimap::default(30),
             contacts: Contacts(HashMap::new()),
         })
     }
@@ -42,10 +44,12 @@ impl ContactsState {
 
     fn add_contact(&mut self, node: NodeId) {
         self.contacts.0.insert(node, Contact(HashMap::new()));
+        self.save();
     }
 
     fn remove_contact(&mut self, node: NodeId) {
         self.contacts.0.remove(&node);
+        self.save();
     }
 
     fn add_field(&mut self, node: NodeId, field: String, value: serde_json::Value) {
@@ -55,12 +59,25 @@ impl ContactsState {
             .or_insert_with(|| Contact(HashMap::new()))
             .0
             .insert(field, value);
+        self.save();
     }
 
     fn remove_field(&mut self, node: NodeId, field: String) {
         if let Some(contact) = self.contacts.0.get_mut(&node) {
             contact.0.remove(&field);
         }
+        self.save();
+    }
+
+    fn ws_update(&self, http_server: &mut http::server::HttpServer) {
+        http_server.ws_push_all_channels(
+            "/",
+            http::server::WsMessageType::Text,
+            LazyLoadBlob::new(
+                Some("application/json"),
+                serde_json::to_vec(self.contacts()).unwrap(),
+            ),
+        );
     }
 }
 
@@ -73,6 +90,8 @@ wit_bindgen::generate!({
 
 call_init!(initialize);
 fn initialize(our: Address) {
+    kiprintln!("started");
+
     homepage::add_to_homepage("Contacts", Some(ICON), Some("/"), None);
 
     let mut state: ContactsState = ContactsState::new(our);
@@ -101,24 +120,13 @@ fn main_loop(state: &mut ContactsState, http_server: &mut http::server::HttpServ
                 // ignore send errors, local-only process
                 continue;
             }
-            Ok(Message::Request {
-                source,
-                body,
-                expects_response,
-                ..
-            }) => {
+            Ok(Message::Request { source, body, .. }) => {
+                // ignore messages from other nodes -- technically superfluous check
+                // since manifest does not acquire networking capability
                 if source.node() != state.our.node {
-                    continue; // ignore messages from other nodes
+                    continue;
                 }
-                let response_and_blob = handle_request(&source, &body, state, http_server);
-                // state.ws_update(http_server);
-                if expects_response.is_some() && response_and_blob.is_some() {
-                    let (response, blob) = response_and_blob.unwrap();
-                    Response::new()
-                        .body(serde_json::to_vec(&response).unwrap())
-                        .send()
-                        .unwrap();
-                }
+                handle_request(&source, &body, state, http_server);
             }
             _ => continue, // ignore responses
         }
@@ -130,7 +138,7 @@ fn handle_request(
     body: &[u8],
     state: &mut ContactsState,
     http_server: &mut http::server::HttpServer,
-) -> Option<ContactsResponse> {
+) {
     // source node is ALWAYS ourselves since networking is disabled
     if source.process == "http_server:distro:sys" {
         // receive HTTP requests and websocket connection messages from our server
@@ -143,13 +151,15 @@ fn handle_request(
                 // we don't expect websocket messages
             },
         );
-        None
     } else {
-        // let settings_request = serde_json::from_slice::<SettingsRequest>(body)
-        //     .map_err(|_| SettingsError::MalformedRequest)?;
-        // handle_settings_request(state, settings_request)
-        None
+        let (response, blob) = handle_contacts_request(state, body);
+        let mut response = Response::new().body(serde_json::to_vec(&response).unwrap());
+        if let Some(blob) = blob {
+            response = response.blob(blob);
+        }
+        response.send().unwrap();
     }
+    state.ws_update(http_server);
 }
 
 /// Handle HTTP requests from our own frontend.
@@ -158,21 +168,27 @@ fn handle_http_request(
     http_request: &http::server::IncomingHttpRequest,
 ) -> (http::server::HttpResponse, Option<LazyLoadBlob>) {
     match http_request.method().unwrap().as_str() {
-        "GET" => {
-            // state.fetch().unwrap();
-            (
-                http::server::HttpResponse::new(http::StatusCode::OK)
-                    .header("Content-Type", "application/json"),
-                Some(LazyLoadBlob::new(
-                    Some("application/json"),
-                    serde_json::to_vec(&state).unwrap(),
-                )),
-            )
-        }
+        "GET" => (
+            http::server::HttpResponse::new(http::StatusCode::OK)
+                .header("Content-Type", "application/json"),
+            Some(LazyLoadBlob::new(
+                Some("application/json"),
+                serde_json::to_vec(state.contacts()).unwrap(),
+            )),
+        ),
         "POST" => {
             let blob = get_blob().unwrap();
-            let request = serde_json::from_slice::<ContactsRequest>(&blob.bytes).unwrap();
-            let (_response, blob) = handle_contacts_request(state, request);
+            let (response, blob) = handle_contacts_request(state, blob.bytes());
+            if let ContactsResponse::Error(e) = response {
+                return (
+                    http::server::HttpResponse::new(http::StatusCode::BAD_REQUEST)
+                        .header("Content-Type", "application/json"),
+                    Some(LazyLoadBlob::new(
+                        Some("application/json"),
+                        serde_json::to_vec(&e).unwrap(),
+                    )),
+                );
+            }
             (
                 http::server::HttpResponse::new(http::StatusCode::OK)
                     .header("Content-Type", "application/json"),
@@ -195,23 +211,83 @@ fn handle_http_request(
 
 fn handle_contacts_request(
     state: &mut ContactsState,
-    request: ContactsRequest,
+    request_bytes: &[u8],
 ) -> (ContactsResponse, Option<LazyLoadBlob>) {
-    let response = match request {
-        ContactsRequest::GetNames => ContactsResponse::GetNames(
-            state
-                .contacts()
-                .0
-                .keys()
-                .map(|node| node.to_string())
-                .collect(),
-        ),
-        ContactsRequest::GetAllContacts => ContactsResponse::GetAllContacts,
-        ContactsRequest::GetContact(node) => ContactsResponse::GetContact,
-        ContactsRequest::AddContact(node) => ContactsResponse::AddContact,
-        ContactsRequest::AddField((node, field, value)) => ContactsResponse::AddField,
-        ContactsRequest::RemoveContact(node) => ContactsResponse::RemoveContact,
-        ContactsRequest::RemoveField((node, field)) => ContactsResponse::RemoveField,
+    let Ok(request) = serde_json::from_slice::<ContactsRequest>(request_bytes) else {
+        return (
+            ContactsResponse::Error("Malformed request".to_string()),
+            None,
+        );
     };
-    (response, None)
+    match request {
+        ContactsRequest::GetNames => (
+            ContactsResponse::GetNames(
+                state
+                    .contacts()
+                    .0
+                    .keys()
+                    .map(|node| node.to_string())
+                    .collect(),
+            ),
+            None,
+        ),
+        ContactsRequest::GetAllContacts => (
+            ContactsResponse::GetAllContacts,
+            Some(LazyLoadBlob::new(
+                Some("application/json"),
+                serde_json::to_vec(state.contacts()).unwrap(),
+            )),
+        ),
+        ContactsRequest::GetContact(node) => (
+            ContactsResponse::GetContact,
+            Some(LazyLoadBlob::new(
+                Some("application/json"),
+                serde_json::to_vec(&state.get_contact(node)).unwrap(),
+            )),
+        ),
+        ContactsRequest::AddContact(node) => {
+            if let Some((response, blob)) = invalid_node(state, &node) {
+                return (response, blob);
+            }
+            state.add_contact(node);
+            (ContactsResponse::AddContact, None)
+        }
+        ContactsRequest::AddField((node, field, value)) => {
+            if let Some((response, blob)) = invalid_node(state, &node) {
+                return (response, blob);
+            }
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&value) else {
+                return (ContactsResponse::Error("Malformed value".to_string()), None);
+            };
+            state.add_field(node, field, value);
+            (ContactsResponse::AddField, None)
+        }
+        ContactsRequest::RemoveContact(node) => {
+            state.remove_contact(node);
+            (ContactsResponse::RemoveContact, None)
+        }
+        ContactsRequest::RemoveField((node, field)) => {
+            state.remove_field(node, field);
+            (ContactsResponse::RemoveField, None)
+        }
+    }
+}
+
+fn invalid_node(
+    state: &ContactsState,
+    node: &str,
+) -> Option<(ContactsResponse, Option<LazyLoadBlob>)> {
+    if state
+        .kimap
+        .get(&node)
+        .map(|(tba, _, _)| tba != eth::Address::ZERO)
+        .unwrap_or(false)
+    {
+        None
+    } else {
+        Some((
+            ContactsResponse::Error("Node name invalid or does not exist".to_string()),
+            None,
+        ))
+    }
 }

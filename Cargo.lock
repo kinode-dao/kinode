@@ -1867,7 +1867,7 @@ checksum = "f7144d30dcf0fafbce74250a3963025d8d52177934239851c917d29f1df280c2"
 name = "contacts"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.3",
+ "kinode_process_lib 0.9.4",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3760,6 +3760,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "kinode_process_lib"
+version = "0.9.4"
+source = "git+https://github.com/kinode-dao/process_lib?rev=088a549#088a5497257eada697e0869d6a8d7e9ef5e620f6"
+dependencies = [
+ "alloy 0.1.4",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http 1.1.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "kit"
 version = "0.7.7"
 source = "git+https://github.com/kinode-dao/kit?rev=9c94b4b#9c94b4bd3f2a9dc2eabb2da9bc2ef5e6eb07af9d"
@@ -5580,7 +5602,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bincode",
- "kinode_process_lib 0.9.3",
+ "kinode_process_lib 0.9.4",
  "rmp-serde",
  "serde",
  "serde_json",

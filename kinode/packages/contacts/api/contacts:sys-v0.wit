@@ -26,6 +26,7 @@ interface contacts {
         add-field,
         remove-contact,
         remove-field,
+        error(string),
     }
 }
 
