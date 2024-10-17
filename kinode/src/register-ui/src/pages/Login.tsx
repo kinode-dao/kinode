@@ -4,13 +4,13 @@ import Loader from "../components/Loader";
 import { useNavigate } from "react-router-dom";
 import { sha256, toBytes } from "viem";
 import { Tooltip } from "../components/Tooltip";
+import { redirectToHomepage } from "../utils/redirect-to-homepage";
 
 interface LoginProps extends PageProps { }
 
 function Login({
   pw,
   setPw,
-  appSizeOnLoad,
   routers,
   setRouters,
   knsName,
@@ -57,23 +57,14 @@ function Login({
         if (result.status > 399) {
           throw new Error(await result.text());
         }
+        redirectToHomepage();
 
-        const interval = setInterval(async () => {
-          const res = await fetch("/", { credentials: 'include' });
-          if (
-            res.status < 300 &&
-            Number(res.headers.get("content-length")) !== appSizeOnLoad
-          ) {
-            clearInterval(interval);
-            window.location.replace("/");
-          }
-        }, 2000);
       } catch (err: any) {
         setKeyErrs([String(err)]);
         setLoading("");
       }
     },
-    [pw, appSizeOnLoad]
+    [pw]
   );
 
   const isDirect = Boolean(routers?.length === 0);

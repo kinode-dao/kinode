@@ -5,6 +5,7 @@ import { Tooltip } from "../components/Tooltip";
 import { sha256, toBytes } from "viem";
 import { useSignTypedData, useAccount, useChainId } from 'wagmi'
 import { KIMAP } from "../abis";
+import { redirectToHomepage } from "../utils/redirect-to-homepage";
 
 type SetPasswordProps = {
   direct: boolean;
@@ -12,7 +13,6 @@ type SetPasswordProps = {
   reset: boolean;
   knsName: string;
   setPw: React.Dispatch<React.SetStateAction<string>>;
-  appSizeOnLoad: number;
   nodeChainId: string;
   closeConnect: () => void;
 };
@@ -23,7 +23,6 @@ function SetPassword({
   pw,
   reset,
   setPw,
-  appSizeOnLoad,
 }: SetPasswordProps) {
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState("");
@@ -103,25 +102,15 @@ function SetPassword({
           const base64String = await result.json();
 
           downloadKeyfile(knsName, base64String);
+          redirectToHomepage();
 
-          const interval = setInterval(async () => {
-            const res = await fetch("/", { credentials: 'include' });
-
-            if (
-              res.status < 300 &&
-              Number(res.headers.get("content-length")) !== appSizeOnLoad
-            ) {
-              clearInterval(interval);
-              window.location.replace("/");
-            }
-          }, 2000);
         } catch {
           alert("There was an error setting your password, please try again.");
           setLoading(false);
         }
       }, 500);
     },
-    [appSizeOnLoad, direct, pw, pw2, reset, knsName]
+    [direct, pw, pw2, reset, knsName]
   );
 
   return (

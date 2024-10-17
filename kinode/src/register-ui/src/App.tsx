@@ -21,7 +21,6 @@ function App() {
   const [reset, setReset] = useState<boolean>(false);
   const [direct, setDirect] = useState<boolean>(false);
   const [knsName, setKnsName] = useState<string>('');
-  const [appSizeOnLoad, setAppSizeOnLoad] = useState<number>(0);
   const [networkingKey, setNetworkingKey] = useState<string>('');
   const [ipAddress, setIpAddress] = useState<number>(0);
   const [ws_port, setWsPort] = useState<number>(0);
@@ -35,10 +34,6 @@ function App() {
   const [connectOpen, setConnectOpen] = useState<boolean>(false);
   const openConnect = () => setConnectOpen(true)
   const closeConnect = () => setConnectOpen(false)
-
-  useEffect(() => setAppSizeOnLoad(
-    (window.performance.getEntriesByType('navigation') as any)[0].transferSize
-  ), []);
 
   useEffect(() => {
     (async () => {
@@ -84,7 +79,7 @@ function App() {
   // todo, most of these can be removed...
   const props = {
     direct, setDirect,
-    key, appSizeOnLoad,
+    key,
     keyFileName, setKeyFileName,
     reset, setReset,
     pw, setPw,
