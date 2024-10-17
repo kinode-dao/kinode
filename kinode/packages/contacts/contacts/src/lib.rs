@@ -1,7 +1,7 @@
-use crate::kinode::process::contacts::{ContactsRequest, ContactsResponse};
+use crate::kinode::process::contacts;
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, get_typed_state, homepage, http, kimap, kiprintln,
-    set_state, Address, LazyLoadBlob, Message, NodeId, Response,
+    set_state, Address, Capability, LazyLoadBlob, Message, NodeId, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -120,13 +120,18 @@ fn main_loop(state: &mut ContactsState, http_server: &mut http::server::HttpServ
                 // ignore send errors, local-only process
                 continue;
             }
-            Ok(Message::Request { source, body, .. }) => {
+            Ok(Message::Request {
+                source,
+                body,
+                capabilities,
+                ..
+            }) => {
                 // ignore messages from other nodes -- technically superfluous check
                 // since manifest does not acquire networking capability
                 if source.node() != state.our.node {
                     continue;
                 }
-                handle_request(&source, &body, state, http_server);
+                handle_request(&source, &body, capabilities, state, http_server);
             }
             _ => continue, // ignore responses
         }
@@ -136,6 +141,7 @@ fn main_loop(state: &mut ContactsState, http_server: &mut http::server::HttpServ
 fn handle_request(
     source: &Address,
     body: &[u8],
+    capabilities: Vec<Capability>,
     state: &mut ContactsState,
     http_server: &mut http::server::HttpServer,
 ) {
@@ -152,7 +158,8 @@ fn handle_request(
             },
         );
     } else {
-        let (response, blob) = handle_contacts_request(state, body);
+        // if request is not from frontend, check that it has the required capabilities
+        let (response, blob) = handle_contacts_request(state, body, Some(capabilities));
         let mut response = Response::new().body(serde_json::to_vec(&response).unwrap());
         if let Some(blob) = blob {
             response = response.blob(blob);
@@ -178,8 +185,8 @@ fn handle_http_request(
         ),
         "POST" => {
             let blob = get_blob().unwrap();
-            let (response, blob) = handle_contacts_request(state, blob.bytes());
-            if let ContactsResponse::Error(e) = response {
+            let (response, blob) = handle_contacts_request(state, blob.bytes(), None);
+            if let contacts::Response::Error(e) = response {
                 return (
                     http::server::HttpResponse::new(http::StatusCode::BAD_REQUEST)
                         .header("Content-Type", "application/json"),
@@ -212,16 +219,44 @@ fn handle_http_request(
 fn handle_contacts_request(
     state: &mut ContactsState,
     request_bytes: &[u8],
-) -> (ContactsResponse, Option<LazyLoadBlob>) {
-    let Ok(request) = serde_json::from_slice::<ContactsRequest>(request_bytes) else {
+    capabilities: Option<Vec<Capability>>,
+) -> (contacts::Response, Option<LazyLoadBlob>) {
+    let Ok(request) = serde_json::from_slice::<contacts::Request>(request_bytes) else {
         return (
-            ContactsResponse::Error("Malformed request".to_string()),
+            contacts::Response::Error("Malformed request".to_string()),
             None,
         );
     };
+    // if request is not from frontend, check capabilities:
+    // each request requires one of read-name-only, read, add, or remove
+    if let Some(capabilities) = capabilities {
+        let required_capability = Capability::new(
+            &state.our,
+            serde_json::to_string(&match request {
+                contacts::Request::GetNames => contacts::Capabilities::ReadNameOnly,
+                contacts::Request::GetAllContacts | contacts::Request::GetContact(_) => {
+                    contacts::Capabilities::Read
+                }
+                contacts::Request::AddContact(_) | contacts::Request::AddField(_) => {
+                    contacts::Capabilities::Add
+                }
+                contacts::Request::RemoveContact(_) | contacts::Request::RemoveField(_) => {
+                    contacts::Capabilities::Remove
+                }
+            })
+            .unwrap(),
+        );
+        if !capabilities.contains(&required_capability) {
+            return (
+                contacts::Response::Error("Missing capability".to_string()),
+                None,
+            );
+        }
+    }
+
     match request {
-        ContactsRequest::GetNames => (
-            ContactsResponse::GetNames(
+        contacts::Request::GetNames => (
+            contacts::Response::GetNames(
                 state
                     .contacts()
                     .0
@@ -231,44 +266,47 @@ fn handle_contacts_request(
             ),
             None,
         ),
-        ContactsRequest::GetAllContacts => (
-            ContactsResponse::GetAllContacts,
+        contacts::Request::GetAllContacts => (
+            contacts::Response::GetAllContacts,
             Some(LazyLoadBlob::new(
                 Some("application/json"),
                 serde_json::to_vec(state.contacts()).unwrap(),
             )),
         ),
-        ContactsRequest::GetContact(node) => (
-            ContactsResponse::GetContact,
+        contacts::Request::GetContact(node) => (
+            contacts::Response::GetContact,
             Some(LazyLoadBlob::new(
                 Some("application/json"),
                 serde_json::to_vec(&state.get_contact(node)).unwrap(),
             )),
         ),
-        ContactsRequest::AddContact(node) => {
+        contacts::Request::AddContact(node) => {
             if let Some((response, blob)) = invalid_node(state, &node) {
                 return (response, blob);
             }
             state.add_contact(node);
-            (ContactsResponse::AddContact, None)
+            (contacts::Response::AddContact, None)
         }
-        ContactsRequest::AddField((node, field, value)) => {
+        contacts::Request::AddField((node, field, value)) => {
             if let Some((response, blob)) = invalid_node(state, &node) {
                 return (response, blob);
             }
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&value) else {
-                return (ContactsResponse::Error("Malformed value".to_string()), None);
+                return (
+                    contacts::Response::Error("Malformed value".to_string()),
+                    None,
+                );
             };
             state.add_field(node, field, value);
-            (ContactsResponse::AddField, None)
+            (contacts::Response::AddField, None)
         }
-        ContactsRequest::RemoveContact(node) => {
+        contacts::Request::RemoveContact(node) => {
             state.remove_contact(node);
-            (ContactsResponse::RemoveContact, None)
+            (contacts::Response::RemoveContact, None)
         }
-        ContactsRequest::RemoveField((node, field)) => {
+        contacts::Request::RemoveField((node, field)) => {
             state.remove_field(node, field);
-            (ContactsResponse::RemoveField, None)
+            (contacts::Response::RemoveField, None)
         }
     }
 }
@@ -276,7 +314,7 @@ fn handle_contacts_request(
 fn invalid_node(
     state: &ContactsState,
     node: &str,
-) -> Option<(ContactsResponse, Option<LazyLoadBlob>)> {
+) -> Option<(contacts::Response, Option<LazyLoadBlob>)> {
     if state
         .kimap
         .get(&node)
@@ -286,7 +324,7 @@ fn invalid_node(
         None
     } else {
         Some((
-            ContactsResponse::Error("Node name invalid or does not exist".to_string()),
+            contacts::Response::Error("Node name invalid or does not exist".to_string()),
             None,
         ))
     }

@@ -6,7 +6,7 @@ interface contacts {
         remove,
     }
 
-    variant contacts-request {
+    variant request {
         get-names,                                // requires read-names-only
         get-all-contacts,                         // requires read
         get-contact(string),                      // requires read
@@ -18,15 +18,15 @@ interface contacts {
         remove-field(tuple<string, string>),      // requires remove
     }
 
-    variant contacts-response {
+    variant response {
         get-names(list<string>),
         get-all-contacts, // JSON all-contacts dict in blob
-        get-contact, // JSON contact dict in blob
+        get-contact,      // JSON contact dict in blob
         add-contact,
         add-field,
         remove-contact,
         remove-field,
-        error(string),
+        error(string),    // any failed request will receive this response
     }
 }
 
