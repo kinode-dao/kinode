@@ -1104,10 +1104,12 @@ impl Identity {
         match &self.routing {
             NodeRouting::Routers(_) => None,
             NodeRouting::Direct { ip, ports } | NodeRouting::Both { ip, ports, .. } => {
-                if let Some(port) = ports.get("ws")
-                    && *port != 0
-                {
-                    Some((ip, port))
+                if let Some(port) = ports.get("ws") {
+                    if *port != 0 {
+                        Some((ip, port))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -1118,10 +1120,12 @@ impl Identity {
         match &self.routing {
             NodeRouting::Routers(_) => None,
             NodeRouting::Direct { ip, ports } | NodeRouting::Both { ip, ports, .. } => {
-                if let Some(port) = ports.get("tcp")
-                    && *port != 0
-                {
-                    Some((ip, port))
+                if let Some(port) = ports.get("tcp") {
+                    if *port != 0 {
+                        Some((ip, port))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }

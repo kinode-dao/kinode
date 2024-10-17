@@ -40,9 +40,9 @@ pub async fn vfs(
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
-    let vfs_path = format!("{home_directory_path}/vfs");
+    let vfs_path = home_directory_path.join("vfs");
 
     fs::create_dir_all(&vfs_path)
         .await
@@ -342,8 +342,8 @@ async fn handle_request(
     }
 
     // current prepend to filepaths needs to be: /package_id/drive/path
-    let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path).await?;
-    let drive = format!("/{package_id}/{drive}");
+    let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path)?;
+    let drive = format!("{package_id}/{drive}");
     let action = request.action;
     let path = PathBuf::from(&request.path);
 
@@ -364,10 +364,15 @@ async fn handle_request(
     let base_drive = join_paths_safely(&vfs_path, &drive);
     let path = join_paths_safely(&base_drive, &rest);
 
+    #[cfg(target_os = "windows")]
+    let (path, internal_path) = (internal_path_to_external(&path), path);
+
     let (response_body, bytes) = match action {
         VfsAction::CreateDrive => {
-            let drive_path = join_paths_safely(vfs_path, &drive);
-            fs::create_dir_all(drive_path).await?;
+            #[cfg(target_os = "windows")]
+            let base_drive = internal_path_to_external(&base_drive);
+
+            fs::create_dir_all(&base_drive).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::CreateDir => {
@@ -461,8 +466,19 @@ async fn handle_request(
 
                 let metadata = entry.metadata().await?;
                 let file_type = get_file_type(&metadata);
+
+                #[cfg(unix)]
+                let relative_path = relative_path.display().to_string();
+                #[cfg(target_os = "windows")]
+                let relative_path = {
+                    let internal_path = internal_path
+                        .strip_prefix(vfs_path)
+                        .unwrap_or(&internal_path);
+                    replace_path_prefix(&internal_path, &relative_path)
+                };
+
                 let dir_entry = DirEntry {
-                    path: relative_path.display().to_string(),
+                    path: relative_path,
                     file_type,
                 };
                 entries.push(dir_entry);
@@ -588,7 +604,7 @@ async fn handle_request(
                 }
             };
 
-            fs::create_dir_all(path.clone()).await?;
+            fs::create_dir_all(&path).await?;
 
             // loop through items in archive; recursively add to root
             for i in 0..zip.len() {
@@ -612,7 +628,7 @@ async fn handle_request(
                 if is_file {
                     fs::write(&local_path, &file_contents).await?;
                 } else if is_dir {
-                    fs::create_dir_all(local_path).await?;
+                    fs::create_dir_all(&local_path).await?;
                 } else {
                     return Err(VfsError::CreateDirError {
                         path: path.display().to_string(),
@@ -651,10 +667,10 @@ async fn handle_request(
     Ok(())
 }
 
-async fn parse_package_and_drive(
+fn parse_package_and_drive(
     path: &str,
     vfs_path: &PathBuf,
-) -> Result<(PackageId, String, String), VfsError> {
+) -> Result<(PackageId, String, PathBuf), VfsError> {
     let joined_path = join_paths_safely(&vfs_path, path);
 
     // sanitize path..
@@ -674,7 +690,10 @@ async fn parse_package_and_drive(
         .display()
         .to_string();
 
+    #[cfg(unix)]
     let mut parts: Vec<&str> = path.split('/').collect();
+    #[cfg(target_os = "windows")]
+    let mut parts: Vec<&str> = path.split('\\').collect();
 
     if parts[0].is_empty() {
         parts.remove(0);
@@ -697,9 +716,49 @@ async fn parse_package_and_drive(
     };
 
     let drive = parts[1].to_string();
-    let remaining_path = parts[2..].join("/");
+    let mut remaining_path = PathBuf::new();
+    for part in &parts[2..] {
+        remaining_path = remaining_path.join(part);
+    }
 
     Ok((package_id, drive, remaining_path))
+}
+
+#[cfg(target_os = "windows")]
+fn internal_path_to_external(internal: &Path) -> PathBuf {
+    let mut external = PathBuf::new();
+    for component in internal.components() {
+        match component {
+            Component::RootDir | Component::CurDir | Component::ParentDir => {}
+            Component::Prefix(_) => {
+                let component: &Path = component.as_ref();
+                external = component.to_path_buf();
+            }
+            Component::Normal(item) => {
+                external = external.join(item.to_string_lossy().into_owned().replace(":", "_"));
+            }
+        }
+    }
+
+    external
+}
+
+#[cfg(target_os = "windows")]
+fn replace_path_prefix(base_path: &Path, to_replace_path: &Path) -> String {
+    let base_path = base_path.display().to_string();
+    let base_path_parts: Vec<&str> = base_path.split('\\').collect();
+
+    let num_base_path_parts = base_path_parts.len();
+
+    let to_replace_path = to_replace_path.display().to_string();
+    let parts: Vec<&str> = to_replace_path.split('\\').collect();
+
+    let mut new_path = base_path.to_string().replace("\\", "/");
+    for part in parts.iter().skip(num_base_path_parts) {
+        new_path.push('/');
+        new_path.push_str(part);
+    }
+    new_path
 }
 
 async fn check_caps(
@@ -777,8 +836,7 @@ async fn check_caps(
         }
         VfsAction::CopyFile { new_path } | VfsAction::Rename { new_path } => {
             // these have 2 paths to validate
-            let (new_package_id, new_drive, _rest) =
-                parse_package_and_drive(new_path, &vfs_path).await?;
+            let (new_package_id, new_drive, _rest) = parse_package_and_drive(new_path, &vfs_path)?;
 
             let new_drive = format!("/{new_package_id}/{new_drive}");
             // if both new and old path are within the package_id path, ok
@@ -1002,11 +1060,13 @@ fn normalize_path(path: &Path) -> PathBuf {
     ret
 }
 
-fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
-    let extension_str = Path::new(extension)
+fn join_paths_safely<P: AsRef<Path>>(base: &PathBuf, extension: P) -> PathBuf {
+    let extension_str = extension
+        .as_ref()
         .to_str()
         .unwrap_or("")
-        .trim_start_matches('/');
+        .trim_start_matches('/')
+        .trim_start_matches('\\');
 
     let extension_path = Path::new(extension_str);
     base.join(extension_path)

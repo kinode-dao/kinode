@@ -1,7 +1,7 @@
 <p align="center">
     <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/24c7982b-9d76-419a-96dc-ec4a25dda562">
     <br />
-    <img src="https://img.shields.io/twitter/follow/kinodeOS">
+    <img src="https://img.shields.io/twitter/follow/Kinode">
 
 </p>
 
@@ -28,27 +28,29 @@ On certain operating systems, you may need to install these dependencies if they
 
 git clone git@github.com:kinode-dao/kinode.git
 
-# Get some stuff so we can build Wasm.
+# Install Rust and some `cargo` tools so we can build the runtime and Wasm.
 
-cd kinode
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install wasm-tools
 rustup install nightly
-rustup target add wasm32-wasi
-rustup target add wasm32-wasi --toolchain nightly
-rustup target add wasm32-wasip1
 rustup target add wasm32-wasip1 --toolchain nightly
 cargo install cargo-wasi
 
 # Install NPM so we can build frontends for "distro" packages.
 # https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-# If you want to skip this step, run cargo build with the environment variable SKIP_BUILD_FRONTEND=true
+# If you want to skip this step, build the packages with `cargo run -p build_packages -- --skip-build-frontend` to neglect building the frontends
 
-# Build the runtime, along with a number of "distro" Wasm modules.
-# The compiled binary will be at `kinode/target/debug/kinode`
-# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
+# Build the "distro" Wasm modules, then, build the runtime.
+# The compiled packages will be at `kinode/target/packages.zip`.
+# The compiled binary will be at `kinode/target/debug/kinode`.
+# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`).
 
-cargo +nightly build -p kinode
+cd kinode
+cargo run -p build_packages
+cargo build -p kinode
 ```
+
+[To build on Windows](https://gist.github.com/nick1udwig/f2d39a3fc6ccc7f7ad2912e8d3aeaae0)
 
 ## Security Status
 
@@ -58,14 +60,37 @@ No security audits of this crate have ever been performed. This software is unde
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
-TODO: document feature flags in `--simulation-mode`
-
 ```bash
 # OPTIONAL: --release flag
 cargo +nightly run -p kinode -- home
 ```
 
-On boot you will be prompted to navigate to `localhost:8080` (or whatever HTTP port your node bound to: it will try 8080 and go up from there, or use the port passed with the `--http-port` boot flag. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
+On boot you will be prompted to navigate to `localhost:8080` or whatever HTTP port your node bound to: it will try 8080 and go up from there, or use the port passed with the `--port` boot flag. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
+
+#### Boot Flags
+
+Here are all the available boot flags for the Kinode runtime:
+
+- `[home]`: (Required) Path to home directory.
+- `-p, --port <PORT>`: Port to bind for HTTP. Default is the first unbound port at or above 8080.
+- `--ws-port <PORT>`: Kinode internal WebSockets protocol port. Default is the first unbound port at or above 9000.
+- `--tcp-port <PORT>`: Kinode internal TCP protocol port. Default is the first unbound port at or above 10000.
+- `-v, --verbosity <VERBOSITY>`: Verbosity level: higher (up to 3)is more verbose. Default is 0.
+- `-l, --logging-off`: Run in non-logging mode. Do not write terminal output to file in .terminal_logs directory.
+- `-d, --detached`: Run in detached mode (don't accept input on terminal).
+- `--rpc <RPC>`: Add a WebSockets Optimism RPC URL at boot.
+- `--password <PASSWORD>`: Node password (in double quotes).
+- `--max-log-size <MAX_LOG_SIZE_BYTES>`: Max size of all terminal logs in bytes. Setting to 0 means no size limit. Default is 16MB.
+- `--number-log-files <NUMBER_LOG_FILES>`: Number of terminal logs to rotate. Default is 4.
+- `--max-peers <MAX_PEERS>`: Maximum number of peers to hold active connections with. Default is 32.
+- `--max-passthroughs <MAX_PASSTHROUGHS>`: Maximum number of passthroughs to serve as a router. Default is 0.
+- `--soft-ulimit <SOFT_ULIMIT>`: Enforce a static maximum number of file descriptors. Default is fetched from system.
+
+When compiled with the `simulation-mode` feature, two additional flags are available:
+
+- `--fake-node-name <NAME>`: Name of fake node to boot.
+- `--fakechain-port <FAKECHAIN_PORT>`: Port to bind to for local anvil-run blockchain.
+
 
 ## Configuring the ETH RPC Provider
 
@@ -88,6 +113,7 @@ This distribution of the OS also comes with userspace packages pre-installed. So
 The runtime distro processes are:
 
 - `eth:distro:sys`
+- `fd_manager:distro:sys`
 - `http_client:distro:sys`
 - `http_server:distro:sys`
 - `kernel:distro:sys`

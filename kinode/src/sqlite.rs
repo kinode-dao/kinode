@@ -10,6 +10,7 @@ use lib::types::core::{
 use rusqlite::Connection;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, sync::Mutex};
@@ -25,7 +26,7 @@ lazy_static::lazy_static! {
 #[derive(Clone)]
 struct SqliteState {
     our: Arc<Address>,
-    sqlite_path: Arc<String>,
+    sqlite_path: Arc<PathBuf>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
@@ -39,11 +40,11 @@ impl SqliteState {
         our: Address,
         send_to_terminal: PrintSender,
         send_to_loop: MessageSender,
-        home_directory_path: String,
+        home_directory_path: PathBuf,
     ) -> Self {
         Self {
             our: Arc::new(our),
-            sqlite_path: Arc::new(format!("{home_directory_path}/sqlite")),
+            sqlite_path: Arc::new(home_directory_path.join("sqlite")),
             send_to_loop,
             send_to_terminal,
             open_dbs: Arc::new(DashMap::new()),
@@ -68,10 +69,21 @@ impl SqliteState {
             self.remove_db(key.0, key.1).await;
         }
 
-        let db_path = format!("{}/{}/{}", self.sqlite_path.as_str(), package_id, db);
+        #[cfg(unix)]
+        let db_path = self.sqlite_path.join(format!("{package_id}")).join(&db);
+        #[cfg(target_os = "windows")]
+        let db_path = self
+            .sqlite_path
+            .join(format!(
+                "{}_{}",
+                package_id._package(),
+                package_id._publisher()
+            ))
+            .join(&db);
+
         fs::create_dir_all(&db_path).await?;
 
-        let db_file_path = format!("{}/{}.db", db_path, db);
+        let db_file_path = format!("{}.db", db);
 
         let db_conn = Connection::open(db_file_path)?;
         let _ = db_conn.execute("PRAGMA journal_mode=WAL", []);
@@ -105,7 +117,7 @@ pub async fn sqlite(
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
     let our = Address::new(our_node.as_str(), SQLITE_PROCESS_ID.clone());
 
@@ -113,7 +125,7 @@ pub async fn sqlite(
 
     let mut state = SqliteState::new(our, send_to_terminal, send_to_loop, home_directory_path);
 
-    if let Err(e) = fs::create_dir_all(state.sqlite_path.as_str()).await {
+    if let Err(e) = fs::create_dir_all(&*state.sqlite_path).await {
         panic!("failed creating sqlite dir! {e:?}");
     }
 
@@ -515,11 +527,22 @@ async fn check_caps(
                 .remove_db(request.package_id.clone(), request.db.clone())
                 .await;
 
-            fs::remove_dir_all(format!(
-                "{}/{}/{}",
-                state.sqlite_path, request.package_id, request.db
-            ))
-            .await?;
+            #[cfg(unix)]
+            let db_path = state
+                .sqlite_path
+                .join(format!("{}", request.package_id))
+                .join(&request.db);
+            #[cfg(target_os = "windows")]
+            let db_path = state
+                .sqlite_path
+                .join(format!(
+                    "{}_{}",
+                    request.package_id._package(),
+                    request.package_id._publisher()
+                ))
+                .join(&request.db);
+
+            fs::remove_dir_all(&db_path).await?;
 
             Ok(())
         }

@@ -412,7 +412,11 @@ fn make_log_writer(log_dir_path: &Path) -> anyhow::Result<BufWriter<std::fs::Fil
         std::fs::create_dir(log_dir_path)?;
     }
     let now = chrono::Local::now();
+    #[cfg(unix)]
     let log_name = format!("{}.log", now.format("%Y-%m-%d-%H:%M:%S"));
+    #[cfg(target_os = "windows")]
+    let log_name = format!("{}.log", now.format("%Y-%m-%d-%H_%M_%S"));
+
     let log_path = log_dir_path.join(log_name);
     let log_handle = OpenOptions::new()
         .append(true)

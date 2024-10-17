@@ -9,23 +9,30 @@ use rocksdb::{checkpoint::Checkpoint, Options, DB};
 use std::{
     collections::{HashMap, VecDeque},
     io::Read,
-    path::Path,
+    path::PathBuf,
     sync::Arc,
 };
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 
-include!("../../target/bootstrapped_processes.rs");
+static PACKAGES_ZIP: &[u8] = include_bytes!("../../target/packages.zip");
+const FILE_TO_METADATA: &str = "file_to_metadata.json";
 
 pub async fn load_state(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
+    home_directory_string: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
-    let state_path = format!("{home_directory_path}/kernel");
+    let home_directory_path = std::fs::canonicalize(&home_directory_string)?;
+    let state_path = home_directory_path.join("kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
         panic!("failed creating kernel state dir! {e:?}");
     }
+    // use String to not upset rocksdb:
+    //  * on Unix, works as expected
+    //  * on Windows, would normally use std::path to be cross-platform,
+    //    but here rocksdb appends a `/LOG` which breaks the path
+    let state_path = format!("{home_directory_string}/kernel");
 
     let mut opts = Options::default();
     opts.create_if_missing(true);
@@ -83,7 +90,7 @@ pub async fn state_sender(
     send_to_terminal: PrintSender,
     mut recv_state: MessageReceiver,
     db: DB,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
 ) -> Result<(), anyhow::Error> {
     let db = Arc::new(db);
     let home_directory_path = Arc::new(home_directory_path);
@@ -158,7 +165,7 @@ async fn handle_request(
     kernel_message: KernelMessage,
     db: Arc<DB>,
     send_to_loop: &MessageSender,
-    home_directory_path: &str,
+    home_directory_path: &PathBuf,
 ) -> Result<(), StateError> {
     let KernelMessage {
         id,
@@ -243,9 +250,8 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = format!("{home_directory_path}/kernel/backup");
-
-            if Path::new(&checkpoint_dir).exists() {
+            let checkpoint_dir = home_directory_path.join("kernel").join("backup");
+            if checkpoint_dir.exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
             }
             let checkpoint = Checkpoint::new(&db).map_err(|e| StateError::RocksDBError {
@@ -302,7 +308,7 @@ async fn handle_request(
 async fn bootstrap(
     our_name: &str,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
+    home_directory_path: PathBuf,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
     process_map: &mut ProcessMap,
     reverse_cap_index: &mut ReverseCapIndex,
@@ -381,7 +387,7 @@ async fn bootstrap(
         current.capabilities.extend(runtime_caps.clone());
     }
 
-    let packages = get_zipped_packages().await;
+    let packages = get_zipped_packages();
 
     for (package_metadata, mut package) in packages.clone() {
         let package_name = package_metadata.properties.package_name.as_str();
@@ -395,24 +401,30 @@ async fn bootstrap(
         let package_publisher = package_metadata.properties.publisher.as_str();
 
         // create a new package in VFS
+        #[cfg(unix)]
         let our_drive_name = [package_name, package_publisher].join(":");
-        let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
+        #[cfg(target_os = "windows")]
+        let our_drive_name = [package_name, package_publisher].join("_");
+        let pkg_path = home_directory_path
+            .join("vfs")
+            .join(&our_drive_name)
+            .join("pkg");
+
         // delete anything currently residing in the pkg folder
-        let pkg_path_buf = std::path::PathBuf::from(&pkg_path);
-        if pkg_path_buf.exists() {
+        if pkg_path.exists() {
             fs::remove_dir_all(&pkg_path).await?;
         }
         fs::create_dir_all(&pkg_path)
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
 
-        let drive_path = format!("/{}/pkg", &our_drive_name);
+        let drive_path = format!("/{}/pkg", [package_name, package_publisher].join(":"));
 
         // save the zip itself inside pkg folder, for sharing with others
         let mut zip_file =
-            fs::File::create(format!("{}/{}.zip", &pkg_path, &our_drive_name)).await?;
+            fs::File::create(pkg_path.join(format!("{}.zip", &our_drive_name))).await?;
         let package_zip_bytes = package.clone().into_inner().into_inner();
-        zip_file.write_all(package_zip_bytes).await?;
+        zip_file.write_all(&package_zip_bytes).await?;
 
         // for each file in package.zip, write to vfs folder
         for i in 0..package.len() {
@@ -433,7 +445,7 @@ async fn bootstrap(
             };
 
             let file_path_str = file_path.to_string_lossy().to_string();
-            let full_path = Path::new(&pkg_path).join(&file_path_str);
+            let full_path = pkg_path.join(&file_path_str);
 
             if file.is_dir() {
                 // It's a directory, create it
@@ -713,20 +725,28 @@ fn sign_cap(cap: Capability, keypair: Arc<signature::Ed25519KeyPair>) -> Vec<u8>
 }
 
 /// read in `include!()`ed .zip package files
-async fn get_zipped_packages() -> Vec<(
-    Erc721Metadata,
-    zip::ZipArchive<std::io::Cursor<&'static [u8]>>,
-)> {
+fn get_zipped_packages() -> Vec<(Erc721Metadata, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> {
     let mut packages = Vec::new();
 
-    for (package_name, metadata_bytes, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
-        if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(*bytes)) {
-            if let Ok(metadata) = serde_json::from_slice::<Erc721Metadata>(metadata_bytes) {
-                packages.push((metadata, zip));
-            } else {
-                println!("fs: metadata for package {package_name} is not valid Erc721Metadata!\r",);
-            }
-        }
+    let mut packages_zip = zip::ZipArchive::new(std::io::Cursor::new(PACKAGES_ZIP)).unwrap();
+    let mut file_to_metadata = vec![];
+    packages_zip
+        .by_name(FILE_TO_METADATA)
+        .unwrap()
+        .read_to_end(&mut file_to_metadata)
+        .unwrap();
+    let file_to_metadata: HashMap<String, Erc721Metadata> =
+        serde_json::from_slice(&file_to_metadata).unwrap();
+
+    for (file_name, metadata) in file_to_metadata {
+        let mut zip_bytes = vec![];
+        packages_zip
+            .by_name(&file_name)
+            .unwrap()
+            .read_to_end(&mut zip_bytes)
+            .unwrap();
+        let zip_archive = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).unwrap();
+        packages.push((metadata, zip_archive));
     }
 
     packages
