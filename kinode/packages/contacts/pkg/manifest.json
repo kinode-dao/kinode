@@ -13,7 +13,23 @@
         "grant_capabilities": [
             "eth:distro:sys",
             "http_server:distro:sys",
-            "vfs:distro:sys"
+            "vfs:distro:sys",
+            {
+                "process": "main:app_store:sys",
+                "params": "ReadNameOnly"
+            },
+            {
+                "process": "main:app_store:sys",
+                "params": "Read"
+            },
+            {
+                "process": "main:app_store:sys",
+                "params": "Add"
+            },
+            {
+                "process": "main:app_store:sys",
+                "params": "Remove"
+            }
         ],
         "public": false
     }
