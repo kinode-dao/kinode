@@ -1,0 +1,18 @@
+{
+    "name": "Contacts",
+    "description": "Save and manage your Kinode OS contacts.",
+    "image": "",
+    "properties": {
+        "package_name": "contacts",
+        "current_version": "0.1.0",
+        "publisher": "sys",
+        "mirrors": [],
+        "code_hashes": {
+            "0.1.0": ""
+        },
+        "wit_version": 0,
+        "dependencies": []
+    },
+    "external_url": "https://kinode.org",
+    "animation_url": ""
+}
