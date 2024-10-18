@@ -20,8 +20,44 @@ function populate_contacts(contacts) {
     ul.innerHTML = '';
     Object.entries(contacts).forEach(([node, contact]) => {
         const li = document.createElement('li');
-        li.innerHTML = `${JSON.stringify(node, undefined, 2)}`;
+        const div = document.createElement('div');
+        div.classList.add('contact');
+        div.innerHTML = `<h3>${node}</h3>
+        <ul>
+        ${Object.entries(contact).map(([field, value]) => `<li>${field}: ${value}</li>`).join('')}
+        </ul>
+        <form class="delete-contact" id="${node}">
+            <button type="submit">delete</button>
+        </form>
+        <form class="add-field" id="${node}">
+            <input type="text" name="field" placeholder="Field">
+            <input type="text" name="value" placeholder="Value">
+            <button type="submit">add</button>
+        </form>
+        `;
+        li.appendChild(div);
         ul.appendChild(li);
+    });
+
+    ul.querySelectorAll('.delete-contact').forEach(form => {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const node = this.getAttribute('id');
+            api_call({
+                "RemoveContact": node
+            });
+        });
+    });
+
+    ul.querySelectorAll('.add-field').forEach(form => {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const node = this.getAttribute('id');
+            const data = new FormData(e.target);
+            api_call({
+                "AddField": [node, data.get('field'), data.get('value')]
+            });
+        });
     });
 }
 
@@ -39,6 +75,7 @@ document.getElementById('add-contact').addEventListener('submit', (e) => {
         },
         body: JSON.stringify(body),
     }).then(response => {
+        e.target.reset();
         if (response.status === 200) {
             return null;
         } else {
@@ -46,7 +83,6 @@ document.getElementById('add-contact').addEventListener('submit', (e) => {
         }
     }).then(data => {
         if (data === null) {
-            e.target.reset();
             return;
         } else {
             alert(JSON.stringify(data));

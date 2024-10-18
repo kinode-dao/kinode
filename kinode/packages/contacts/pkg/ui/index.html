@@ -9,7 +9,7 @@
     <link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,700,500,600,300&display=swap" rel="stylesheet" />
     <script src="/our.js"></script>
     <script>
-        document.title = window.our.node + " - contacts";
+        document.title = "contacts - " + window.our.node;
     </script>
     <style>
         h1,
@@ -33,13 +33,57 @@
 
         main {
             margin: 0 auto;
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px 20px;
-            grid-auto-flow: row;
             padding: 20px;
             max-width: 960px;
             min-width: 300px;
+        }
+
+        form.add-contact {
+            max-width: 400px;
+        }
+
+        #contacts {
+            list-style: none;
+        }
+
+        .contact:first-of-type {
+            margin-top: 10px;
+        }
+
+        .contact {
+            padding: 10px;
+            border: 1px solid var(--tasteful-dark);
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: grid;
+            gap: 10px;
+            grid-auto-flow: row;
+            grid-template-areas:
+                "name name delete"
+                "fields fields fields"
+                "add-field add-field add-field";
+        }
+
+        .contact h3 {
+            grid-area: name;
+        }
+
+        .contact ul {
+            grid-area: fields;
+            list-style: none;
+        }
+
+        .contact ul li {
+            font-size: 1em;
+        }
+
+        form.delete-contact {
+            grid-area: delete;
+        }
+
+        form.add-field {
+            grid-area: add-field;
+            max-width: 400px;
         }
     </style>
 </head>
@@ -48,7 +92,6 @@
     <h1>contacts</h1>
     <main>
         <article id="edit">
-            <h2>Contacts</h2>
             <form id="add-contact">
                 <input type="text" name="node">
                 <button type="submit">add contact</button>
