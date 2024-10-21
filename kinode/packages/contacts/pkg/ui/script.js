@@ -18,13 +18,19 @@ function populate(data) {
 function populate_contacts(contacts) {
     const ul = document.getElementById('contacts');
     ul.innerHTML = '';
-    Object.entries(contacts).forEach(([node, contact]) => {
+    // sort contacts alphabetically by node
+    Object.entries(contacts).sort((a, b) => a[0].localeCompare(b[0])).forEach(([node, contact]) => {
         const li = document.createElement('li');
         const div = document.createElement('div');
         div.classList.add('contact');
         div.innerHTML = `<h3>${node}</h3>
         <ul>
-        ${Object.entries(contact).map(([field, value]) => `<li>${field}: ${value}</li>`).join('')}
+        ${Object.entries(contact).sort((a, b) => a[0].localeCompare(b[0])).map(([field, value]) => `
+            <li>
+                ${field}: ${JSON.stringify(value)}
+                <button class="remove-field" onclick="removeField('${node}', '${field}')">X</button>
+            </li>
+        `).join('')}
         </ul>
         <form class="delete-contact" id="${node}">
             <button type="submit">delete</button>
@@ -54,12 +60,24 @@ function populate_contacts(contacts) {
             e.preventDefault();
             const node = this.getAttribute('id');
             const data = new FormData(e.target);
+            let value = data.get('value');
+            // if value is not valid JSON, wrap it in quotes
+            try {
+                JSON.parse(value);
+            } catch (e) {
+                // If parsing fails, assume it's a string and wrap it in quotes
+                value = `"${value}"`;
+            }
             api_call({
-                "AddField": [node, data.get('field'), data.get('value')]
+                "AddField": [node, data.get('field'), value]
             });
         });
     });
 }
+
+document.getElementById('back-button').addEventListener('click', () => {
+    window.location.href = '/';
+});
 
 document.getElementById('add-contact').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -91,6 +109,12 @@ document.getElementById('add-contact').addEventListener('submit', (e) => {
         console.error('Error:', error);
     });
 })
+
+function removeField(node, field) {
+    api_call({
+        "RemoveField": [node, field]
+    });
+}
 
 // Setup WebSocket connection
 const wsProtocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
