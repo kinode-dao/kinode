@@ -21,7 +21,6 @@ export interface PageProps {
   setReset: React.Dispatch<React.SetStateAction<boolean>>,
   pw: string,
   setPw: React.Dispatch<React.SetStateAction<string>>,
-  appSizeOnLoad: number,
   nodeChainId: string,
 }
 
