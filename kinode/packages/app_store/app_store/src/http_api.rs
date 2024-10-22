@@ -22,7 +22,7 @@ const ICON: &str = include_str!("icon");
 /// Bind static and dynamic HTTP paths for the app store,
 /// bind to our WS updates path, and add icon and widget to homepage.
 pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
-    let config = server::HttpBindingConfig::default();
+    let config = server::HttpBindingConfig::default().secure_subdomain(true);
 
     for path in [
         "/apps",          // all on-chain apps
