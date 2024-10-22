@@ -780,7 +780,7 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 name = "contacts"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib",
+ "kinode_process_lib 0.9.4",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1162,6 +1162,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "get-names"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kinode_process_lib 0.9.3",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1458,6 +1470,29 @@ checksum = "505d1856a39b200489082f90d897c3f07c455563880bc5952e38eabf731c83b6"
 dependencies = [
  "digest 0.10.7",
  "sha3-asm",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7722aef4bff0625445fafda89a02f82ce0e16c7def6024e1317ae55a632ad331"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http",
+ "mime_guess",
+ "rand",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -1885,6 +1920,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3e4daa0dcf6feba26f985457cdf104d4b4256fc5a09547140f3631bb076b19a"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "process_macros"
+version = "0.1.0"
+source = "git+https://github.com/kinode-dao/process_macros?rev=626e501#626e501d351e3365480ec6f770d474ed4ae339bf"
+dependencies = [
+ "quote",
+ "syn 2.0.79",
 ]
 
 [[package]]
