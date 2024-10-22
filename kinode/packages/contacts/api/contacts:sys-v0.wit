@@ -26,7 +26,7 @@ interface contacts {
         add-field,
         remove-contact,
         remove-field,
-        err(string),    // any failed request will receive this response
+        err(string),      // any failed request will receive this response
     }
 }
 
