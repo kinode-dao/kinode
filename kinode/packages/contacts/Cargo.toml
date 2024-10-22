@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "contacts",
+    "get_names",
 ]
 
 [profile.release]
