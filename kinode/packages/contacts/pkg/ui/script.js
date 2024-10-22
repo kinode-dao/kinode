@@ -36,8 +36,8 @@ function populate_contacts(contacts) {
             <button type="submit">delete</button>
         </form>
         <form class="add-field" id="${node}">
-            <input type="text" name="field" placeholder="Field">
-            <input type="text" name="value" placeholder="Value">
+            <input type="text" name="field" placeholder="field (e.g. name)">
+            <input type="text" name="value" placeholder="value (e.g. John Doe)" title="Enter any valid JSON value (e.g. &quot;John Doe&quot;, 42, true, [1,2,3], {&quot;key&quot;:&quot;value&quot;})">
             <button type="submit">add</button>
         </form>
         `;
@@ -76,7 +76,13 @@ function populate_contacts(contacts) {
 }
 
 document.getElementById('back-button').addEventListener('click', () => {
-    window.location.href = '/';
+    // set page to `/` while also removing the subdomain
+    const url = new URL(window.location.href);
+    if (url.hostname.split('.')[0] === 'contacts-sys') {
+        url.hostname = url.hostname.split('.').slice(1).join('.');
+    }
+    url.pathname = '/';
+    window.location.href = url.toString();
 });
 
 document.getElementById('add-contact').addEventListener('submit', (e) => {

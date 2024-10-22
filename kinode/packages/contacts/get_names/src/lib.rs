@@ -1,4 +1,4 @@
-use crate::kinode::process::contacts::{Capabilities as ContactsCapability, Request as ContactsRequest, Response as ContactsResponse};
+use crate::kinode::process::contacts;
 use kinode_process_lib::{call_init, println, Address, Capability, Request};
 
 wit_bindgen::generate!({
@@ -14,20 +14,20 @@ fn init(our: Address) {
 
     let read_names_cap = Capability::new(
         &contacts_process,
-        serde_json::to_string(&ContactsCapability::ReadNameOnly).unwrap()
+        serde_json::to_string(&contacts::Capability::ReadNameOnly).unwrap(),
     );
 
     let Ok(Ok(response)) = Request::to(&contacts_process)
-        .body(ContactsRequest::GetNames)
+        .body(contacts::Request::GetNames)
         .capabilities(vec![read_names_cap])
-        .send_and_await_response(5) else
-    {
-        println!("did not receive expected Response from contacts:contacts:sys");
+        .send_and_await_response(5)
+    else {
+        println!("did not receive expected response from contacts:contacts:sys");
         return;
     };
 
-    let Ok(ContactsResponse::GetNames(names)) = response.body().try_into() else {
-        println!("did not receive GetNames resposne from contacts:contacts:sys");
+    let Ok(contacts::Response::GetNames(names)) = response.body().try_into() else {
+        println!("did not receive GetNames response from contacts:contacts:sys");
         return;
     };
 

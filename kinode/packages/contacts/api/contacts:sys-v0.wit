@@ -1,5 +1,5 @@
 interface contacts {
-    enum capabilities {
+    enum capability {
         read-name-only,
         read,
         add,
@@ -26,7 +26,7 @@ interface contacts {
         add-field,
         remove-contact,
         remove-field,
-        error(string),    // any failed request will receive this response
+        err(string),    // any failed request will receive this response
     }
 }
 

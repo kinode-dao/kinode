@@ -7,6 +7,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 
+wit_bindgen::generate!({
+    path: "target/wit",
+    world: "contacts-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
+});
+
 const ICON: &str = include_str!("icon");
 
 #[cfg(not(feature = "simulation-mode"))]
@@ -92,13 +99,6 @@ impl ContactsState {
     }
 }
 
-wit_bindgen::generate!({
-    path: "target/wit",
-    world: "contacts-sys-v0",
-    generate_unused_types: true,
-    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
-});
-
 call_init!(initialize);
 fn initialize(our: Address) {
     kiprintln!("started");
@@ -181,7 +181,7 @@ fn handle_request(
     } else {
         // if request is not from frontend, check that it has the required capabilities
         let (response, blob) = handle_contacts_request(state, kimap, body, Some(capabilities));
-        let mut response = Response::new().body(serde_json::to_vec(&response).unwrap());
+        let mut response = Response::new().body(response);
         if let Some(blob) = blob {
             response = response.blob(blob);
         }
@@ -208,7 +208,7 @@ fn handle_http_request(
         "POST" => {
             let blob = get_blob().unwrap();
             let (response, blob) = handle_contacts_request(state, kimap, blob.bytes(), None);
-            if let contacts::Response::Error(e) = response {
+            if let contacts::Response::Err(e) = response {
                 return (
                     http::server::HttpResponse::new(http::StatusCode::BAD_REQUEST)
                         .header("Content-Type", "application/json"),
@@ -246,7 +246,7 @@ fn handle_contacts_request(
 ) -> (contacts::Response, Option<LazyLoadBlob>) {
     let Ok(request) = serde_json::from_slice::<contacts::Request>(request_bytes) else {
         return (
-            contacts::Response::Error("Malformed request".to_string()),
+            contacts::Response::Err("Malformed request".to_string()),
             None,
         );
     };
@@ -256,22 +256,22 @@ fn handle_contacts_request(
         let required_capability = Capability::new(
             &state.our,
             serde_json::to_string(&match request {
-                contacts::Request::GetNames => contacts::Capabilities::ReadNameOnly,
+                contacts::Request::GetNames => contacts::Capability::ReadNameOnly,
                 contacts::Request::GetAllContacts | contacts::Request::GetContact(_) => {
-                    contacts::Capabilities::Read
+                    contacts::Capability::Read
                 }
                 contacts::Request::AddContact(_) | contacts::Request::AddField(_) => {
-                    contacts::Capabilities::Add
+                    contacts::Capability::Add
                 }
                 contacts::Request::RemoveContact(_) | contacts::Request::RemoveField(_) => {
-                    contacts::Capabilities::Remove
+                    contacts::Capability::Remove
                 }
             })
             .unwrap(),
         );
         if !capabilities.contains(&required_capability) {
             return (
-                contacts::Response::Error("Missing capability".to_string()),
+                contacts::Response::Err("Missing capability".to_string()),
                 None,
             );
         }
@@ -315,10 +315,7 @@ fn handle_contacts_request(
                 return (response, blob);
             }
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&value) else {
-                return (
-                    contacts::Response::Error("Malformed value".to_string()),
-                    None,
-                );
+                return (contacts::Response::Err("Malformed value".to_string()), None);
             };
             state.add_field(node, field, value);
             (contacts::Response::AddField, None)
@@ -346,7 +343,7 @@ fn invalid_node(
         None
     } else {
         Some((
-            contacts::Response::Error("Node name invalid or does not exist".to_string()),
+            contacts::Response::Err("Node name invalid or does not exist".to_string()),
             None,
         ))
     }

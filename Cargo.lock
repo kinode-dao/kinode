@@ -1868,6 +1868,7 @@ name = "contacts"
 version = "0.1.0"
 dependencies = [
  "kinode_process_lib 0.9.4",
+ "process_macros",
  "serde",
  "serde_json",
  "wit-bindgen",
