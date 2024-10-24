@@ -1476,9 +1476,9 @@ dependencies = [
 
 [[package]]
 name = "kinode_process_lib"
-version = "0.9.1"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76c5b69ac1fc0cb457c7714ceb8c0a5bdbee4ee00b837f9f16ea711e902bdfe8"
+checksum = "c257733fdc158b8223e43d92baeac02fe3d6a06b62953dbaea36e989f861b138"
 dependencies = [
  "alloy",
  "alloy-primitives",

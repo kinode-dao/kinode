@@ -9,7 +9,6 @@ use crate::{
     },
     state::{MirrorCheck, PackageState, State},
 };
-
 use kinode_process_lib::{
     http::{self, server, Method, StatusCode},
     println, Address, LazyLoadBlob, PackageId, Request, SendError, SendErrorKind,
@@ -22,7 +21,7 @@ const ICON: &str = include_str!("icon");
 /// Bind static and dynamic HTTP paths for the app store,
 /// bind to our WS updates path, and add icon and widget to homepage.
 pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
-    let config = server::HttpBindingConfig::default();
+    let config = server::HttpBindingConfig::default().secure_subdomain(true);
 
     for path in [
         "/apps",          // all on-chain apps
@@ -44,12 +43,19 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
             .bind_http_path(path, config.clone())
             .expect("failed to bind http path");
     }
+
+    // bind /apps path at base domain, in addition to secure subdomain,
+    // so that widget can access it
+    http_server
+        .bind_http_path("/apps-public", config.clone().secure_subdomain(false))
+        .expect("failed to bind http path");
+
     http_server
         .serve_ui(&our, "ui", vec!["/"], config.clone())
         .expect("failed to serve static UI");
 
     http_server
-        .bind_ws_path("/", server::WsBindingConfig::default())
+        .secure_bind_ws_path("/")
         .expect("failed to bind ws path");
 
     // add ourselves to the homepage
@@ -136,7 +142,7 @@ fn make_widget() -> String {
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             function fetchApps() {
-                fetch('/main:app_store:sys/apps', { credentials: 'include' })
+                fetch('/main:app_store:sys/apps-public', { credentials: 'include' })
                     .then(response => response.json())
                     .then(data => {
                         const container = document.getElementById('latest-apps');
@@ -255,7 +261,7 @@ fn serve_paths(
 
     match bound_path {
         // GET all apps
-        "/apps" => {
+        "/apps" | "/apps-public" => {
             let resp = Request::to(("our", "chain", "app_store", "sys"))
                 .body(serde_json::to_vec(&ChainRequests::GetApps)?)
                 .send_and_await_response(5)??;
