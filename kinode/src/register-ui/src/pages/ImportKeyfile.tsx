@@ -7,13 +7,13 @@ import {
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
 import { sha256, toBytes } from "viem";
+import { redirectToHomepage } from "../utils/redirect-to-homepage";
 
 interface ImportKeyfileProps extends PageProps { }
 
 function ImportKeyfile({
   pw,
   setPw,
-  appSizeOnLoad,
 }: ImportKeyfileProps) {
 
   const [localKey, setLocalKey] = useState<Uint8Array | null>(null);
@@ -70,24 +70,15 @@ function ImportKeyfile({
           if (result.status > 399) {
             throw new Error("Incorrect password");
           }
+          redirectToHomepage();
 
-          const interval = setInterval(async () => {
-            const res = await fetch("/", { credentials: 'include' });
-            if (
-              res.status < 300 &&
-              Number(res.headers.get("content-length")) !== appSizeOnLoad
-            ) {
-              clearInterval(interval);
-              window.location.replace("/");
-            }
-          }, 2000);
         }
       } catch {
         window.alert("An error occurred, please try again.");
         setLoading(false);
       }
     },
-    [localKey, pw, keyErrs, appSizeOnLoad]
+    [localKey, pw, keyErrs]
   );
 
   return (
