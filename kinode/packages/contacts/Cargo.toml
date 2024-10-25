@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = [
+    "contacts",
+    "get_names",
+]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true

@@ -78,7 +78,7 @@ name = "alias"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1012,7 +1012,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -1383,7 +1383,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "url",
@@ -1592,7 +1592,7 @@ name = "cat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1656,7 +1656,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -1675,7 +1675,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "pleco",
  "serde",
  "serde_json",
@@ -1862,6 +1862,17 @@ name = "constant_time_eq"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7144d30dcf0fafbce74250a3963025d8d52177934239851c917d29f1df280c2"
+
+[[package]]
+name = "contacts"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib 0.9.4 (git+https://github.com/kinode-dao/process_lib?rev=088a549)",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
+]
 
 [[package]]
 name = "convert_case"
@@ -2433,7 +2444,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "serde",
  "serde_json",
@@ -2445,7 +2456,7 @@ name = "downloads"
 version = "0.5.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -2482,7 +2493,7 @@ dependencies = [
 name = "echo"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "wit-bindgen",
 ]
 
@@ -2721,7 +2732,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -2875,7 +2886,7 @@ dependencies = [
 name = "get_block"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2940,7 +2951,7 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 name = "globe"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "url",
@@ -3067,7 +3078,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 name = "help"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "wit-bindgen",
 ]
 
@@ -3096,7 +3107,7 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 name = "hi"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3129,7 +3140,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3444,7 +3455,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "serde",
  "serde_json",
@@ -3621,7 +3632,7 @@ name = "kfetch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3633,7 +3644,7 @@ name = "kill"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3750,6 +3761,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "kinode_process_lib"
+version = "0.9.4"
+source = "git+https://github.com/kinode-dao/process_lib?rev=088a549#088a5497257eada697e0869d6a8d7e9ef5e620f6"
+dependencies = [
+ "alloy 0.1.4",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http 1.1.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "kit"
 version = "0.7.7"
 source = "git+https://github.com/kinode-dao/kit?rev=9c94b4b#9c94b4bd3f2a9dc2eabb2da9bc2ef5e6eb07af9d"
@@ -3794,7 +3827,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "hex",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -4023,7 +4056,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex",
  "serde",
  "serde_json",
@@ -4193,7 +4226,7 @@ dependencies = [
 name = "net_diagnostics"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4519,7 +4552,7 @@ dependencies = [
 name = "peer"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4529,7 +4562,7 @@ dependencies = [
 name = "peers"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -5570,7 +5603,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -5788,7 +5821,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -5965,7 +5998,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -5979,7 +6012,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "serde",
  "serde_json",
@@ -6236,7 +6269,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6567,7 +6600,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.9.4",
+ "kinode_process_lib 0.9.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "serde",
  "serde_json",
