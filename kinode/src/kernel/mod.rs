@@ -798,7 +798,7 @@ pub async fn kernel(
                     // networking capabilities.
                     let Some(persisted) = process_map.get(&kernel_message.target.process) else {
                         t::Printout::new(
-                            0,
+                            2,
                             format!(
                                 "event loop: got {} from network for {}, but process does not exist{}",
                                 match kernel_message.message {
