@@ -136,6 +136,8 @@ td {
 .app-icon {
     width: 64px;
     height: 64px;
+    min-width: 64px;
+    min-height: 64px;
     object-fit: cover;
     border-radius: var(--border-radius);
 }
@@ -346,6 +348,13 @@ td {
     gap: 1rem;
     overflow-x: auto;
     padding-bottom: 1rem;
+}
+
+.home-button {
+    min-width: 48px;
+    min-height: 48px;
+    width: 48px;
+    height: 48px;
 }
 
 .app-screenshot {
