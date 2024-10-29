@@ -67,8 +67,11 @@ pub async fn load_state(
     }
 
     let old_processes_to_remove: Vec<ProcessId> = [
-        "chain:app_store:sys", "downloads:app_store:sys", "main:app_store:sys",
-        "blog:kino_updates:sys", "globe:kino_updates:sys",
+        "chain:app_store:sys",
+        "downloads:app_store:sys",
+        "main:app_store:sys",
+        "blog:kino_updates:sys",
+        "globe:kino_updates:sys",
         "kns_indexer:kns_indexer:sys",
     ]
     .iter()
