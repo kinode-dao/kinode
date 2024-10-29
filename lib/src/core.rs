@@ -32,6 +32,30 @@ lazy_static::lazy_static! {
 pub type Context = Vec<u8>;
 pub type NodeId = String; // KNS domain name
 
+/// Determine if the given `input` string is Kimap-safe or not.
+/// A Kimap-safe string contains only alphanumeric characters, `-`, and `.`.
+/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
+/// `is_kimap_safe()` allows `.`s.
+/// Use `is_kimap_safe_no_dots()` to disallow `.`s.
+pub fn is_kimap_safe(input: &str, no_dots: bool) -> bool {
+    let expression = r"^[a-zA-Z0-9\-.]+$";
+    let re = regex::Regex::new(expression).unwrap();
+    re.is_match(input)
+}
+
+/// Determine if the given `input` string is Kimap-safe or not.
+/// A Kimap-safe string contains only alphanumeric characters, `-`, and `.`.
+/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
+/// `is_kimap_safe_no_dots()` disallows `.`s.
+/// Use `is_kimap_safe()` to allow `.`s.
+pub fn is_kimap_safe_no_dots(input: &str) -> bool {
+    let expression = r"^[a-zA-Z0-9\-]+$";
+    let re = regex::Regex::new(expression).unwrap();
+    re.is_match(input)
+}
+
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
 /// the process name can be a random number, or a name chosen by the user.
@@ -135,13 +159,22 @@ impl std::str::FromStr for ProcessId {
         if process_name.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
+        if !is_kimap_safe_no_dots(&process_name) {
+            return Err(ProcessIdParseError::ProcessNameNotKimapSafe(process_name));
+        }
         let package_name = segments[1].to_string();
         if package_name.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
+        if !is_kimap_safe_no_dots(&package_name) {
+            return Err(ProcessIdParseError::PackageNameNotKimapSafe(package_name));
+        }
         let publisher_node = segments[2].to_string();
         if publisher_node.is_empty() {
             return Err(ProcessIdParseError::MissingField);
+        }
+        if !is_kimap_safe(&publisher_node) {
+            return Err(ProcessIdParseError::PublisherNodeNotKimapSafe(publisher_node));
         }
         Ok(ProcessId {
             process_name,
@@ -223,9 +256,15 @@ impl std::str::FromStr for PackageId {
         if package_name.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
+        if !is_kimap_safe_no_dots(&package_name) {
+            return Err(ProcessIdParseError::PackageNameNotKimapSafe(package_name));
+        }
         let publisher_node = segments[1].to_string();
         if publisher_node.is_empty() {
             return Err(ProcessIdParseError::MissingField);
+        }
+        if !is_kimap_safe(&publisher_node) {
+            return Err(ProcessIdParseError::PublisherNodeNotKimapSafe(publisher_node));
         }
 
         Ok(PackageId {
@@ -243,32 +282,20 @@ impl std::fmt::Display for PackageId {
 
 /// Errors that can occur when parsing a [`ProcessId`] from a string.
 /// Also used for [`PackageId`].
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum ProcessIdParseError {
+    #[error("Too many colons")]
     TooManyColons,
+    #[error("Missing field")]
     MissingField,
-}
-
-impl std::fmt::Display for ProcessIdParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ProcessIdParseError::TooManyColons => "Too many colons",
-                ProcessIdParseError::MissingField => "Missing field",
-            }
-        )
-    }
-}
-
-impl std::error::Error for ProcessIdParseError {
-    fn description(&self) -> &str {
-        match self {
-            ProcessIdParseError::TooManyColons => "Too many colons",
-            ProcessIdParseError::MissingField => "Missing field",
-        }
-    }
+    #[error("Process name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    ProcessNameNotKimapSafe(String),
+    #[error("Package name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    PackageNameNotKimapSafe(String),
+    #[error("Node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    NodeNotKimapSafe(String),
+    #[error("Publisher node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    PublisherNodeNotKimapSafe(String),
 }
 
 /// An address is a node ID and a process ID, to uniquely globally identify a process.
@@ -344,6 +371,9 @@ impl std::str::FromStr for Address {
         if node.is_empty() {
             return Err(AddressParseError::MissingNodeId);
         }
+        if !is_kimap_safe(&node) {
+            return Err(AddressParseError::NodeNotKimapSafe(node));
+        }
 
         // split the rest on ':' and ensure there are exactly three ':'
         let segments: Vec<&str> = parts[1].split(':').collect();
@@ -356,13 +386,22 @@ impl std::str::FromStr for Address {
         if process_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
+        if !is_kimap_safe_no_dots(&process_name) {
+            return Err(AddressParseError::ProcessNameNotKimapSafe(process_name));
+        }
         let package_name = segments[1].to_string();
         if package_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
+        if !is_kimap_safe_no_dots(&package_name) {
+            return Err(AddressParseError::PackageNameNotKimapSafe(package_name));
+        }
         let publisher_node = segments[2].to_string();
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
+        }
+        if !is_kimap_safe(&publisher_node) {
+            return Err(AddressParseError::PublisherNodeNotKimapSafe(publisher_node));
         }
 
         Ok(Address {
@@ -418,29 +457,22 @@ impl std::fmt::Display for Address {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum AddressParseError {
+    #[error("Too many `@` chars in ProcessId string")]
     TooManyAts,
+    #[error("Too many colons in ProcessId string")]
     TooManyColons,
+    #[error("Node ID missing")]
     MissingNodeId,
+    #[error("Missing field in ProcessId string")]
     MissingField,
-}
-
-impl std::fmt::Display for AddressParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
-impl std::error::Error for AddressParseError {
-    fn description(&self) -> &str {
-        match self {
-            AddressParseError::TooManyAts => "Too many '@' chars in ProcessId string",
-            AddressParseError::TooManyColons => "Too many colons in ProcessId string",
-            AddressParseError::MissingNodeId => "Node ID missing",
-            AddressParseError::MissingField => "Missing field in ProcessId string",
-        }
-    }
+    #[error("Process name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    ProcessNameNotKimapSafe(String),
+    #[error("Package name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    PackageNameNotKimapSafe(String),
+    #[error("Publisher node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    PublisherNodeNotKimapSafe(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

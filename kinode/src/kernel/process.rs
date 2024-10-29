@@ -15,7 +15,6 @@ use wasmtime_wasi::{
     pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
 };
 
-const SECS_BETWEEN_RESTARTS: u64 = 60;
 const STACK_TRACE_SIZE: usize = 5000;
 
 pub struct ProcessContext {
@@ -393,120 +392,90 @@ pub async fn make_process_loop(
         }
         // if restart, tell ourselves to init the app again, with same capabilities
         t::OnExit::Restart => {
-            if process_start_time.elapsed().as_secs() <= SECS_BETWEEN_RESTARTS {
-                // we are in danger of spamming infinite restart loop: don't restart
-                t::KernelMessage::builder()
-                    .id(rand::random())
-                    .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .target((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .message(t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }))
-                    .build()
-                    .unwrap()
-                    .send(&send_to_loop)
-                    .await;
-                t::Printout::new(
-                    0,
-                    format!(
-                        "process {} had OnExit behavior Restart but is in danger of infinite Restart loop: killing",
-                        metadata.our.process,
-                    ),
-                )
-                .send(&send_to_terminal)
+            // we are out of danger of spamming infinite restart loop: restart
+            // get caps before killing
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            caps_oracle
+                .send(t::CapMessage::GetAll {
+                    on: metadata.our.process.clone(),
+                    responder: tx,
+                })
+                .await?;
+            let initial_capabilities = rx
+                .await?
+                .iter()
+                .map(|c| t::Capability {
+                    issuer: c.0.issuer.clone(),
+                    params: c.0.params.clone(),
+                })
+                .collect();
+            // kill, **without** revoking capabilities from others!
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: Some("no-revoke".to_string()),
+                    capabilities: vec![],
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
                 .await;
-            } else {
-                // we are out of danger of spamming infinite restart loop: restart
-                // get caps before killing
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                caps_oracle
-                    .send(t::CapMessage::GetAll {
-                        on: metadata.our.process.clone(),
-                        responder: tx,
+            // then re-initialize with same capabilities
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                        id: metadata.our.process.clone(),
+                        wasm_bytes_handle: metadata.wasm_bytes_handle,
+                        wit_version: metadata.wit_version,
+                        on_exit: metadata.on_exit,
+                        initial_capabilities,
+                        public: metadata.public,
                     })
-                    .await?;
-                let initial_capabilities = rx
-                    .await?
-                    .iter()
-                    .map(|c| t::Capability {
-                        issuer: c.0.issuer.clone(),
-                        params: c.0.params.clone(),
-                    })
-                    .collect();
-                // kill, **without** revoking capabilities from others!
-                t::KernelMessage::builder()
-                    .id(rand::random())
-                    .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .target((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .message(t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: Some("no-revoke".to_string()),
-                        capabilities: vec![],
-                    }))
-                    .build()
-                    .unwrap()
-                    .send(&send_to_loop)
-                    .await;
-                // then re-initialize with same capabilities
-                t::KernelMessage::builder()
-                    .id(rand::random())
-                    .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .target((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .message(t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
-                            id: metadata.our.process.clone(),
-                            wasm_bytes_handle: metadata.wasm_bytes_handle,
-                            wit_version: metadata.wit_version,
-                            on_exit: metadata.on_exit,
-                            initial_capabilities,
-                            public: metadata.public,
-                        })
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }))
-                    .lazy_load_blob(Some(t::LazyLoadBlob {
-                        mime: None,
-                        bytes: wasm_bytes,
-                    }))
-                    .build()
-                    .unwrap()
-                    .send(&send_to_loop)
-                    .await;
-                // then run
-                t::KernelMessage::builder()
-                    .id(rand::random())
-                    .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .target((&our.node, KERNEL_PROCESS_ID.clone()))
-                    .message(t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::RunProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }))
-                    .build()
-                    .unwrap()
-                    .send(&send_to_loop)
-                    .await;
-            }
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }))
+                .lazy_load_blob(Some(t::LazyLoadBlob {
+                    mime: None,
+                    bytes: wasm_bytes,
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
+                .await;
+            // then run
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::RunProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
+                .await;
+
         }
         // if requests, fire them
         t::OnExit::Requests(requests) => {
