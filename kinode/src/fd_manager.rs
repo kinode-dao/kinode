@@ -278,7 +278,7 @@ async fn handle_message(
                     .send(send_to_loop)
                     .await;
             }
-            Some(format!("fd_manager: {:?}", state))
+            Some(format!("fd-manager: {:?}", state))
         }
         FdManagerRequest::GetProcessFdLimit(process) => {
             if expects_response.is_some() {

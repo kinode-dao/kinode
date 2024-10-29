@@ -14,21 +14,21 @@ lib = { path = "lib" }
 [workspace]
 members = [
     "lib", "kinode",
-    "kinode/packages/app_store/app_store", "kinode/packages/app_store/ft_worker",
-    "kinode/packages/app_store/download", "kinode/packages/app_store/install", "kinode/packages/app_store/uninstall", "kinode/packages/app_store/downloads", "kinode/packages/app_store/chain",
+    "kinode/packages/app-store/app-store", "kinode/packages/app-store/ft-worker",
+    "kinode/packages/app-store/download", "kinode/packages/app-store/install", "kinode/packages/app-store/uninstall", "kinode/packages/app-store/downloads", "kinode/packages/app-store/chain",
     "kinode/packages/chess/chess",
     "kinode/packages/contacts/contacts",
     "kinode/packages/homepage/homepage",
-    "kinode/packages/kino_updates/blog", "kinode/packages/kino_updates/globe",
-    "kinode/packages/kns_indexer/kns_indexer", "kinode/packages/kns_indexer/get_block", "kinode/packages/kns_indexer/state",
+    "kinode/packages/kino-updates/blog", "kinode/packages/kino-updates/globe",
+    "kinode/packages/kns-indexer/kns-indexer", "kinode/packages/kns-indexer/get-block", "kinode/packages/kns-indexer/state",
     "kinode/packages/settings/settings",
     "kinode/packages/terminal/terminal",
     "kinode/packages/terminal/alias", "kinode/packages/terminal/cat", "kinode/packages/terminal/echo",
     "kinode/packages/terminal/help", "kinode/packages/terminal/hi", "kinode/packages/terminal/kfetch",
     "kinode/packages/terminal/kill", "kinode/packages/terminal/m", "kinode/packages/terminal/top",
-    "kinode/packages/terminal/net_diagnostics", "kinode/packages/terminal/peer", "kinode/packages/terminal/peers",
+    "kinode/packages/terminal/net-diagnostics", "kinode/packages/terminal/peer", "kinode/packages/terminal/peers",
     "kinode/packages/tester/tester",
-    "scripts/build_packages",
+    "scripts/build-packages",
 ]
 default-members = ["lib"]
 resolver = "2"

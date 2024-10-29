@@ -76,7 +76,7 @@
         "request_networking": true,
         "wit_version": 0
     },
-    "namehash_to_name.wasm": {
+    "namehash-to-name.wasm": {
         "root": false,
         "public": false,
         "request_networking": false,
@@ -88,7 +88,7 @@
         ],
         "wit_version": 0
     },
-    "net_diagnostics.wasm": {
+    "net-diagnostics.wasm": {
         "root": false,
         "public": false,
         "request_networking": false,

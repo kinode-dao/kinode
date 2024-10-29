@@ -234,7 +234,7 @@ pub async fn http_server(
         )
         .await;
     }
-    Err(anyhow::anyhow!("http_server: http_server loop exited"))
+    Err(anyhow::anyhow!("http-server: http-server loop exited"))
 }
 
 /// The 'server' part. Listens on a port assigned by runtime, and handles
@@ -251,7 +251,7 @@ async fn serve(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
-    Printout::new(0, format!("http_server: running on port {our_port}"))
+    Printout::new(0, format!("http-server: running on port {our_port}"))
         .send(&print_tx)
         .await;
 
@@ -397,7 +397,7 @@ async fn ws_handler(
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
-    Printout::new(2, format!("http_server: ws request for {original_path}"))
+    Printout::new(2, format!("http-server: ws request for {original_path}"))
         .send(&print_tx)
         .await;
 
@@ -494,7 +494,7 @@ async fn http_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
     let base_path = original_path.split('/').skip(1).next().unwrap_or("");
-    Printout::new(2, format!("http_server: request for {original_path}"))
+    Printout::new(2, format!("http-server: request for {original_path}"))
         .send(&print_tx)
         .await;
 
@@ -512,7 +512,7 @@ async fn http_handler(
     } else {
         Printout::new(
             2,
-            format!("http_server: no route found for {original_path}"),
+            format!("http-server: no route found for {original_path}"),
         )
         .send(&print_tx)
         .await;
@@ -751,7 +751,7 @@ async fn handle_rpc_message(
 
     Printout::new(
         2,
-        format!("http_server: passing on RPC message to {target_process}"),
+        format!("http-server: passing on RPC message to {target_process}"),
     )
     .send(&print_tx)
     .await;
@@ -924,7 +924,7 @@ async fn maintain_websocket(
 
     Printout::new(
         2,
-        format!("http_server: new websocket connection to {app} with id {channel_id}"),
+        format!("http-server: new websocket connection to {app} with id {channel_id}"),
     )
     .send(&print_tx)
     .await;
@@ -998,7 +998,7 @@ async fn maintain_websocket(
     }
     Printout::new(
         2,
-        format!("http_server: websocket connection {channel_id} closed"),
+        format!("http-server: websocket connection {channel_id} closed"),
     )
     .send(&print_tx)
     .await;
@@ -1092,7 +1092,7 @@ async fn handle_app_message(
         }) => {
             let Ok(message) = serde_json::from_slice::<HttpServerAction>(body) else {
                 println!(
-                    "http_server: got malformed request from {}: {:?}\r",
+                    "http-server: got malformed request from {}: {:?}\r",
                     km.source, body
                 );
                 send_action_response(

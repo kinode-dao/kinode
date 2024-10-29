@@ -66,6 +66,18 @@ pub async fn load_state(
         }
     }
 
+    let old_processes_to_remove: Vec<ProcessId> = [
+        "chain:app_store:sys", "downloads:app_store:sys", "main:app_store:sys",
+        "blog:kino_updates:sys", "globe:kino_updates:sys",
+        "kns_indexer:kns_indexer:sys",
+    ]
+    .iter()
+    .map(|s| s.parse().unwrap())
+    .collect();
+    for process in old_processes_to_remove {
+        process_map.remove(&process);
+    }
+
     // bootstrap the distro processes into the node. TODO:
     // once we manage userspace sys packages onchain, stop
     // doing this and allow node operator to manually or auto-update
@@ -491,7 +503,6 @@ async fn bootstrap(
         let package_manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&package_manifest)
             .expect("fs: manifest parse error");
 
-        // for each process-entry in manifest.json:
         for mut entry in package_manifest {
             let wasm_bytes = &mut Vec::new();
             let mut file_path = entry.process_wasm_path.to_string();
@@ -646,7 +657,6 @@ async fn bootstrap(
 
         let package_publisher = package_metadata.properties.publisher.as_str();
 
-        // for each process-entry in manifest.json:
         for entry in package_manifest {
             let our_process_id = format!(
                 "{}:{}:{}",

@@ -70,7 +70,7 @@ pub async fn networking(
         pending_passthroughs,
         active_passthroughs,
         max_passthroughs,
-        fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
+        fds_limit: 10, // small hardcoded limit that gets replaced by fd-manager soon after boot
     };
 
     let mut tasks = JoinSet::<anyhow::Result<()>>::new();
@@ -171,7 +171,7 @@ async fn handle_local_request(
 ) {
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Err(_e) => {
-            // only other possible message is from fd_manager -- handle here
+            // only other possible message is from fd-manager -- handle here
             handle_fdman(km, request_body, data).await;
         }
         Ok(NetAction::ConnectionRequest(_)) => {

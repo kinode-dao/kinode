@@ -8,9 +8,9 @@ use thiserror::Error;
 
 lazy_static::lazy_static! {
     pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
-    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd_manager"), "distro", "sys");
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd-manager"), "distro", "sys");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http-client"), "distro", "sys");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http-server"), "distro", "sys");
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
     pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
     pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys");
@@ -2080,15 +2080,15 @@ impl KnsUpdate {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FdManagerRequest {
-    /// other process -> fd_manager
-    /// must send this to fd_manager to get an initial fds_limit
+    /// other process -> fd-manager
+    /// must send this to fd-manager to get an initial fds_limit
     RequestFdsLimit,
-    /// other process -> fd_manager
-    /// send this to notify fd_manager that limit was hit,
+    /// other process -> fd-manager
+    /// send this to notify fd-manager that limit was hit,
     /// which may or may not be reacted to
     FdsLimitHit,
 
-    /// fd_manager -> other process
+    /// fd-manager -> other process
     FdsLimit(u64),
 
     /// administrative
@@ -2120,10 +2120,10 @@ pub struct FdsLimit {
 
 #[derive(Debug, Error)]
 pub enum FdManagerError {
-    #[error("fd_manager: received a non-Request message")]
+    #[error("fd-manager: received a non-Request message")]
     NotARequest,
-    #[error("fd_manager: received a non-FdManangerRequest")]
+    #[error("fd-manager: received a non-FdManangerRequest")]
     BadRequest,
-    #[error("fd_manager: received a FdManagerRequest::FdsLimit, but I am the one who sets limits")]
+    #[error("fd-manager: received a FdManagerRequest::FdsLimit, but I am the one who sets limits")]
     FdManagerWasSentLimit,
 }

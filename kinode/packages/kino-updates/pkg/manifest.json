@@ -1,0 +1,31 @@
+[
+    {
+        "process_name": "blog",
+        "process_wasm_path": "/blog.wasm",
+        "on_exit": "Restart",
+        "request_networking": false,
+        "request_capabilities": [
+            "homepage:homepage:sys",
+            "http-client:distro:sys"
+        ],
+        "grant_capabilities": [
+            "http-client:distro:sys",
+            "timer:distro:sys"
+        ],
+        "public": false
+    },
+    {
+        "process_name": "globe",
+        "process_wasm_path": "/globe.wasm",
+        "on_exit": "None",
+        "request_networking": false,
+        "request_capabilities": [
+            "homepage:homepage:sys",
+            "http-client:distro:sys"
+        ],
+        "grant_capabilities": [
+            "http-client:distro:sys"
+        ],
+        "public": false
+    }
+]

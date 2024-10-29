@@ -1,0 +1,18 @@
+{
+    "name": "App Store",
+    "description": "A package manager + app store.",
+    "image": "",
+    "properties": {
+        "package_name": "app-store",
+        "publisher": "sys",
+        "current_version": "0.3.1",
+        "mirrors": [],
+        "code_hashes": {
+            "0.3.1": ""
+        },
+        "wit_version": 0,
+        "dependencies": []
+    },
+    "external_url": "https://kinode.org",
+    "animation_url": ""
+}
