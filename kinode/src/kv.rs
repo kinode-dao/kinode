@@ -417,8 +417,8 @@ async fn check_caps(
     request: &KvRequest,
 ) -> Result<(), KvError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    let src_package_id = PackageId::new(source.process.package(), source.process.publisher())
-        .unwrap();
+    let src_package_id =
+        PackageId::new(source.process.package(), source.process.publisher()).unwrap();
 
     match &request.action {
         KvAction::Delete { .. }

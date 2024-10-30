@@ -92,7 +92,11 @@ impl<'a> Deserialize<'a> for ProcessId {
 /// are defined here.
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
-    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Result<Self, AddressParseError> {
+    pub fn new(
+        process_name: Option<&str>,
+        package_name: &str,
+        publisher_node: &str,
+    ) -> Result<Self, AddressParseError> {
         let process_name = process_name
             .unwrap_or(&rand::random::<u64>().to_string())
             .to_string();
@@ -299,7 +303,8 @@ impl Address {
     pub fn try_new<T, U>(node: T, process: U) -> Result<Self, AddressParseError>
     where
         T: Into<String>,
-        U: TryInto<ProcessId>, <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
+        U: TryInto<ProcessId>,
+        <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
     {
         let node = node.into();
         if !is_kimap_safe(&node) {
@@ -318,41 +323,36 @@ impl Address {
                 //  We can't `match` it for similar reasons.
                 //  So we Debug it as below
                 let e = format!("{e:?}");
-                return Err(
-                    if e == "Too many `@` chars: only one allowed" {
-                        AddressParseError::TooManyAts
-                    } else if e == "Too many colons in ProcessId string" {
-                        AddressParseError::TooManyColons
-                    } else if e == "Node ID missing" {
-                        AddressParseError::MissingNodeId
-                    } else if e == "Missing field in ProcessId string" {
-                        AddressParseError::MissingField
-                    } else if e.starts_with("Process name") {
-                        let e: Vec<&str> = e.split_whitespace().collect();
-                        let s = if e.len() > 2 { e[2] } else { "" };
-                        AddressParseError::ProcessNameNotKimapSafe(s.to_string())
-                    } else if e.starts_with("Package name") {
-                        let e: Vec<&str> = e.split_whitespace().collect();
-                        let s = if e.len() > 2 { e[2] } else { "" };
-                        AddressParseError::PackageNameNotKimapSafe(s.to_string())
-                    } else if e.starts_with("Node ") {
-                        let e: Vec<&str> = e.split_whitespace().collect();
-                        let s = if e.len() > 1 { e[1] } else { "" };
-                        AddressParseError::NodeNotKimapSafe(s.to_string())
-                    } else if e.starts_with("Publisher node") {
-                        let e: Vec<&str> = e.split_whitespace().collect();
-                        let s = if e.len() > 2 { e[2] } else { "" };
-                        AddressParseError::PublisherNodeNotKimapSafe(s.to_string())
-                    } else {
-                        AddressParseError::Other(e)
-                    }
-                );
+                return Err(if e == "Too many `@` chars: only one allowed" {
+                    AddressParseError::TooManyAts
+                } else if e == "Too many colons in ProcessId string" {
+                    AddressParseError::TooManyColons
+                } else if e == "Node ID missing" {
+                    AddressParseError::MissingNodeId
+                } else if e == "Missing field in ProcessId string" {
+                    AddressParseError::MissingField
+                } else if e.starts_with("Process name") {
+                    let e: Vec<&str> = e.split_whitespace().collect();
+                    let s = if e.len() > 2 { e[2] } else { "" };
+                    AddressParseError::ProcessNameNotKimapSafe(s.to_string())
+                } else if e.starts_with("Package name") {
+                    let e: Vec<&str> = e.split_whitespace().collect();
+                    let s = if e.len() > 2 { e[2] } else { "" };
+                    AddressParseError::PackageNameNotKimapSafe(s.to_string())
+                } else if e.starts_with("Node ") {
+                    let e: Vec<&str> = e.split_whitespace().collect();
+                    let s = if e.len() > 1 { e[1] } else { "" };
+                    AddressParseError::NodeNotKimapSafe(s.to_string())
+                } else if e.starts_with("Publisher node") {
+                    let e: Vec<&str> = e.split_whitespace().collect();
+                    let s = if e.len() > 2 { e[2] } else { "" };
+                    AddressParseError::PublisherNodeNotKimapSafe(s.to_string())
+                } else {
+                    AddressParseError::Other(e)
+                });
             }
         };
-        Ok(Address {
-            node,
-            process,
-        })
+        Ok(Address { node, process })
     }
     pub fn en_wit(&self) -> wit::Address {
         wit::Address {
@@ -463,7 +463,8 @@ impl TryFrom<(&str, &str, &str, &str)> for Address {
 impl<T, U> TryFrom<(T, U)> for Address
 where
     T: Into<String>,
-    U: TryInto<ProcessId>, <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
+    U: TryInto<ProcessId>,
+    <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
 {
     type Error = AddressParseError;
 

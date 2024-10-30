@@ -775,7 +775,8 @@ async fn handle_rpc_message(
         KernelMessage {
             id,
             source: Address::try_new(&*our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
-            target: Address::try_new(rpc_message.node.unwrap_or(our.to_string()), target_process).unwrap(),
+            target: Address::try_new(rpc_message.node.unwrap_or(our.to_string()), target_process)
+                .unwrap(),
             rsvp,
             message: Message::Request(Request {
                 inherit: false,

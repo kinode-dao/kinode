@@ -472,7 +472,6 @@ pub async fn make_process_loop(
                 .unwrap()
                 .send(&send_to_loop)
                 .await;
-
         }
         // if requests, fire them
         t::OnExit::Requests(requests) => {
