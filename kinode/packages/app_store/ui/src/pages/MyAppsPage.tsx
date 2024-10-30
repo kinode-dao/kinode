@@ -3,15 +3,41 @@ import { FaFolder, FaFile, FaChevronLeft, FaSync, FaRocket, FaSpinner, FaCheck, 
 import useAppsStore from "../store";
 import { DownloadItem, PackageManifest, PackageState } from "../types/Apps";
 
-export default function MyDownloadsPage() {
-    const { fetchDownloads, fetchDownloadsForApp, startMirroring, stopMirroring, installApp, removeDownload, fetchInstalled, installed } = useAppsStore();
+// Core packages that cannot be uninstalled
+const CORE_PACKAGES = [
+    "app_store:sys",
+    "contacts:sys",
+    "kino_updates:sys",
+    "terminal:sys",
+    "chess:sys",
+    "kns_indexer:sys",
+    "settings:sys",
+    "homepage:sys"
+];
+
+export default function MyAppsPage() {
+    const {
+        fetchDownloads,
+        fetchDownloadsForApp,
+        startMirroring,
+        stopMirroring,
+        installApp,
+        removeDownload,
+        fetchInstalled,
+        installed,
+        uninstallApp
+    } = useAppsStore();
+
     const [currentPath, setCurrentPath] = useState<string[]>([]);
     const [items, setItems] = useState<DownloadItem[]>([]);
     const [isInstalling, setIsInstalling] = useState(false);
+    const [isUninstalling, setIsUninstalling] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showCapApproval, setShowCapApproval] = useState(false);
     const [manifest, setManifest] = useState<PackageManifest | null>(null);
     const [selectedItem, setSelectedItem] = useState<DownloadItem | null>(null);
+    const [showUninstallConfirm, setShowUninstallConfirm] = useState(false);
+    const [appToUninstall, setAppToUninstall] = useState<any>(null);
 
     useEffect(() => {
         loadItems();
@@ -32,6 +58,35 @@ export default function MyDownloadsPage() {
             setError(`Error loading items: ${error instanceof Error ? error.message : String(error)}`);
         }
     };
+
+    const initiateUninstall = (app: any) => {
+        const packageId = `${app.package_id.package_name}:${app.package_id.publisher_node}`;
+        if (CORE_PACKAGES.includes(packageId)) {
+            setError("Cannot uninstall core system packages");
+            return;
+        }
+        setAppToUninstall(app);
+        setShowUninstallConfirm(true);
+    };
+
+    const handleUninstall = async () => {
+        if (!appToUninstall) return;
+        setIsUninstalling(true);
+        const packageId = `${appToUninstall.package_id.package_name}:${appToUninstall.package_id.publisher_node}`;
+        try {
+            await uninstallApp(packageId);
+            await fetchInstalled();
+            await loadItems();
+            setShowUninstallConfirm(false);
+            setAppToUninstall(null);
+        } catch (error) {
+            console.error('Uninstallation failed:', error);
+            setError(`Uninstallation failed: ${error instanceof Error ? error.message : String(error)}`);
+        } finally {
+            setIsUninstalling(false);
+        }
+    };
+
 
     const navigateToItem = (item: DownloadItem) => {
         if (item.Dir) {
@@ -85,7 +140,6 @@ export default function MyDownloadsPage() {
 
             if (!versionHash) throw new Error('Invalid file name format');
 
-            // Construct packageId by combining currentPath and remaining parts of the filename
             const packageId = [...currentPath, ...parts].join(':');
 
             await installApp(packageId, versionHash);
@@ -121,8 +175,48 @@ export default function MyDownloadsPage() {
 
     return (
         <div className="downloads-page">
-            <h2>Downloads</h2>
+            <h2>My Apps</h2>
+
+            {/* Installed Apps Section */}
             <div className="file-explorer">
+                <h3>Installed Apps</h3>
+                <table className="downloads-table">
+                    <thead>
+                        <tr>
+                            <th>Package ID</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {Object.values(installed).map((app) => {
+                            const packageId = `${app.package_id.package_name}:${app.package_id.publisher_node}`;
+                            const isCore = CORE_PACKAGES.includes(packageId);
+                            return (
+                                <tr key={packageId}>
+                                    <td>{packageId}</td>
+                                    <td>
+                                        {isCore ? (
+                                            <span className="core-package">Core Package</span>
+                                        ) : (
+                                            <button
+                                                onClick={() => initiateUninstall(app)}
+                                                disabled={isUninstalling}
+                                            >
+                                                {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />}
+                                                Uninstall
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Downloads Section */}
+            <div className="file-explorer">
+                <h3>Downloads</h3>
                 <div className="path-navigation">
                     {currentPath.length > 0 && (
                         <button onClick={navigateUp} className="navigate-up">
@@ -172,7 +266,8 @@ export default function MyDownloadsPage() {
                                         )}
                                         {isFile && isInstalled && (
                                             <FaCheck className="installed" />
-                                        )}                                    </td>
+                                        )}
+                                    </td>
                                 </tr>
                             );
                         })}
@@ -185,6 +280,45 @@ export default function MyDownloadsPage() {
                     {error}
                 </div>
             )}
+
+            {/* Uninstall Confirmation Modal */}
+            {showUninstallConfirm && appToUninstall && (
+                <div className="cap-approval-popup">
+                    <div className="cap-approval-content">
+                        <h3>Confirm Uninstall</h3>
+                        <div className="warning-message">
+                            Are you sure you want to uninstall this app?
+                        </div>
+                        <div className="package-info">
+                            <strong>Package ID:</strong> {`${appToUninstall.package_id.package_name}:${appToUninstall.package_id.publisher_node}`}
+                        </div>
+                        {appToUninstall.metadata?.name && (
+                            <div className="package-info">
+                                <strong>Name:</strong> {appToUninstall.metadata.name}
+                            </div>
+                        )}
+                        <div className="approval-buttons">
+                            <button
+                                onClick={() => {
+                                    setShowUninstallConfirm(false);
+                                    setAppToUninstall(null);
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleUninstall}
+                                disabled={isUninstalling}
+                                className="danger"
+                            >
+                                {isUninstalling ? <FaSpinner className="fa-spin" /> : 'Confirm Uninstall'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
 
             {showCapApproval && manifest && (
                 <div className="cap-approval-popup">
