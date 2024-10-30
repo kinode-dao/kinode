@@ -119,7 +119,7 @@ pub async fn sqlite(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
-    let our = Address::new(our_node.as_str(), SQLITE_PROCESS_ID.clone())?;
+    let our = Address::try_new(our_node.as_str(), SQLITE_PROCESS_ID.clone())?;
 
     crate::fd_manager::send_fd_manager_request_fds_limit(&our, &send_to_loop).await;
 

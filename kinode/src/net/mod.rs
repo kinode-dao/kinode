@@ -42,7 +42,7 @@ pub async fn networking(
     max_passthroughs: u64,
 ) -> anyhow::Result<()> {
     crate::fd_manager::send_fd_manager_request_fds_limit(
-        &Address::new(&our.name, NET_PROCESS_ID.clone())?,
+        &Address::try_new(&our.name, NET_PROCESS_ID.clone())?,
         &kernel_message_tx,
     )
     .await;

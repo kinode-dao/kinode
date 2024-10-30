@@ -183,12 +183,6 @@ impl std::str::FromStr for ProcessId {
     }
 }
 
-//impl From<(&str, &str, &str)> for ProcessId {
-//    fn from(input: (&str, &str, &str)) -> Self {
-//        ProcessId::new(Some(input.0), input.1, input.2).unwrap()
-//    }
-//}
-
 impl TryFrom<(&str, &str, &str)> for ProcessId {
     type Error = AddressParseError;
 
@@ -302,35 +296,14 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn new<T, U>(node: T, process: U) -> Result<Self, AddressParseError>
-    where
-        T: Into<String>,
-        U: Into<ProcessId>,
-    {
-        let node = node.into();
-        if !is_kimap_safe(&node) {
-            return Err(AddressParseError::NodeNotKimapSafe(node));
-        }
-        let process = process.into();
-        Ok(Address {
-            node,
-            process,
-        })
-    }
     pub fn try_new<T, U>(node: T, process: U) -> Result<Self, AddressParseError>
     where
         T: Into<String>,
         U: TryInto<ProcessId>, <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
-        //U: TryInto<ProcessId, Error = AddressParseError>,
-        //U: TryInto<ProcessId, Error = <U as TryInto<ProcessId>>::Error>,
-        //U: TryInto<ProcessId, Error = <V as TryInto<ProcessId>>::Error>,
-        //<T as TryInto<Address>>::Error
     {
         let node = node.into();
         if !is_kimap_safe(&node) {
             return Err(AddressParseError::NodeNotKimapSafe(node));
-            //return Err(U::Error::NodeNotKimapSafe(node));
-            //return Err(<U as TryInto<ProcessId>>::Error::NodeNotKimapSafe(node));
         }
         let process = match process.try_into() {
             Ok(p) => p,
@@ -376,27 +349,6 @@ impl Address {
                 );
             }
         };
-        //let process = process.try_into()?;
-        //let Ok(process) = process.try_into() else {
-        //    return Err(AddressParseError::TooManyColons);
-        //};
-        //let process = process.try_into().map_err(|e| {
-        //    let e = format!("{e}");
-        //    //match e {
-        //    //    //std::convert::Infallible => unreachable!(),
-        //    //    AddressParseError::TooManyColons => AddressParseError::TooManyColons,
-        //    //    AddressParseError::MissingField => AddressParseError::MissingField,
-        //    //    AddressParseError::ProcessNameNotKimapSafe(s) => AddressParseError::ProcessNameNotKimapSafe(s),
-        //    //    AddressParseError::PackageNameNotKimapSafe(s) => AddressParseError::PackageNameNotKimapSafe(s),
-        //    //    AddressParseError::PublisherNodeNotKimapSafe(s) => AddressParseError::PublisherNodeNotKimapSafe(s),
-
-        //    //    //<U as TryInto<ProcessId>>::Error::TooManyColons => AddressParseError::TooManyColons,
-        //    //    //<U as TryInto<ProcessId>>::Error::MissingField => AddressParseError::MissingField,
-        //    //    //<U as TryInto<ProcessId>>::Error::ProcessNameNotKimapSafe(s) => AddressParseError::ProcessNameNotKimapSafe(s),
-        //    //    //<U as TryInto<ProcessId>>::Error::PackageNameNotKimapSafe(s) => AddressParseError::PackageNameNotKimapSafe(s),
-        //    //    //<U as TryInto<ProcessId>>::Error::PublisherNodeNotKimapSafe(s) => AddressParseError::PublisherNodeNotKimapSafe(s),
-        //    //}
-        //})?;
         Ok(Address {
             node,
             process,
@@ -508,41 +460,17 @@ impl TryFrom<(&str, &str, &str, &str)> for Address {
     }
 }
 
-//impl<T> From<(T, ProcessId)> for Address
-//where
-//    T: Into<String>,
-//{
-//    fn from(input: (T, ProcessId)) -> Self {
-//        Address::new(input.0, input.1).unwrap()
-//    }
-//}
-
 impl<T, U> TryFrom<(T, U)> for Address
 where
     T: Into<String>,
-    //U: TryInto<ProcessId, Error = AddressParseError>,
-    //U: TryInto<ProcessId>,
     U: TryInto<ProcessId>, <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
 {
-    //type Error = U::Error;
-    //type Error = <U as TryInto<ProcessId>>::Error;
     type Error = AddressParseError;
 
     fn try_from(input: (T, U)) -> Result<Self, Self::Error> {
         Address::try_new(input.0, input.1)
     }
 }
-
-//impl<T, U> From<(T, U)> for Address
-//where
-//    T: Into<String>,
-//    U: Into<ProcessId>,
-//{
-//
-//    fn from(input: (T, U)) -> Self {
-//        Address::new(input.0, input.1).unwrap()
-//    }
-//}
 
 impl std::fmt::Display for Address {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

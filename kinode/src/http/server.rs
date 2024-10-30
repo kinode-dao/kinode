@@ -774,8 +774,8 @@ async fn handle_rpc_message(
     Ok((
         KernelMessage {
             id,
-            source: Address::new(&*our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
-            target: Address::new(rpc_message.node.unwrap_or(our.to_string()), target_process).unwrap(),
+            source: Address::try_new(&*our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
+            target: Address::try_new(rpc_message.node.unwrap_or(our.to_string()), target_process).unwrap(),
             rsvp,
             message: Message::Request(Request {
                 inherit: false,
@@ -802,7 +802,7 @@ fn make_websocket_message(
 ) -> Option<KernelMessage> {
     Some(KernelMessage {
         id: rand::random(),
-        source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
+        source: Address::try_new(&our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
         target: Address::try_new(&our, &app).unwrap(),
         rsvp: None,
         message: Message::Request(Request {
@@ -897,8 +897,8 @@ fn make_ext_websocket_message(
 
     Some(KernelMessage {
         id,
-        source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
-        target: Address::new(&our, app).unwrap(),
+        source: Address::try_new(&our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
+        target: Address::try_new(&our, app).unwrap(),
         rsvp: None,
         message,
         lazy_load_blob: blob,
