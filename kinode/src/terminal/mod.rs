@@ -837,8 +837,8 @@ async fn handle_key_event(
                     command_history.add(command.to_string());
                     KernelMessage::builder()
                         .id(rand::random())
-                        .source((our.name.as_str(), &TERMINAL_PROCESS_ID.clone()))?
-                        .target((our.name.as_str(), &TERMINAL_PROCESS_ID.clone()))?
+                        .source((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))?
+                        .target((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))?
                         .message(Message::Request(Request {
                             inherit: false,
                             expects_response: None,

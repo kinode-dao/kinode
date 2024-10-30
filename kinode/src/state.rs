@@ -153,7 +153,7 @@ pub async fn state_sender(
                 {
                     KernelMessage::builder()
                         .id(km_id)
-                        .source((our_node.as_str(), &STATE_PROCESS_ID.clone()))
+                        .source((our_node.as_str(), STATE_PROCESS_ID.clone()))
                         .unwrap()
                         .target(km_rsvp)
                         .unwrap()
@@ -290,7 +290,7 @@ async fn handle_request(
     if let Some(target) = rsvp.or_else(|| expects_response.map(|_| source)) {
         KernelMessage::builder()
             .id(id)
-            .source((our_node, &STATE_PROCESS_ID.clone()))
+            .source((our_node, STATE_PROCESS_ID.clone()))
             .unwrap()
             .target(target)
             .unwrap()

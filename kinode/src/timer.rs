@@ -82,7 +82,7 @@ pub async fn timer_service(
                         if timer_millis == 0 {
                             KernelMessage::builder()
                                 .id(km.id)
-                                .source((our.as_str(), &TIMER_PROCESS_ID.clone()))?
+                                .source((our.as_str(), TIMER_PROCESS_ID.clone()))?
                                 .target(km.rsvp.unwrap_or(km.source))?
                                 .message(Message::Response((
                                     Response {
@@ -116,7 +116,7 @@ pub async fn timer_service(
                 for (id, addr) in timers {
                     KernelMessage::builder()
                         .id(id)
-                        .source((our.as_str(), &TIMER_PROCESS_ID.clone()))?
+                        .source((our.as_str(), TIMER_PROCESS_ID.clone()))?
                         .target(addr)?
                         .message(Message::Response((
                             Response {

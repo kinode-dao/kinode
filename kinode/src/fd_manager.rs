@@ -340,7 +340,7 @@ async fn send_all_fds_limits(our_node: &str, send_to_loop: &MessageSender, state
     for (process_id, limit) in &state.fds_limits {
         KernelMessage::builder()
             .id(rand::random())
-            .source((our_node, &FD_MANAGER_PROCESS_ID.clone()))
+            .source((our_node, FD_MANAGER_PROCESS_ID.clone()))
             .unwrap()
             .target((our_node, process_id))
             .unwrap()
@@ -386,7 +386,6 @@ async fn send_to_fd_manager(our: &Address, message: Message, send_to_loop: &Mess
         .source(our.clone())
         .unwrap()
         .target((our.node.clone(), FD_MANAGER_PROCESS_ID.clone()))
-        //.target((our.node.clone(), &FD_MANAGER_PROCESS_ID.clone()))
         .unwrap()
         .message(message)
         .build()

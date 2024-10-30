@@ -482,9 +482,9 @@ async fn main() {
                 Ok(()) => {
                     KernelMessage::builder()
                         .id(rand::random())
-                        .source((our.name.as_str(), &KERNEL_PROCESS_ID.clone()))
+                        .source((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
                         .unwrap()
-                        .target((our.name.as_str(), &KERNEL_PROCESS_ID.clone()))
+                        .target((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
                         .unwrap()
                         .message(Message::Request(Request {
                             inherit: false,

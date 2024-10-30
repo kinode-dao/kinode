@@ -44,9 +44,9 @@ enum ProcessSender {
 async fn persist_state(send_to_loop: &t::MessageSender, process_map: &t::ProcessMap) {
     t::KernelMessage::builder()
         .id(rand::random())
-        .source(("our", &KERNEL_PROCESS_ID.clone()))
+        .source(("our", KERNEL_PROCESS_ID.clone()))
         .unwrap()
-        .target(("our", &STATE_PROCESS_ID.clone()))
+        .target(("our", STATE_PROCESS_ID.clone()))
         .unwrap()
         .message(t::Message::Request(t::Request {
             inherit: false,
@@ -112,7 +112,7 @@ async fn handle_kernel_request(
                 sender
                     .send(Ok(t::KernelMessage::builder()
                         .id(km.id)
-                        .source((our_name, &KERNEL_PROCESS_ID.clone()))
+                        .source((our_name, KERNEL_PROCESS_ID.clone()))
                         .unwrap()
                         .target((our_name, process_id))
                         .unwrap()
@@ -148,7 +148,7 @@ async fn handle_kernel_request(
                 // fire an error back
                 t::KernelMessage::builder()
                     .id(km.id)
-                    .source((our_name, &KERNEL_PROCESS_ID.clone()))
+                    .source((our_name, KERNEL_PROCESS_ID.clone()))
                     .unwrap()
                     .target(km.rsvp.unwrap_or(km.source))
                     .unwrap()
@@ -268,7 +268,7 @@ async fn handle_kernel_request(
             };
             t::KernelMessage::builder()
                 .id(km.id)
-                .source(("our", &KERNEL_PROCESS_ID.clone()))
+                .source(("our", KERNEL_PROCESS_ID.clone()))
                 .unwrap()
                 .target(km.rsvp.unwrap_or(km.source))
                 .unwrap()
@@ -324,7 +324,7 @@ async fn handle_kernel_request(
                     if let Ok(()) = process_sender
                         .send(Ok(t::KernelMessage::builder()
                             .id(rand::random())
-                            .source((our_name, &KERNEL_PROCESS_ID.clone()))
+                            .source((our_name, KERNEL_PROCESS_ID.clone()))
                             .unwrap()
                             .target((our_name, &process_id))
                             .unwrap()
@@ -351,7 +351,7 @@ async fn handle_kernel_request(
                 };
             t::KernelMessage::builder()
                 .id(km.id)
-                .source(("our", &KERNEL_PROCESS_ID.clone()))
+                .source(("our", KERNEL_PROCESS_ID.clone()))
                 .unwrap()
                 .target(km.rsvp.unwrap_or(km.source))
                 .unwrap()
@@ -410,7 +410,7 @@ async fn handle_kernel_request(
                 .await;
             t::KernelMessage::builder()
                 .id(km.id)
-                .source(("our", &KERNEL_PROCESS_ID.clone()))
+                .source(("our", KERNEL_PROCESS_ID.clone()))
                 .unwrap()
                 .target(km.rsvp.unwrap_or(km.source))
                 .unwrap()
@@ -450,7 +450,7 @@ async fn handle_kernel_request(
             };
             t::KernelMessage::builder()
                 .id(km.id)
-                .source(("our", &KERNEL_PROCESS_ID.clone()))
+                .source(("our", KERNEL_PROCESS_ID.clone()))
                 .unwrap()
                 .target(km.rsvp.unwrap_or(km.source))
                 .unwrap()
@@ -689,8 +689,8 @@ pub async fn kernel(
     // to turn it on
     t::KernelMessage::builder()
         .id(rand::random())
-        .source((&our.name, &KERNEL_PROCESS_ID.clone()))?
-        .target((&our.name, &KERNEL_PROCESS_ID.clone()))?
+        .source((&our.name, KERNEL_PROCESS_ID.clone()))?
+        .target((&our.name, KERNEL_PROCESS_ID.clone()))?
         .message(t::Message::Request(t::Request {
             inherit: true,
             expects_response: None,
@@ -706,7 +706,7 @@ pub async fn kernel(
     // sending hard coded pki entries into networking for bootstrapped rpc
     t::KernelMessage::builder()
         .id(rand::random())
-        .source((&our.name, &KERNEL_PROCESS_ID.clone()))?
+        .source((&our.name, KERNEL_PROCESS_ID.clone()))?
         .target((our.name.as_str(), "net", "distro", "sys"))?
         .message(t::Message::Request(t::Request {
             inherit: false,
@@ -791,7 +791,7 @@ pub async fn kernel(
                         continue;
                     };
                     if !proc.capabilities.contains_key(
-                        &t::Capability::new((&our.name, &KERNEL_PROCESS_ID.clone()), "\"network\"")?
+                        &t::Capability::new((&our.name, KERNEL_PROCESS_ID.clone()), "\"network\"")?
                     ) {
                         // capabilities are not correct! skip this message.
                         t::Printout::new(
@@ -832,7 +832,7 @@ pub async fn kernel(
                         continue;
                     };
                     if !persisted.capabilities.contains_key(
-                        &t::Capability::new((&our.name, &KERNEL_PROCESS_ID.clone()), "\"network\"")?
+                        &t::Capability::new((&our.name, KERNEL_PROCESS_ID.clone()), "\"network\"")?
                     ) {
                         // capabilities are not correct! skip this message.
                         t::Printout::new(
@@ -868,7 +868,7 @@ pub async fn kernel(
                         };
                         if !persisted_target.public
                         && !persisted_source.capabilities.contains_key(
-                            &t::Capability::messaging((&our.name, &kernel_message.target.process.clone()))?
+                            &t::Capability::messaging((&our.name, &kernel_message.target.process))?
                         ) {
                             // capabilities are not correct! skip this message.
                             t::Printout::new(
