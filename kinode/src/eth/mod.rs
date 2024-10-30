@@ -1126,7 +1126,7 @@ async fn check_for_root_cap(
     caps_oracle
         .send(CapMessage::Has {
             on: process.clone(),
-            cap: Capability::new((our, ETH_PROCESS_ID.clone()), "{\"root\":true}"),
+            cap: Capability::new((our, &ETH_PROCESS_ID.clone()), "{\"root\":true}").unwrap(),
             responder: send_cap_bool,
         })
         .await

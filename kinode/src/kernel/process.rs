@@ -261,9 +261,6 @@ pub async fn make_process_loop(
         }
     }
 
-    // used to avoid infinite Restart loops
-    let process_start_time = std::time::Instant::now();
-
     // now that we've received the run message, we can send the pre-boot queue
     for message in pre_boot_queue {
         send_to_process.send(message).await?;
@@ -373,8 +370,8 @@ pub async fn make_process_loop(
         t::OnExit::None => {
             t::KernelMessage::builder()
                 .id(rand::random())
-                .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .source((&our.node, &KERNEL_PROCESS_ID.clone()))?
+                .target((&our.node, &KERNEL_PROCESS_ID.clone()))?
                 .message(t::Message::Request(t::Request {
                     inherit: false,
                     expects_response: None,
@@ -412,8 +409,8 @@ pub async fn make_process_loop(
             // kill, **without** revoking capabilities from others!
             t::KernelMessage::builder()
                 .id(rand::random())
-                .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .source((&our.node, &KERNEL_PROCESS_ID.clone()))?
+                .target((&our.node, &KERNEL_PROCESS_ID.clone()))?
                 .message(t::Message::Request(t::Request {
                     inherit: false,
                     expects_response: None,
@@ -431,8 +428,8 @@ pub async fn make_process_loop(
             // then re-initialize with same capabilities
             t::KernelMessage::builder()
                 .id(rand::random())
-                .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .source((&our.node, &KERNEL_PROCESS_ID.clone()))?
+                .target((&our.node, &KERNEL_PROCESS_ID.clone()))?
                 .message(t::Message::Request(t::Request {
                     inherit: false,
                     expects_response: None,
@@ -459,8 +456,8 @@ pub async fn make_process_loop(
             // then run
             t::KernelMessage::builder()
                 .id(rand::random())
-                .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .source((&our.node, &KERNEL_PROCESS_ID.clone()))?
+                .target((&our.node, &KERNEL_PROCESS_ID.clone()))?
                 .message(t::Message::Request(t::Request {
                     inherit: false,
                     expects_response: None,
@@ -483,8 +480,8 @@ pub async fn make_process_loop(
                 request.expects_response = None;
                 t::KernelMessage::builder()
                     .id(rand::random())
-                    .source(metadata.our.clone())
-                    .target(address)
+                    .source(metadata.our.clone())?
+                    .target(address)?
                     .message(t::Message::Request(request))
                     .lazy_load_blob(blob)
                     .build()
@@ -494,8 +491,8 @@ pub async fn make_process_loop(
             }
             t::KernelMessage::builder()
                 .id(rand::random())
-                .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .source((&our.node, &KERNEL_PROCESS_ID.clone()))?
+                .target((&our.node, &KERNEL_PROCESS_ID.clone()))?
                 .message(t::Message::Request(t::Request {
                     inherit: false,
                     expects_response: None,

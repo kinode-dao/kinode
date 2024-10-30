@@ -42,7 +42,7 @@ pub async fn networking(
     max_passthroughs: u64,
 ) -> anyhow::Result<()> {
     crate::fd_manager::send_fd_manager_request_fds_limit(
-        &Address::new(&our.name, NET_PROCESS_ID.clone()),
+        &Address::new(&our.name, NET_PROCESS_ID.clone())?,
         &kernel_message_tx,
     )
     .await;
@@ -311,7 +311,9 @@ async fn handle_local_request(
             KernelMessage::builder()
                 .id(km.id)
                 .source((ext.our.name.as_str(), "net", "distro", "sys"))
+                .unwrap()
                 .target(km.rsvp.as_ref().unwrap_or(&km.source).clone())
+                .unwrap()
                 .message(lib::core::Message::Response((
                     lib::core::Response {
                         inherit: false,

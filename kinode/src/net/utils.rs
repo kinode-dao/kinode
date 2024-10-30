@@ -162,7 +162,9 @@ pub async fn create_passthrough(
         KernelMessage::builder()
             .id(rand::random())
             .source((ext.our.name.as_str(), "net", "distro", "sys"))
+            .unwrap()
             .target((target_id.name.as_str(), "net", "distro", "sys"))
+            .unwrap()
             .message(Message::Request(Request {
                 inherit: false,
                 expects_response: Some(5),
@@ -411,7 +413,9 @@ pub async fn parse_hello_message(
     KernelMessage::builder()
         .id(km.id)
         .source((our.name.as_str(), "net", "distro", "sys"))
+        .unwrap()
         .target(km.rsvp.as_ref().unwrap_or(&km.source).clone())
+        .unwrap()
         .message(Message::Response((
             Response {
                 inherit: false,

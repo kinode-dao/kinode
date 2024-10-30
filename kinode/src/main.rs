@@ -259,55 +259,55 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http-server"), "distro", "sys"),
+            ProcessId::new(Some("http-server"), "distro", "sys").unwrap(),
             http_server_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("http-client"), "distro", "sys"),
+            ProcessId::new(Some("http-client"), "distro", "sys").unwrap(),
             http_client_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("timer"), "distro", "sys"),
+            ProcessId::new(Some("timer"), "distro", "sys").unwrap(),
             timer_service_sender,
             None,
             true,
         ),
         (
-            ProcessId::new(Some("eth"), "distro", "sys"),
+            ProcessId::new(Some("eth"), "distro", "sys").unwrap(),
             eth_provider_sender,
             Some(eth_net_error_sender),
             false,
         ),
         (
-            ProcessId::new(Some("vfs"), "distro", "sys"),
+            ProcessId::new(Some("vfs"), "distro", "sys").unwrap(),
             vfs_message_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("state"), "distro", "sys"),
+            ProcessId::new(Some("state"), "distro", "sys").unwrap(),
             state_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("kv"), "distro", "sys"),
+            ProcessId::new(Some("kv"), "distro", "sys").unwrap(),
             kv_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("sqlite"), "distro", "sys"),
+            ProcessId::new(Some("sqlite"), "distro", "sys").unwrap(),
             sqlite_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("fd-manager"), "distro", "sys"),
+            ProcessId::new(Some("fd-manager"), "distro", "sys").unwrap(),
             fd_manager_sender,
             None,
             false,
@@ -482,8 +482,10 @@ async fn main() {
                 Ok(()) => {
                     KernelMessage::builder()
                         .id(rand::random())
-                        .source((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
-                        .target((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .source((our.name.as_str(), &KERNEL_PROCESS_ID.clone()))
+                        .unwrap()
+                        .target((our.name.as_str(), &KERNEL_PROCESS_ID.clone()))
+                        .unwrap()
                         .message(Message::Request(Request {
                             inherit: false,
                             expects_response: None,

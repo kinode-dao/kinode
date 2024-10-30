@@ -114,7 +114,7 @@ impl Peers {
                 .clone();
             self.remove(&oldest).await;
             crate::fd_manager::send_fd_manager_hit_fds_limit(
-                &Address::new("our", NET_PROCESS_ID.clone()),
+                &Address::new("our", NET_PROCESS_ID.clone()).unwrap(),
                 &self.send_to_loop,
             )
             .await;
@@ -135,7 +135,7 @@ impl Peers {
             self.remove(&peer.identity.name).await;
         }
         crate::fd_manager::send_fd_manager_hit_fds_limit(
-            &Address::new("our", NET_PROCESS_ID.clone()),
+            &Address::new("our", NET_PROCESS_ID.clone()).unwrap(),
             &self.send_to_loop,
         )
         .await;

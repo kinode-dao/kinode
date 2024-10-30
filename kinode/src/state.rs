@@ -153,8 +153,10 @@ pub async fn state_sender(
                 {
                     KernelMessage::builder()
                         .id(km_id)
-                        .source((our_node.as_str(), STATE_PROCESS_ID.clone()))
+                        .source((our_node.as_str(), &STATE_PROCESS_ID.clone()))
+                        .unwrap()
                         .target(km_rsvp)
+                        .unwrap()
                         .message(Message::Response((
                             Response {
                                 inherit: false,
@@ -288,8 +290,10 @@ async fn handle_request(
     if let Some(target) = rsvp.or_else(|| expects_response.map(|_| source)) {
         KernelMessage::builder()
             .id(id)
-            .source((our_node, STATE_PROCESS_ID.clone()))
+            .source((our_node, &STATE_PROCESS_ID.clone()))
+            .unwrap()
             .target(target)
+            .unwrap()
             .message(Message::Response((
                 Response {
                     inherit: false,
@@ -333,7 +337,7 @@ async fn bootstrap(
     let k_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("kernel"), "distro", "sys"),
+            process: ProcessId::new(Some("kernel"), "distro", "sys")?,
         },
         params: "\"messaging\"".into(),
     };
@@ -342,7 +346,7 @@ async fn bootstrap(
     let n_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("net"), "distro", "sys"),
+            process: ProcessId::new(Some("net"), "distro", "sys")?,
         },
         params: "\"messaging\"".into(),
     };
@@ -370,7 +374,7 @@ async fn bootstrap(
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
     let current_kernel = process_map
-        .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
+        .entry(ProcessId::new(Some("kernel"), "distro", "sys")?)
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
@@ -380,7 +384,7 @@ async fn bootstrap(
         });
     current_kernel.capabilities.extend(runtime_caps.clone());
     let current_net = process_map
-        .entry(ProcessId::new(Some("net"), "distro", "sys"))
+        .entry(ProcessId::new(Some("net"), "distro", "sys")?)
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
@@ -610,7 +614,7 @@ async fn bootstrap(
                 Some(&entry.process_name),
                 package_name,
                 package_publisher,
-            )) {
+            )?) {
                 std::collections::hash_map::Entry::Occupied(p) => {
                     let p = p.into_mut();
                     p.wasm_bytes_handle = wasm_bytes_handle.clone();

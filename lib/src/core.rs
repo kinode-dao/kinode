@@ -7,18 +7,18 @@ use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
-    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
-    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd-manager"), "distro", "sys");
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http-client"), "distro", "sys");
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http-server"), "distro", "sys");
-    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
-    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
-    pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys");
-    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
-    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
-    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys");
-    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys");
-    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys");
+    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys").unwrap();
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd-manager"), "distro", "sys").unwrap();
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http-client"), "distro", "sys").unwrap();
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http-server"), "distro", "sys").unwrap();
+    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys").unwrap();
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys").unwrap();
+    pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys").unwrap();
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys").unwrap();
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys").unwrap();
+    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys").unwrap();
+    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys").unwrap();
+    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys").unwrap();
 }
 
 //
@@ -38,7 +38,7 @@ pub type NodeId = String; // KNS domain name
 /// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
 /// `is_kimap_safe()` allows `.`s.
 /// Use `is_kimap_safe_no_dots()` to disallow `.`s.
-pub fn is_kimap_safe(input: &str, no_dots: bool) -> bool {
+pub fn is_kimap_safe(input: &str) -> bool {
     let expression = r"^[a-zA-Z0-9\-.]+$";
     let re = regex::Regex::new(expression).unwrap();
     re.is_match(input)
@@ -92,14 +92,26 @@ impl<'a> Deserialize<'a> for ProcessId {
 /// are defined here.
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
-    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
-        ProcessId {
-            process_name: process_name
-                .unwrap_or(&rand::random::<u64>().to_string())
-                .into(),
-            package_name: package_name.into(),
-            publisher_node: publisher_node.into(),
+    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Result<Self, ProcessIdParseError> {
+        let process_name = process_name
+            .unwrap_or(&rand::random::<u64>().to_string())
+            .to_string();
+        if !is_kimap_safe_no_dots(&process_name) {
+            return Err(ProcessIdParseError::ProcessNameNotKimapSafe(process_name));
         }
+        let package_name = package_name.to_string();
+        if !is_kimap_safe_no_dots(&package_name) {
+            return Err(ProcessIdParseError::ProcessNameNotKimapSafe(process_name));
+        }
+        let publisher_node = publisher_node.to_string();
+        if !is_kimap_safe(&publisher_node) {
+            return Err(ProcessIdParseError::PublisherNodeNotKimapSafe(publisher_node));
+        }
+        Ok(ProcessId {
+            process_name,
+            package_name,
+            publisher_node,
+        })
     }
     pub fn process(&self) -> &str {
         &self.process_name
@@ -148,45 +160,48 @@ impl std::str::FromStr for ProcessId {
     /// to create a `ProcessId`, not all strings without colons are actually
     /// valid usernames, which the `publisher_node` field of a `ProcessId` will
     /// always in practice be.
-    fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
         let segments: Vec<&str> = input.split(':').collect();
         if segments.len() < 3 {
             return Err(ProcessIdParseError::MissingField);
         } else if segments.len() > 3 {
             return Err(ProcessIdParseError::TooManyColons);
         }
-        let process_name = segments[0].to_string();
+        let process_name = segments[0];
         if process_name.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
-        if !is_kimap_safe_no_dots(&process_name) {
-            return Err(ProcessIdParseError::ProcessNameNotKimapSafe(process_name));
-        }
-        let package_name = segments[1].to_string();
+        let package_name = segments[1];
         if package_name.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
-        if !is_kimap_safe_no_dots(&package_name) {
-            return Err(ProcessIdParseError::PackageNameNotKimapSafe(package_name));
-        }
-        let publisher_node = segments[2].to_string();
+        let publisher_node = segments[2];
         if publisher_node.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
-        if !is_kimap_safe(&publisher_node) {
-            return Err(ProcessIdParseError::PublisherNodeNotKimapSafe(publisher_node));
-        }
-        Ok(ProcessId {
-            process_name,
-            package_name,
-            publisher_node,
-        })
+        ProcessId::new(Some(process_name), package_name, publisher_node)
     }
 }
 
-impl From<(&str, &str, &str)> for ProcessId {
-    fn from(input: (&str, &str, &str)) -> Self {
+//impl From<(&str, &str, &str)> for ProcessId {
+//    fn from(input: (&str, &str, &str)) -> Self {
+//        ProcessId::new(Some(input.0), input.1, input.2).unwrap()
+//    }
+//}
+
+impl TryFrom<(&str, &str, &str)> for ProcessId {
+    type Error = ProcessIdParseError;
+
+    fn try_from(input: (&str, &str, &str)) -> Result<Self, Self::Error> {
         ProcessId::new(Some(input.0), input.1, input.2)
+    }
+}
+
+impl TryFrom<&ProcessId> for ProcessId {
+    type Error = ProcessIdParseError;
+
+    fn try_from(input: &ProcessId) -> Result<Self, Self::Error> {
+        Ok(input.clone())
     }
 }
 
@@ -221,11 +236,19 @@ pub struct PackageId {
 }
 
 impl PackageId {
-    pub fn new(package_name: &str, publisher_node: &str) -> Self {
-        PackageId {
-            package_name: package_name.into(),
-            publisher_node: publisher_node.into(),
+    pub fn new(package_name: &str, publisher_node: &str) -> Result<Self, ProcessIdParseError> {
+        let package_name = package_name.to_string();
+        if !is_kimap_safe_no_dots(&package_name) {
+            return Err(ProcessIdParseError::ProcessNameNotKimapSafe(package_name));
         }
+        let publisher_node = publisher_node.to_string();
+        if !is_kimap_safe(&publisher_node) {
+            return Err(ProcessIdParseError::PublisherNodeNotKimapSafe(publisher_node));
+        }
+        Ok(PackageId {
+            package_name,
+            publisher_node,
+        })
     }
     pub fn _package(&self) -> &str {
         &self.package_name
@@ -252,25 +275,15 @@ impl std::str::FromStr for PackageId {
         } else if segments.len() > 2 {
             return Err(ProcessIdParseError::TooManyColons);
         }
-        let package_name = segments[0].to_string();
+        let package_name = segments[0];
         if package_name.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
-        if !is_kimap_safe_no_dots(&package_name) {
-            return Err(ProcessIdParseError::PackageNameNotKimapSafe(package_name));
-        }
-        let publisher_node = segments[1].to_string();
+        let publisher_node = segments[1];
         if publisher_node.is_empty() {
             return Err(ProcessIdParseError::MissingField);
         }
-        if !is_kimap_safe(&publisher_node) {
-            return Err(ProcessIdParseError::PublisherNodeNotKimapSafe(publisher_node));
-        }
-
-        Ok(PackageId {
-            package_name,
-            publisher_node,
-        })
+        PackageId::new(package_name, publisher_node)
     }
 }
 
@@ -292,8 +305,6 @@ pub enum ProcessIdParseError {
     ProcessNameNotKimapSafe(String),
     #[error("Package name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
     PackageNameNotKimapSafe(String),
-    #[error("Node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
-    NodeNotKimapSafe(String),
     #[error("Publisher node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
     PublisherNodeNotKimapSafe(String),
 }
@@ -307,15 +318,43 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn new<T, U>(node: T, process: U) -> Address
+    pub fn new<T, U>(node: T, process: U) -> Result<Self, AddressParseError>
     where
         T: Into<String>,
         U: Into<ProcessId>,
     {
-        Address {
-            node: node.into(),
-            process: process.into(),
+        let node = node.into();
+        if !is_kimap_safe(&node) {
+            return Err(AddressParseError::NodeNotKimapSafe(node));
         }
+        let process = process.into();
+        Ok(Address {
+            node,
+            process,
+        })
+    }
+    pub fn try_new<T, U>(node: T, process: U) -> Result<Self, AddressParseError>
+    where
+        T: Into<String>,
+        U: TryInto<ProcessId, Error = ProcessIdParseError>,
+    {
+        let node = node.into();
+        if !is_kimap_safe(&node) {
+            return Err(AddressParseError::NodeNotKimapSafe(node));
+        }
+        let process = process.try_into().map_err(|e| {
+            match e {
+                ProcessIdParseError::TooManyColons => AddressParseError::TooManyColons,
+                ProcessIdParseError::MissingField => AddressParseError::MissingField,
+                ProcessIdParseError::ProcessNameNotKimapSafe(s) => AddressParseError::ProcessNameNotKimapSafe(s),
+                ProcessIdParseError::PackageNameNotKimapSafe(s) => AddressParseError::PackageNameNotKimapSafe(s),
+                ProcessIdParseError::PublisherNodeNotKimapSafe(s) => AddressParseError::PublisherNodeNotKimapSafe(s),
+            }
+        })?;
+        Ok(Address {
+            node,
+            process,
+        })
     }
     pub fn en_wit(&self) -> wit::Address {
         wit::Address {
@@ -367,12 +406,9 @@ impl std::str::FromStr for Address {
         } else if parts.len() > 2 {
             return Err(AddressParseError::TooManyAts);
         }
-        let node = parts[0].to_string();
+        let node = parts[0];
         if node.is_empty() {
             return Err(AddressParseError::MissingNodeId);
-        }
-        if !is_kimap_safe(&node) {
-            return Err(AddressParseError::NodeNotKimapSafe(node));
         }
 
         // split the rest on ':' and ensure there are exactly three ':'
@@ -382,36 +418,19 @@ impl std::str::FromStr for Address {
         } else if segments.len() > 3 {
             return Err(AddressParseError::TooManyColons);
         }
-        let process_name = segments[0].to_string();
+        let process_name = segments[0];
         if process_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        if !is_kimap_safe_no_dots(&process_name) {
-            return Err(AddressParseError::ProcessNameNotKimapSafe(process_name));
-        }
-        let package_name = segments[1].to_string();
+        let package_name = segments[1];
         if package_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        if !is_kimap_safe_no_dots(&package_name) {
-            return Err(AddressParseError::PackageNameNotKimapSafe(package_name));
-        }
-        let publisher_node = segments[2].to_string();
+        let publisher_node = segments[2];
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        if !is_kimap_safe(&publisher_node) {
-            return Err(AddressParseError::PublisherNodeNotKimapSafe(publisher_node));
-        }
-
-        Ok(Address {
-            node,
-            process: ProcessId {
-                process_name,
-                package_name,
-                publisher_node,
-            },
-        })
+        Address::try_new(node, (process_name, package_name, publisher_node))
     }
 }
 
@@ -435,21 +454,45 @@ impl<'a> Deserialize<'a> for Address {
     }
 }
 
-impl From<(&str, &str, &str, &str)> for Address {
-    fn from(input: (&str, &str, &str, &str)) -> Self {
-        Address::new(input.0, (input.1, input.2, input.3))
+impl TryFrom<(&str, &str, &str, &str)> for Address {
+    type Error = AddressParseError;
+
+    fn try_from(input: (&str, &str, &str, &str)) -> Result<Self, Self::Error> {
+        Address::try_new(input.0, (input.1, input.2, input.3))
     }
 }
 
-impl<T, U> From<(T, U)> for Address
+//impl<T> From<(T, ProcessId)> for Address
+//where
+//    T: Into<String>,
+//{
+//    fn from(input: (T, ProcessId)) -> Self {
+//        Address::new(input.0, input.1).unwrap()
+//    }
+//}
+
+impl<T, U> TryFrom<(T, U)> for Address
 where
     T: Into<String>,
-    U: Into<ProcessId>,
+    U: TryInto<ProcessId, Error = ProcessIdParseError>,
 {
-    fn from(input: (T, U)) -> Self {
-        Address::new(input.0, input.1)
+    type Error = AddressParseError;
+
+    fn try_from(input: (T, U)) -> Result<Self, Self::Error> {
+        Address::try_new(input.0, input.1)
     }
 }
+
+//impl<T, U> From<(T, U)> for Address
+//where
+//    T: Into<String>,
+//    U: Into<ProcessId>,
+//{
+//
+//    fn from(input: (T, U)) -> Self {
+//        Address::new(input.0, input.1).unwrap()
+//    }
+//}
 
 impl std::fmt::Display for Address {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -471,6 +514,8 @@ pub enum AddressParseError {
     ProcessNameNotKimapSafe(String),
     #[error("Package name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
     PackageNameNotKimapSafe(String),
+    #[error("Node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    NodeNotKimapSafe(String),
     #[error("Publisher node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
     PublisherNodeNotKimapSafe(String),
 }
@@ -531,25 +576,25 @@ impl Hash for Capability {
 }
 
 impl Capability {
-    pub fn new<T, U>(issuer: T, params: U) -> Self
+    pub fn new<T, U>(issuer: T, params: U) -> Result<Self, <T as TryInto<Address>>::Error>
     where
-        T: Into<Address>,
+        T: TryInto<Address>,
         U: Into<String>,
     {
-        Capability {
-            issuer: issuer.into(),
+        Ok(Capability {
+            issuer: issuer.try_into()?,
             params: params.into(),
-        }
+        })
     }
 
-    pub fn messaging<T>(issuer: T) -> Self
+    pub fn messaging<T>(issuer: T) -> Result<Self, <T as TryInto<Address>>::Error>
     where
-        T: Into<Address>,
+        T: TryInto<Address>,
     {
-        Capability {
-            issuer: issuer.into(),
+        Ok(Capability {
+            issuer: issuer.try_into()?,
             params: "\"messaging\"".into(),
-        }
+        })
     }
 }
 
@@ -1255,26 +1300,40 @@ pub struct KernelMessageBuilder {
     lazy_load_blob: Option<LazyLoadBlob>,
 }
 
+//impl std::ops::FromResidual<Result<std::convert::Infallible, AddressParseError>> for Result<KernelMessageBuilder, AddressParseError> {
+//    fn from_residual(residual: Result<std::convert::Infallible, AddressParseError>) -> Self {
+//        match residual {
+//            Ok(_) => unreachable!(), // Since Infallible can never occur
+//            Err(e) => Err(e), // Directly pass through the AddressParseError
+//        }
+//    }
+//}
+
 impl KernelMessageBuilder {
     pub fn id(mut self, id: u64) -> Self {
         self.id = id;
         self
     }
 
-    pub fn source<T>(mut self, source: T) -> Self
+    pub fn source<T>(mut self, source: T) -> Result<Self, <T as TryInto<Address>>::Error>
     where
-        T: Into<Address>,
+        T: TryInto<Address>,
     {
-        self.source = Some(source.into());
-        self
+        let source = match source.try_into() {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+        self.source = Some(source);
+        //self.source = Some(source.try_into()?);
+        Ok(self)
     }
 
-    pub fn target<T>(mut self, target: T) -> Self
+    pub fn target<T>(mut self, target: T) -> Result<Self, <T as TryInto<Address>>::Error>
     where
-        T: Into<Address>,
+        T: TryInto<Address>,
     {
-        self.target = Some(target.into());
-        self
+        self.target = Some(target.try_into()?);
+        Ok(self)
     }
 
     pub fn rsvp(mut self, rsvp: Rsvp) -> Self {

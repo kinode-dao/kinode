@@ -50,7 +50,7 @@ pub async fn vfs(
     let vfs_path = Arc::new(fs::canonicalize(&vfs_path).await?);
 
     let mut files = Files::new(
-        Address::new(our_node.as_str(), VFS_PROCESS_ID.clone()),
+        Address::try_new(our_node.as_str(), &VFS_PROCESS_ID.clone())?,
         send_to_loop,
     );
 
@@ -112,8 +112,10 @@ pub async fn vfs(
                 {
                     KernelMessage::builder()
                         .id(km_id)
-                        .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
+                        .source((our_node.as_str(), &VFS_PROCESS_ID.clone()))
+                        .unwrap()
                         .target(km_rsvp)
+                        .unwrap()
                         .message(Message::Response((
                             Response {
                                 inherit: false,
@@ -317,8 +319,10 @@ async fn handle_request(
 
             KernelMessage::builder()
                 .id(km.id)
-                .source((our_node, VFS_PROCESS_ID.clone()))
+                .source((our_node, &VFS_PROCESS_ID.clone()))
+                .unwrap()
                 .target(km.source)
+                .unwrap()
                 .message(Message::Response((
                     Response {
                         inherit: false,
@@ -643,8 +647,10 @@ async fn handle_request(
     if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| km.source)) {
         KernelMessage::builder()
             .id(km.id)
-            .source((our_node, VFS_PROCESS_ID.clone()))
+            .source((our_node, &VFS_PROCESS_ID.clone()))
+            .unwrap()
             .target(target)
+            .unwrap()
             .message(Message::Response((
                 Response {
                     inherit: false,
@@ -771,7 +777,8 @@ async fn check_caps(
     package_id: &PackageId,
     vfs_path: &PathBuf,
 ) -> Result<(), VfsError> {
-    let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
+    let src_package_id = PackageId::new(source.process.package(), source.process.publisher())
+        .unwrap();
 
     // every action is valid if package has vfs root cap, but this should only be
     // checked for *after* non-root caps are checked, because 99% of the time,
@@ -918,13 +925,14 @@ async fn read_capability(
 ) -> bool {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let cap = Capability::new(
-        (our_node, VFS_PROCESS_ID.clone()),
+        (our_node, &VFS_PROCESS_ID.clone()),
         if root {
             "{\"root\":true}".to_string()
         } else {
             format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}")
         },
-    );
+    )
+    .unwrap();
     if let Err(_) = send_to_caps_oracle
         .send(CapMessage::Has {
             on: source.process.clone(),
@@ -946,9 +954,10 @@ async fn add_capability(
     send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), VfsError> {
     let cap = Capability::new(
-        (our_node, VFS_PROCESS_ID.clone()),
+        (our_node, &VFS_PROCESS_ID.clone()),
         format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}"),
-    );
+    )
+    .unwrap();
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     send_to_caps_oracle
         .send(CapMessage::Add {

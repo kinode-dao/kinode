@@ -197,7 +197,7 @@ pub async fn http_server(
     bindings_map.add(
         "/rpc:distro:sys/message",
         BoundPath {
-            app: Some(ProcessId::new(Some("rpc"), "distro", "sys")),
+            app: Some(ProcessId::new(Some("rpc"), "distro", "sys")?),
             path: "/rpc:distro:sys/message".to_string(),
             secure_subdomain: None,
             authenticated: false,
@@ -774,8 +774,8 @@ async fn handle_rpc_message(
     Ok((
         KernelMessage {
             id,
-            source: Address::new(&*our, HTTP_SERVER_PROCESS_ID.clone()),
-            target: Address::new(rpc_message.node.unwrap_or(our.to_string()), target_process),
+            source: Address::new(&*our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
+            target: Address::new(rpc_message.node.unwrap_or(our.to_string()), target_process).unwrap(),
             rsvp,
             message: Message::Request(Request {
                 inherit: false,
@@ -802,8 +802,8 @@ fn make_websocket_message(
 ) -> Option<KernelMessage> {
     Some(KernelMessage {
         id: rand::random(),
-        source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()),
-        target: Address::new(&our, app),
+        source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
+        target: Address::try_new(&our, &app).unwrap(),
         rsvp: None,
         message: Message::Request(Request {
             inherit: false,
@@ -897,8 +897,8 @@ fn make_ext_websocket_message(
 
     Some(KernelMessage {
         id,
-        source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()),
-        target: Address::new(&our, app),
+        source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()).unwrap(),
+        target: Address::new(&our, app).unwrap(),
         rsvp: None,
         message,
         lazy_load_blob: blob,
@@ -931,8 +931,10 @@ async fn maintain_websocket(
 
     KernelMessage::builder()
         .id(rand::random())
-        .source(Address::new(&*our, HTTP_SERVER_PROCESS_ID.clone()))
-        .target(Address::new(&*our, app.clone()))
+        .source((&*our, &HTTP_SERVER_PROCESS_ID.clone()))
+        .unwrap()
+        .target((&*our, &app))
+        .unwrap()
         .message(Message::Request(Request {
             inherit: false,
             expects_response: None,
@@ -1015,8 +1017,10 @@ async fn websocket_close(
     ws_senders.remove(&channel_id);
     KernelMessage::builder()
         .id(rand::random())
-        .source(Address::new("our", HTTP_SERVER_PROCESS_ID.clone()))
-        .target(Address::new("our", process))
+        .source(("our", &HTTP_SERVER_PROCESS_ID.clone()))
+        .unwrap()
+        .target(("our", &process))
+        .unwrap()
         .message(Message::Request(Request {
             inherit: false,
             expects_response: None,
@@ -1380,8 +1384,10 @@ pub async fn send_action_response(
 ) {
     KernelMessage::builder()
         .id(id)
-        .source(Address::new("our", HTTP_SERVER_PROCESS_ID.clone()))
+        .source(("our", &HTTP_SERVER_PROCESS_ID.clone()))
+        .unwrap()
         .target(target)
+        .unwrap()
         .message(Message::Response((
             Response {
                 inherit: false,
