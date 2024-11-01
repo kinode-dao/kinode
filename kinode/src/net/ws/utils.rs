@@ -88,7 +88,10 @@ pub async fn maintain_connection(
                     if check_process_id_kimap_safe(&km.source.process).is_err() {
                         print_loud(
                             &read_print_tx,
-                            &format!("net: got message from non-Kimap-safe process: {}", km.source),
+                            &format!(
+                                "net: got message from non-Kimap-safe process: {}",
+                                km.source
+                            ),
                         )
                         .await;
                         break;

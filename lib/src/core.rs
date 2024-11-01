@@ -58,13 +58,19 @@ pub fn is_kimap_safe_no_dots(input: &str) -> bool {
 
 pub fn check_process_id_kimap_safe(p: &ProcessId) -> Result<(), AddressParseError> {
     if !is_kimap_safe_no_dots(&p.process_name) {
-        return Err(AddressParseError::ProcessNameNotKimapSafe(p.process_name.clone()));
+        return Err(AddressParseError::ProcessNameNotKimapSafe(
+            p.process_name.clone(),
+        ));
     }
     if !is_kimap_safe_no_dots(&p.package_name) {
-        return Err(AddressParseError::PackageNameNotKimapSafe(p.package_name.clone()));
+        return Err(AddressParseError::PackageNameNotKimapSafe(
+            p.package_name.clone(),
+        ));
     }
     if !is_kimap_safe(&p.publisher_node) {
-        return Err(AddressParseError::PublisherNodeNotKimapSafe(p.publisher_node.clone()));
+        return Err(AddressParseError::PublisherNodeNotKimapSafe(
+            p.publisher_node.clone(),
+        ));
     }
     Ok(())
 }
@@ -105,11 +111,7 @@ impl<'a> Deserialize<'a> for ProcessId {
 /// are defined here.
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
-    pub fn new(
-        process_name: Option<&str>,
-        package_name: &str,
-        publisher_node: &str,
-    ) -> Self {
+    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
         let process_name = process_name
             .unwrap_or(&rand::random::<u64>().to_string())
             .to_string();
@@ -191,7 +193,11 @@ impl std::str::FromStr for ProcessId {
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        Ok(ProcessId::new(Some(process_name), package_name, publisher_node))
+        Ok(ProcessId::new(
+            Some(process_name),
+            package_name,
+            publisher_node,
+        ))
     }
 }
 
@@ -394,7 +400,10 @@ impl std::str::FromStr for Address {
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        Ok(Address::new(node, (process_name, package_name, publisher_node)))
+        Ok(Address::new(
+            node,
+            (process_name, package_name, publisher_node),
+        ))
     }
 }
 
