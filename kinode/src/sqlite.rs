@@ -119,7 +119,7 @@ pub async fn sqlite(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: PathBuf,
 ) -> anyhow::Result<()> {
-    let our = Address::try_new(our_node.as_str(), SQLITE_PROCESS_ID.clone())?;
+    let our = Address::new(our_node.as_str(), SQLITE_PROCESS_ID.clone());
 
     crate::fd_manager::send_fd_manager_request_fds_limit(&our, &send_to_loop).await;
 
@@ -184,9 +184,7 @@ pub async fn sqlite(
                     KernelMessage::builder()
                         .id(km_id)
                         .source(state.our.as_ref().clone())
-                        .unwrap()
                         .target(km_rsvp)
-                        .unwrap()
                         .message(Message::Response((
                             Response {
                                 inherit: false,
@@ -403,9 +401,7 @@ async fn handle_request(
         KernelMessage::builder()
             .id(id)
             .source(state.our.as_ref().clone())
-            .unwrap()
             .target(target)
-            .unwrap()
             .message(Message::Response((
                 Response {
                     inherit: false,
@@ -450,8 +446,7 @@ async fn check_caps(
                             "db": request.db.to_string(),
                         })
                         .to_string(),
-                    )
-                    .unwrap(),
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;
@@ -474,8 +469,7 @@ async fn check_caps(
                             "db": request.db.to_string(),
                         })
                         .to_string(),
-                    )
-                    .unwrap(),
+                    ),
                     responder: send_cap_bool,
                 })
                 .await?;

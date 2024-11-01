@@ -156,7 +156,7 @@ pub async fn http_client(
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
-                    source: Address::try_new(our_name.as_str(), ("http-client", "distro", "sys"))?,
+                    source: Address::new(our_name.as_str(), ("http-client", "distro", "sys")),
                     target: target.clone(),
                     rsvp: None,
                     message: Message::Response((
@@ -476,7 +476,7 @@ async fn handle_http_request(
                     id,
                     source: Address {
                         node: our.to_string(),
-                        process: ProcessId::new(Some("http-client"), "distro", "sys").unwrap(),
+                        process: ProcessId::new(Some("http-client"), "distro", "sys"),
                     },
                     target,
                     rsvp: None,
@@ -581,7 +581,7 @@ async fn http_error_message(
                 id,
                 source: Address {
                     node: our.to_string(),
-                    process: ProcessId::new(Some("http-client"), "distro", "sys").unwrap(),
+                    process: ProcessId::new(Some("http-client"), "distro", "sys"),
                 },
                 target,
                 rsvp: None,
@@ -681,7 +681,7 @@ async fn handle_ws_message(
             id,
             source: Address {
                 node: our.to_string(),
-                process: ProcessId::new(Some("http-client"), "distro", "sys").unwrap(),
+                process: ProcessId::new(Some("http-client"), "distro", "sys"),
             },
             target,
             rsvp: None,

@@ -50,7 +50,7 @@ pub async fn vfs(
     let vfs_path = Arc::new(fs::canonicalize(&vfs_path).await?);
 
     let mut files = Files::new(
-        Address::try_new(our_node.as_str(), VFS_PROCESS_ID.clone())?,
+        Address::new(our_node.as_str(), VFS_PROCESS_ID.clone()),
         send_to_loop,
     );
 
@@ -113,9 +113,7 @@ pub async fn vfs(
                     KernelMessage::builder()
                         .id(km_id)
                         .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
-                        .unwrap()
                         .target(km_rsvp)
-                        .unwrap()
                         .message(Message::Response((
                             Response {
                                 inherit: false,
@@ -320,9 +318,7 @@ async fn handle_request(
             KernelMessage::builder()
                 .id(km.id)
                 .source((our_node, VFS_PROCESS_ID.clone()))
-                .unwrap()
                 .target(km.source)
-                .unwrap()
                 .message(Message::Response((
                     Response {
                         inherit: false,
@@ -648,9 +644,7 @@ async fn handle_request(
         KernelMessage::builder()
             .id(km.id)
             .source((our_node, VFS_PROCESS_ID.clone()))
-            .unwrap()
             .target(target)
-            .unwrap()
             .message(Message::Response((
                 Response {
                     inherit: false,
@@ -931,8 +925,7 @@ async fn read_capability(
         } else {
             format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}")
         },
-    )
-    .unwrap();
+    );
     if let Err(_) = send_to_caps_oracle
         .send(CapMessage::Has {
             on: source.process.clone(),
@@ -956,8 +949,7 @@ async fn add_capability(
     let cap = Capability::new(
         (our_node, VFS_PROCESS_ID.clone()),
         format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}"),
-    )
-    .unwrap();
+    );
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     send_to_caps_oracle
         .send(CapMessage::Add {

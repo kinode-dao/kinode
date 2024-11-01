@@ -292,8 +292,8 @@ impl process::ProcessState {
         // 3. if neither, rsvp = None
         t::KernelMessage::builder()
             .id(request_id)
-            .source(source)?
-            .target(t::Address::de_wit(target))?
+            .source(source)
+            .target(t::Address::de_wit(target))
             .rsvp(
                 match (
                     request.expects_response,
@@ -375,9 +375,7 @@ impl process::ProcessState {
         t::KernelMessage::builder()
             .id(id)
             .source(self.metadata.our.clone())
-            .unwrap()
             .target(target)
-            .unwrap()
             .message(t::Message::Response((
                 response,
                 // the context will be set by the process receiving this Response.
@@ -660,7 +658,8 @@ impl StandardHost for process::ProcessWasi {
             Some(&name),
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
-        )?;
+        )
+        .check()?;
 
         let request_capabilities_filtered = {
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -729,7 +728,7 @@ impl StandardHost for process::ProcessWasi {
                     caps: vec![t::Capability::messaging((
                         &self.process.metadata.our.node,
                         &new_process_id,
-                    ))?],
+                    ))],
                     responder: Some(tx),
                 })
                 .await
@@ -777,7 +776,7 @@ impl StandardHost for process::ProcessWasi {
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: new_process_id.clone(),
-                caps: vec![t::Capability::messaging(self.process.metadata.our.clone())?],
+                caps: vec![t::Capability::messaging(self.process.metadata.our.clone())],
                 responder: Some(tx),
             })
             .await
@@ -793,7 +792,7 @@ impl StandardHost for process::ProcessWasi {
                 caps: vec![t::Capability::messaging((
                     &self.process.metadata.our.node,
                     &new_process_id,
-                ))?],
+                ))],
                 responder: Some(tx),
             })
             .await

@@ -7,18 +7,18 @@ use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
-    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys").unwrap();
-    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd-manager"), "distro", "sys").unwrap();
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http-client"), "distro", "sys").unwrap();
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http-server"), "distro", "sys").unwrap();
-    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys").unwrap();
-    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys").unwrap();
-    pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys").unwrap();
-    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys").unwrap();
-    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys").unwrap();
-    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys").unwrap();
-    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys").unwrap();
-    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys").unwrap();
+    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd-manager"), "distro", "sys");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http-client"), "distro", "sys");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http-server"), "distro", "sys");
+    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
+    pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
+    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys");
+    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys");
+    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys");
 }
 
 //
@@ -56,6 +56,19 @@ pub fn is_kimap_safe_no_dots(input: &str) -> bool {
     re.is_match(input)
 }
 
+pub fn check_process_id_kimap_safe(p: &ProcessId) -> Result<(), AddressParseError> {
+    if !is_kimap_safe_no_dots(&p.process_name) {
+        return Err(AddressParseError::ProcessNameNotKimapSafe(p.process_name.clone()));
+    }
+    if !is_kimap_safe_no_dots(&p.package_name) {
+        return Err(AddressParseError::PackageNameNotKimapSafe(p.package_name.clone()));
+    }
+    if !is_kimap_safe(&p.publisher_node) {
+        return Err(AddressParseError::PublisherNodeNotKimapSafe(p.publisher_node.clone()));
+    }
+    Ok(())
+}
+
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
 /// the process name can be a random number, or a name chosen by the user.
@@ -78,7 +91,7 @@ impl Serialize for ProcessId {
 }
 
 impl<'a> Deserialize<'a> for ProcessId {
-    fn deserialize<D>(deserializer: D) -> Result<ProcessId, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'a>,
     {
@@ -96,26 +109,17 @@ impl ProcessId {
         process_name: Option<&str>,
         package_name: &str,
         publisher_node: &str,
-    ) -> Result<Self, AddressParseError> {
+    ) -> Self {
         let process_name = process_name
             .unwrap_or(&rand::random::<u64>().to_string())
             .to_string();
-        if !is_kimap_safe_no_dots(&process_name) {
-            return Err(AddressParseError::ProcessNameNotKimapSafe(process_name));
-        }
-        let package_name = package_name.to_string();
-        if !is_kimap_safe_no_dots(&package_name) {
-            return Err(AddressParseError::ProcessNameNotKimapSafe(process_name));
-        }
-        let publisher_node = publisher_node.to_string();
-        if !is_kimap_safe(&publisher_node) {
-            return Err(AddressParseError::PublisherNodeNotKimapSafe(publisher_node));
-        }
-        Ok(ProcessId {
+        let process_id = ProcessId {
             process_name,
-            package_name,
-            publisher_node,
-        })
+            package_name: package_name.to_string(),
+            publisher_node: publisher_node.to_string(),
+        };
+        //check_process_id_kimap_safe(&process_id)?;
+        process_id
     }
     pub fn process(&self) -> &str {
         &self.process_name
@@ -140,19 +144,23 @@ impl ProcessId {
             publisher_node: self.publisher_node.clone(),
         }
     }
-    pub fn de_wit(wit: wit::ProcessId) -> ProcessId {
+    pub fn de_wit(wit: wit::ProcessId) -> Self {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
     }
-    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> ProcessId {
+    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> Self {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
+    }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        check_process_id_kimap_safe(&self)?;
+        Ok(self)
     }
 }
 
@@ -183,23 +191,19 @@ impl std::str::FromStr for ProcessId {
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        ProcessId::new(Some(process_name), package_name, publisher_node)
+        Ok(ProcessId::new(Some(process_name), package_name, publisher_node))
     }
 }
 
-impl TryFrom<(&str, &str, &str)> for ProcessId {
-    type Error = AddressParseError;
-
-    fn try_from(input: (&str, &str, &str)) -> Result<Self, Self::Error> {
+impl From<(&str, &str, &str)> for ProcessId {
+    fn from(input: (&str, &str, &str)) -> Self {
         ProcessId::new(Some(input.0), input.1, input.2)
     }
 }
 
-impl TryFrom<&ProcessId> for ProcessId {
-    type Error = AddressParseError;
-
-    fn try_from(input: &ProcessId) -> Result<Self, Self::Error> {
-        Ok(input.clone())
+impl From<&ProcessId> for ProcessId {
+    fn from(input: &ProcessId) -> Self {
+        input.clone()
     }
 }
 
@@ -300,59 +304,14 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn try_new<T, U>(node: T, process: U) -> Result<Self, AddressParseError>
+    pub fn new<T, U>(node: T, process: U) -> Self
     where
         T: Into<String>,
-        U: TryInto<ProcessId>,
-        <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
+        U: Into<ProcessId>,
     {
         let node = node.into();
-        if !is_kimap_safe(&node) {
-            return Err(AddressParseError::NodeNotKimapSafe(node));
-        }
-        let process = match process.try_into() {
-            Ok(p) => p,
-            Err(e) => {
-                // We do this stupid parsing because it doesn't work otherwise.
-                //  The problem is that we want to allow both Fallible and Infallible
-                //  calls into `try_into()` which calls into here.
-                //  We can't just `try_into()?` `U` (`TryInto<ProcessId>`) because it
-                //  has some abstracted Error type (`<U as TryInto<ProcessId>>::Error`)
-                //  that doesn't parse into AddressParseError because the Infallible case
-                //  is not an AddressParseError: its Infallible!
-                //  We can't `match` it for similar reasons.
-                //  So we Debug it as below
-                let e = format!("{e:?}");
-                return Err(if e == "Too many `@` chars: only one allowed" {
-                    AddressParseError::TooManyAts
-                } else if e == "Too many colons in ProcessId string" {
-                    AddressParseError::TooManyColons
-                } else if e == "Node ID missing" {
-                    AddressParseError::MissingNodeId
-                } else if e == "Missing field in ProcessId string" {
-                    AddressParseError::MissingField
-                } else if e.starts_with("Process name") {
-                    let e: Vec<&str> = e.split_whitespace().collect();
-                    let s = if e.len() > 2 { e[2] } else { "" };
-                    AddressParseError::ProcessNameNotKimapSafe(s.to_string())
-                } else if e.starts_with("Package name") {
-                    let e: Vec<&str> = e.split_whitespace().collect();
-                    let s = if e.len() > 2 { e[2] } else { "" };
-                    AddressParseError::PackageNameNotKimapSafe(s.to_string())
-                } else if e.starts_with("Node ") {
-                    let e: Vec<&str> = e.split_whitespace().collect();
-                    let s = if e.len() > 1 { e[1] } else { "" };
-                    AddressParseError::NodeNotKimapSafe(s.to_string())
-                } else if e.starts_with("Publisher node") {
-                    let e: Vec<&str> = e.split_whitespace().collect();
-                    let s = if e.len() > 2 { e[2] } else { "" };
-                    AddressParseError::PublisherNodeNotKimapSafe(s.to_string())
-                } else {
-                    AddressParseError::Other(e)
-                });
-            }
-        };
-        Ok(Address { node, process })
+        let process = process.into();
+        Address { node, process }
     }
     pub fn en_wit(&self) -> wit::Address {
         wit::Address {
@@ -385,6 +344,13 @@ impl Address {
                 publisher_node: wit.process.publisher_node,
             },
         }
+    }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        if !is_kimap_safe(&self.node) {
+            return Err(AddressParseError::NodeNotKimapSafe(self.node.clone()));
+        }
+        check_process_id_kimap_safe(&self.process)?;
+        Ok(self)
     }
 }
 
@@ -428,7 +394,7 @@ impl std::str::FromStr for Address {
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        Address::try_new(node, (process_name, package_name, publisher_node))
+        Ok(Address::new(node, (process_name, package_name, publisher_node)))
     }
 }
 
@@ -452,24 +418,19 @@ impl<'a> Deserialize<'a> for Address {
     }
 }
 
-impl TryFrom<(&str, &str, &str, &str)> for Address {
-    type Error = AddressParseError;
-
-    fn try_from(input: (&str, &str, &str, &str)) -> Result<Self, Self::Error> {
-        Address::try_new(input.0, (input.1, input.2, input.3))
+impl From<(&str, &str, &str, &str)> for Address {
+    fn from(input: (&str, &str, &str, &str)) -> Self {
+        Address::new(input.0, (input.1, input.2, input.3))
     }
 }
 
-impl<T, U> TryFrom<(T, U)> for Address
+impl<T, U> From<(T, U)> for Address
 where
     T: Into<String>,
-    U: TryInto<ProcessId>,
-    <U as TryInto<ProcessId>>::Error: std::fmt::Debug,
+    U: Into<ProcessId>,
 {
-    type Error = AddressParseError;
-
-    fn try_from(input: (T, U)) -> Result<Self, Self::Error> {
-        Address::try_new(input.0, input.1)
+    fn from(input: (T, U)) -> Self {
+        Address::new(input.0, input.1)
     }
 }
 
@@ -559,27 +520,25 @@ impl Hash for Capability {
 }
 
 impl Capability {
-    pub fn new<T, U>(issuer: T, params: U) -> Result<Self, T::Error>
-    //pub fn new<T, U>(issuer: T, params: U) -> Result<Self, <T as TryInto<Address>>::Error>
+    pub fn new<T, U>(issuer: T, params: U) -> Self
     where
-        T: TryInto<Address>,
+        T: Into<Address>,
         U: Into<String>,
     {
-        Ok(Capability {
-            issuer: issuer.try_into()?,
+        Capability {
+            issuer: issuer.into(),
             params: params.into(),
-        })
+        }
     }
 
-    pub fn messaging<T>(issuer: T) -> Result<Self, T::Error>
-    //pub fn messaging<T>(issuer: T) -> Result<Self, <T as TryInto<Address>>::Error>
+    pub fn messaging<T>(issuer: T) -> Self
     where
-        T: TryInto<Address>,
+        T: Into<Address>,
     {
-        Ok(Capability {
-            issuer: issuer.try_into()?,
+        Capability {
+            issuer: issuer.into(),
             params: "\"messaging\"".into(),
-        })
+        }
     }
 }
 
@@ -1291,27 +1250,20 @@ impl KernelMessageBuilder {
         self
     }
 
-    pub fn source<T>(mut self, source: T) -> Result<Self, T::Error>
-    //pub fn source<T>(mut self, source: T) -> Result<Self, <T as TryInto<Address>>::Error>
+    pub fn source<T>(mut self, source: T) -> Self
     where
-        T: TryInto<Address>,
+        T: Into<Address>,
     {
-        let source = match source.try_into() {
-            Ok(s) => s,
-            Err(e) => return Err(e),
-        };
-        self.source = Some(source);
-        //self.source = Some(source.try_into()?);
-        Ok(self)
+        self.source = Some(source.into());
+        self
     }
 
-    pub fn target<T>(mut self, target: T) -> Result<Self, T::Error>
-    //pub fn target<T>(mut self, target: T) -> Result<Self, <T as TryInto<Address>>::Error>
+    pub fn target<T>(mut self, target: T) -> Self
     where
-        T: TryInto<Address>,
+        T: Into<Address>,
     {
-        self.target = Some(target.try_into()?);
-        Ok(self)
+        self.target = Some(target.into());
+        self
     }
 
     pub fn rsvp(mut self, rsvp: Rsvp) -> Self {

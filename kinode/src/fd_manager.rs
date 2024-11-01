@@ -259,8 +259,8 @@ async fn handle_message(
             if expects_response.is_some() {
                 KernelMessage::builder()
                     .id(km.id)
-                    .source(km.target)?
-                    .target(km.rsvp.unwrap_or(km.source))?
+                    .source(km.target)
+                    .target(km.rsvp.unwrap_or(km.source))
                     .message(Message::Response((
                         lib::core::Response {
                             body: serde_json::to_vec(&FdManagerResponse::GetState(
@@ -284,8 +284,8 @@ async fn handle_message(
             if expects_response.is_some() {
                 KernelMessage::builder()
                     .id(km.id)
-                    .source(km.target)?
-                    .target(km.rsvp.unwrap_or(km.source))?
+                    .source(km.target)
+                    .target(km.rsvp.unwrap_or(km.source))
                     .message(Message::Response((
                         lib::core::Response {
                             body: serde_json::to_vec(&FdManagerResponse::GetProcessFdLimit(
@@ -341,9 +341,7 @@ async fn send_all_fds_limits(our_node: &str, send_to_loop: &MessageSender, state
         KernelMessage::builder()
             .id(rand::random())
             .source((our_node, FD_MANAGER_PROCESS_ID.clone()))
-            .unwrap()
             .target((our_node, process_id))
-            .unwrap()
             .message(Message::Request(Request {
                 inherit: false,
                 expects_response: None,
@@ -384,9 +382,7 @@ async fn send_to_fd_manager(our: &Address, message: Message, send_to_loop: &Mess
     KernelMessage::builder()
         .id(rand::random())
         .source(our.clone())
-        .unwrap()
         .target((our.node.clone(), FD_MANAGER_PROCESS_ID.clone()))
-        .unwrap()
         .message(message)
         .build()
         .unwrap()

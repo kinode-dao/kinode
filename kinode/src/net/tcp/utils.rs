@@ -3,7 +3,7 @@ use crate::net::{
     types::{HandshakePayload, IdentityExt, Peers},
     utils::{print_debug, print_loud, IDLE_TIMEOUT, MESSAGE_MAX_SIZE},
 };
-use lib::types::core::{KernelMessage, MessageSender, NodeId, PrintSender};
+use lib::types::core::{check_process_id_kimap_safe, KernelMessage, MessageSender, NodeId, PrintSender};
 use {
     tokio::io::{AsyncReadExt, AsyncWriteExt},
     tokio::net::{tcp::OwnedReadHalf, tcp::OwnedWriteHalf, TcpStream},
@@ -63,12 +63,19 @@ pub async fn maintain_connection(
                         )
                         .await;
                         break;
-                    } else {
-                        kernel_message_tx
-                            .send(km)
-                            .await
-                            .expect("net: fatal: kernel receiver died");
                     }
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        print_loud(
+                            &read_print_tx,
+                            &format!("net: got message from non-Kimap-safe process: {}", km.source),
+                        )
+                        .await;
+                        break;
+                    }
+                    kernel_message_tx
+                        .send(km)
+                        .await
+                        .expect("net: fatal: kernel receiver died");
                 }
                 Err(e) => {
                     print_debug(

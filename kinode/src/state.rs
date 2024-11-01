@@ -1,5 +1,5 @@
 use lib::types::core::{
-    Address, Capability, Erc721Metadata, KernelMessage, LazyLoadBlob, Message, MessageReceiver,
+    Address, Capability, check_process_id_kimap_safe, Erc721Metadata, KernelMessage, LazyLoadBlob, Message, MessageReceiver,
     MessageSender, NetworkErrorSender, OnExit, PackageManifestEntry, PersistedProcess, PrintSender,
     Printout, ProcessId, ProcessMap, Request, Response, ReverseCapIndex, StateAction, StateError,
     StateResponse, KERNEL_PROCESS_ID, STATE_PROCESS_ID, VFS_PROCESS_ID,
@@ -66,19 +66,12 @@ pub async fn load_state(
         }
     }
 
-    let old_processes_to_remove: Vec<ProcessId> = [
-        "chain:app_store:sys",
-        "downloads:app_store:sys",
-        "main:app_store:sys",
-        "blog:kino_updates:sys",
-        "globe:kino_updates:sys",
-        "kns_indexer:kns_indexer:sys",
-    ]
-    .iter()
-    .map(|s| s.parse().unwrap())
-    .collect();
-    for process in old_processes_to_remove {
-        process_map.remove(&process);
+    let processes = process_map.keys().cloned().collect::<Vec<_>>();
+    for process in processes {
+        if check_process_id_kimap_safe(&process).is_err() {
+            println!("bootstrap: removing non-Kimap-safe process {process}\n(all process IDs must contain only a-z A-Z 0-9 `-` and `.`s in the publisher)\r");
+            process_map.remove(&process);
+        }
     }
 
     // bootstrap the distro processes into the node. TODO:
@@ -154,9 +147,7 @@ pub async fn state_sender(
                     KernelMessage::builder()
                         .id(km_id)
                         .source((our_node.as_str(), STATE_PROCESS_ID.clone()))
-                        .unwrap()
                         .target(km_rsvp)
-                        .unwrap()
                         .message(Message::Response((
                             Response {
                                 inherit: false,
@@ -291,9 +282,7 @@ async fn handle_request(
         KernelMessage::builder()
             .id(id)
             .source((our_node, STATE_PROCESS_ID.clone()))
-            .unwrap()
             .target(target)
-            .unwrap()
             .message(Message::Response((
                 Response {
                     inherit: false,
@@ -337,7 +326,7 @@ async fn bootstrap(
     let k_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("kernel"), "distro", "sys")?,
+            process: ProcessId::new(Some("kernel"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
     };
@@ -346,7 +335,7 @@ async fn bootstrap(
     let n_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("net"), "distro", "sys")?,
+            process: ProcessId::new(Some("net"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
     };
@@ -374,7 +363,7 @@ async fn bootstrap(
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
     let current_kernel = process_map
-        .entry(ProcessId::new(Some("kernel"), "distro", "sys")?)
+        .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
@@ -384,7 +373,7 @@ async fn bootstrap(
         });
     current_kernel.capabilities.extend(runtime_caps.clone());
     let current_net = process_map
-        .entry(ProcessId::new(Some("net"), "distro", "sys")?)
+        .entry(ProcessId::new(Some("net"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
@@ -614,7 +603,7 @@ async fn bootstrap(
                 Some(&entry.process_name),
                 package_name,
                 package_publisher,
-            )?) {
+            )) {
                 std::collections::hash_map::Entry::Occupied(p) => {
                     let p = p.into_mut();
                     p.wasm_bytes_handle = wasm_bytes_handle.clone();
