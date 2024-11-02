@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{sync::{mpsc, Mutex}, task::JoinHandle};
 use wasmtime::{Config, Engine, WasmBacktraceDetails};
 
 /// Manipulate a single process.
@@ -37,6 +37,23 @@ enum ProcessSender {
         net_errors: Option<t::NetworkErrorSender>,
     },
     Userspace(t::ProcessMessageSender),
+}
+
+pub type ProcessRestartBackoffs = HashMap<t::ProcessId, Arc<Mutex<Option<RestartBackoff>>>>;
+
+pub struct RestartBackoff {
+    /// if try to restart before this:
+    ///  * wait till `next_soonest_restart_time`
+    ///  * increment `consecutive_attempts`
+    /// else if try to restart after this:
+    ///  * set `consecutive_attempts = 0`,
+    /// and in either case:
+    ///  set `next_soonest_restart_time += 2 ** consecutive_attempts` seconds
+    next_soonest_restart_time: std::time::Instant,
+    /// how many times has process tried to restart in a row
+    consecutive_attempts: u32,
+    /// task that will do the restart after wait time has elapsed
+    restart_handle: Option<JoinHandle<()>>,
 }
 
 /// persist kernel's process_map state for next bootup
@@ -78,6 +95,7 @@ async fn handle_kernel_request(
     caps_oracle: &t::CapMessageSender,
     engine: &Engine,
     home_directory_path: &PathBuf,
+    process_restart_backoffs: &mut ProcessRestartBackoffs,
 ) -> Option<()> {
     let t::Message::Request(request) = km.message else {
         return None;
@@ -263,6 +281,7 @@ async fn handle_kernel_request(
                 caps_oracle,
                 &start_process_metadata,
                 &home_directory_path,
+                &mut process_restart_backoffs,
             )
             .await
             {
@@ -494,6 +513,7 @@ async fn start_process(
     caps_oracle: &t::CapMessageSender,
     process_metadata: &StartProcessMetadata,
     home_directory_path: &PathBuf,
+    process_restart_backoffs: &mut ProcessRestartBackoffs,
 ) -> anyhow::Result<()> {
     let (send_to_process, recv_in_process) =
         mpsc::channel::<Result<t::KernelMessage, t::WrappedSendError>>(PROCESS_CHANNEL_CAPACITY);
@@ -515,6 +535,15 @@ async fn start_process(
         on_exit: process_metadata.persisted.on_exit.clone(),
         public: process_metadata.persisted.public,
     };
+    let maybe_restart_backoff = if let t::OnExit::Restart = process_metadata.persisted.on_exit {
+        let restart_backoff = process_restart_backoffs
+            .remove(id)
+            .unwrap_or_else(|| Arc::new(Mutex::new(None)));
+        process_restart_backoffs.insert(id.clone(), Arc::clone(&restart_backoff));
+        Some(restart_backoff)
+    } else {
+        None
+    };
     process_handles.insert(
         id.clone(),
         tokio::spawn(process::make_process_loop(
@@ -528,6 +557,7 @@ async fn start_process(
             caps_oracle.clone(),
             engine.clone(),
             home_directory_path.clone(),
+            maybe_restart_backoff,
         )),
     );
     Ok(())
@@ -598,6 +628,8 @@ pub async fn kernel(
     // create a list of processes which are successfully rebooted,
     // keeping only them in the updated post-boot process map
     let mut non_rebooted_processes: HashSet<t::ProcessId> = HashSet::new();
+
+    let mut process_restart_backoffs: ProcessRestartBackoffs = HashMap::new();
 
     for (process_id, persisted) in &process_map {
         // runtime extensions will have a bytes_handle of "", because they have no
@@ -676,6 +708,7 @@ pub async fn kernel(
             &caps_oracle_sender,
             &start_process_metadata,
             &home_directory_path,
+            &mut process_restart_backoffs,
         )
         .await
         {
@@ -925,6 +958,7 @@ pub async fn kernel(
                         &caps_oracle_sender,
                         &engine,
                         &home_directory_path,
+                        &mut process_restart_backoffs,
                     ).await {
                         // drain process map of processes with OnExit::None
                         process_map.retain(|_, persisted| !persisted.on_exit.is_none());

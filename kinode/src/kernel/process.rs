@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::{fs, task::JoinHandle};
+use tokio::{fs, sync::Mutex, task::JoinHandle};
 use wasi_common::sync::Dir;
 use wasmtime::{
     component::{Component, Linker, ResourceTable as Table},
@@ -14,6 +14,8 @@ use wasmtime::{
 use wasmtime_wasi::{
     pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
 };
+
+use super::RestartBackoff;
 
 const STACK_TRACE_SIZE: usize = 5000;
 
@@ -230,6 +232,7 @@ pub async fn make_process_loop(
     caps_oracle: t::CapMessageSender,
     engine: Engine,
     home_directory_path: PathBuf,
+    maybe_restart_backoff: Option<Arc<Mutex<Option<RestartBackoff>>>>,
 ) -> anyhow::Result<()> {
     // before process can be instantiated, need to await 'run' message from kernel
     let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
@@ -388,6 +391,27 @@ pub async fn make_process_loop(
         }
         // if restart, tell ourselves to init the app again, with same capabilities
         t::OnExit::Restart => {
+            let restart_backoff = maybe_restart_backoff.unwrap();
+            let restart_backoff_lock = restart_backoff.lock().await;
+            let now = std::time::Instant::now();
+            let (wait_till, next_soonest_restart_time, consecutive_attempts) = match *restart_backoff_lock {
+                None => (None, now + std::time::Duration::from_secs(1), 0),
+                Some(ref rb) => {
+                    if rb.next_soonest_restart_time <= now {
+                        // no need to wait
+                        (None, now + std::time::Duration::from_secs(1), 0)
+                    } else {
+                        // must wait
+                        let base: u64 = 2;
+                        (
+                            Some(rb.next_soonest_restart_time.clone()),
+                            rb.next_soonest_restart_time.clone() + std::time::Duration::from_secs(base.pow(rb.consecutive_attempts)),
+                            rb.consecutive_attempts.clone() + 1,
+                        )
+                    }
+                },
+            };
+
             // get caps before killing
             let (tx, rx) = tokio::sync::oneshot::channel();
             caps_oracle
@@ -423,53 +447,69 @@ pub async fn make_process_loop(
                 .unwrap()
                 .send(&send_to_loop)
                 .await;
-            // then re-initialize with same capabilities
-            t::KernelMessage::builder()
-                .id(rand::random())
-                .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                .target((&our.node, KERNEL_PROCESS_ID.clone()))
-                .message(t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
-                        id: metadata.our.process.clone(),
-                        wasm_bytes_handle: metadata.wasm_bytes_handle,
-                        wit_version: metadata.wit_version,
-                        on_exit: metadata.on_exit,
-                        initial_capabilities,
-                        public: metadata.public,
-                    })
-                    .unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                }))
-                .lazy_load_blob(Some(t::LazyLoadBlob {
-                    mime: None,
-                    bytes: wasm_bytes,
-                }))
-                .build()
-                .unwrap()
-                .send(&send_to_loop)
-                .await;
-            // then run
-            t::KernelMessage::builder()
-                .id(rand::random())
-                .source((&our.node, KERNEL_PROCESS_ID.clone()))
-                .target((&our.node, KERNEL_PROCESS_ID.clone()))
-                .message(t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    body: serde_json::to_vec(&t::KernelCommand::RunProcess(
-                        metadata.our.process.clone(),
-                    ))
-                    .unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                }))
-                .build()
-                .unwrap()
-                .send(&send_to_loop)
-                .await;
+
+            let reinitialize = async || {
+                // then re-initialize with same capabilities
+                t::KernelMessage::builder()
+                    .id(rand::random())
+                    .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                    .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                    .message(t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                            id: metadata.our.process.clone(),
+                            wasm_bytes_handle: metadata.wasm_bytes_handle,
+                            wit_version: metadata.wit_version,
+                            on_exit: metadata.on_exit,
+                            initial_capabilities,
+                            public: metadata.public,
+                        })
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }))
+                    .lazy_load_blob(Some(t::LazyLoadBlob {
+                        mime: None,
+                        bytes: wasm_bytes,
+                    }))
+                    .build()
+                    .unwrap()
+                    .send(&send_to_loop)
+                    .await;
+                // then run
+                t::KernelMessage::builder()
+                    .id(rand::random())
+                    .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                    .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                    .message(t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&t::KernelCommand::RunProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }))
+                    .build()
+                    .unwrap()
+                    .send(&send_to_loop)
+                    .await;
+            };
+
+            let restart_handle = match wait_till {
+                Some(wait_till) => Some(tokio::spawn(reinitialize)),
+                None => {
+                    reinitialize().await;
+                    None
+                }
+            }
+            *restart_backoff_lock = RestartBackoff {
+                next_soonest_restart_time,
+                consecutive_attempts,
+                restart_handle,
+            };
         }
         // if requests, fire them
         t::OnExit::Requests(requests) => {
