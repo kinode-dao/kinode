@@ -257,10 +257,14 @@ impl PackageId {
     }
     pub fn check(self) -> Result<Self, AddressParseError> {
         if !is_kimap_safe_no_dots(&self.package_name) {
-            return Err(AddressParseError::ProcessNameNotKimapSafe(self.package_name.clone()));
+            return Err(AddressParseError::ProcessNameNotKimapSafe(
+                self.package_name.clone(),
+            ));
         }
         if !is_kimap_safe(&self.publisher_node) {
-            return Err(AddressParseError::PublisherNodeNotKimapSafe(self.publisher_node.clone()));
+            return Err(AddressParseError::PublisherNodeNotKimapSafe(
+                self.publisher_node.clone(),
+            ));
         }
         Ok(self)
     }

@@ -9,8 +9,9 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use http::uri::Authority;
 use lib::types::core::{
-    Address, check_process_id_kimap_safe, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo, Message, MessageReceiver,
-    MessageSender, PrintSender, Printout, ProcessId, Request, Response, HTTP_SERVER_PROCESS_ID,
+    check_process_id_kimap_safe, Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo,
+    Message, MessageReceiver, MessageSender, PrintSender, Printout, ProcessId, Request, Response,
+    HTTP_SERVER_PROCESS_ID,
 };
 use route_recognizer::Router;
 use sha2::{Digest, Sha256};
@@ -1120,7 +1121,10 @@ async fn handle_app_message(
                             km.source,
                             &send_to_loop,
                             Err(HttpServerError::PathBindError {
-                                error: format!("invalid source process (not Kimap safe): {}", source)
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
                             }),
                         )
                         .await;
@@ -1187,7 +1191,10 @@ async fn handle_app_message(
                             km.source,
                             &send_to_loop,
                             Err(HttpServerError::PathBindError {
-                                error: format!("invalid source process (not Kimap safe): {}", source)
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
                             }),
                         )
                         .await;
@@ -1269,7 +1276,10 @@ async fn handle_app_message(
                             km.source,
                             &send_to_loop,
                             Err(HttpServerError::PathBindError {
-                                error: format!("invalid source process (not Kimap safe): {}", source)
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
                             }),
                         )
                         .await;
@@ -1300,7 +1310,10 @@ async fn handle_app_message(
                             km.source,
                             &send_to_loop,
                             Err(HttpServerError::PathBindError {
-                                error: format!("invalid source process (not Kimap safe): {}", source)
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
                             }),
                         )
                         .await;
