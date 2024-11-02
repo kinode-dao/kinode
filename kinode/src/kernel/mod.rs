@@ -5,7 +5,10 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::{sync::{mpsc, Mutex}, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, Mutex},
+    task::JoinHandle,
+};
 use wasmtime::{Config, Engine, WasmBacktraceDetails};
 
 /// Manipulate a single process.

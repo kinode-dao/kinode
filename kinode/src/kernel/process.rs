@@ -394,23 +394,27 @@ pub async fn make_process_loop(
             let restart_backoff = maybe_restart_backoff.unwrap();
             let restart_backoff_lock = restart_backoff.lock().await;
             let now = std::time::Instant::now();
-            let (wait_till, next_soonest_restart_time, consecutive_attempts) = match *restart_backoff_lock {
-                None => (None, now + std::time::Duration::from_secs(1), 0),
-                Some(ref rb) => {
-                    if rb.next_soonest_restart_time <= now {
-                        // no need to wait
-                        (None, now + std::time::Duration::from_secs(1), 0)
-                    } else {
-                        // must wait
-                        let base: u64 = 2;
-                        (
-                            Some(rb.next_soonest_restart_time.clone()),
-                            rb.next_soonest_restart_time.clone() + std::time::Duration::from_secs(base.pow(rb.consecutive_attempts)),
-                            rb.consecutive_attempts.clone() + 1,
-                        )
+            let (wait_till, next_soonest_restart_time, consecutive_attempts) =
+                match *restart_backoff_lock {
+                    None => (None, now + std::time::Duration::from_secs(1), 0),
+                    Some(ref rb) => {
+                        if rb.next_soonest_restart_time <= now {
+                            // no need to wait
+                            (None, now + std::time::Duration::from_secs(1), 0)
+                        } else {
+                            // must wait
+                            let base: u64 = 2;
+                            (
+                                Some(rb.next_soonest_restart_time.clone()),
+                                rb.next_soonest_restart_time.clone()
+                                    + std::time::Duration::from_secs(
+                                        base.pow(rb.consecutive_attempts),
+                                    ),
+                                rb.consecutive_attempts.clone() + 1,
+                            )
+                        }
                     }
-                },
-            };
+                };
 
             // get caps before killing
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -504,8 +508,7 @@ pub async fn make_process_loop(
                     reinitialize().await;
                     None
                 }
-            }
-            *restart_backoff_lock = RestartBackoff {
+            } * restart_backoff_lock = RestartBackoff {
                 next_soonest_restart_time,
                 consecutive_attempts,
                 restart_handle,
