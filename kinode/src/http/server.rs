@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use http::uri::Authority;
 use lib::types::core::{
-    Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo, Message, MessageReceiver,
+    Address, check_process_id_kimap_safe, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo, Message, MessageReceiver,
     MessageSender, PrintSender, Printout, ProcessId, Request, Response, HTTP_SERVER_PROCESS_ID,
 };
 use route_recognizer::Router;
@@ -1113,6 +1113,19 @@ async fn handle_app_message(
                     local_only,
                     cache,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!("invalid source process (not Kimap safe): {}", source)
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
@@ -1167,6 +1180,19 @@ async fn handle_app_message(
                     }
                 }
                 HttpServerAction::SecureBind { path, cache } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!("invalid source process (not Kimap safe): {}", source)
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let subdomain = utils::generate_secure_subdomain(&km.source.process);
                     let mut path_bindings = path_bindings.write().await;
@@ -1236,6 +1262,19 @@ async fn handle_app_message(
                     encrypted,
                     extension,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!("invalid source process (not Kimap safe): {}", source)
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
                     ws_path_bindings.add(
@@ -1254,6 +1293,19 @@ async fn handle_app_message(
                     encrypted,
                     extension,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!("invalid source process (not Kimap safe): {}", source)
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let subdomain = utils::generate_secure_subdomain(&km.source.process);
                     let mut ws_path_bindings = ws_path_bindings.write().await;

@@ -120,7 +120,6 @@ impl ProcessId {
             package_name: package_name.to_string(),
             publisher_node: publisher_node.to_string(),
         };
-        //check_process_id_kimap_safe(&process_id)?;
         process_id
     }
     pub fn process(&self) -> &str {
@@ -244,25 +243,26 @@ pub struct PackageId {
 }
 
 impl PackageId {
-    pub fn new(package_name: &str, publisher_node: &str) -> Result<Self, AddressParseError> {
-        let package_name = package_name.to_string();
-        if !is_kimap_safe_no_dots(&package_name) {
-            return Err(AddressParseError::ProcessNameNotKimapSafe(package_name));
+    pub fn new(package_name: &str, publisher_node: &str) -> Self {
+        PackageId {
+            package_name: package_name.to_string(),
+            publisher_node: publisher_node.to_string(),
         }
-        let publisher_node = publisher_node.to_string();
-        if !is_kimap_safe(&publisher_node) {
-            return Err(AddressParseError::PublisherNodeNotKimapSafe(publisher_node));
-        }
-        Ok(PackageId {
-            package_name,
-            publisher_node,
-        })
     }
     pub fn _package(&self) -> &str {
         &self.package_name
     }
     pub fn _publisher(&self) -> &str {
         &self.publisher_node
+    }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        if !is_kimap_safe_no_dots(&self.package_name) {
+            return Err(AddressParseError::ProcessNameNotKimapSafe(self.package_name.clone()));
+        }
+        if !is_kimap_safe(&self.publisher_node) {
+            return Err(AddressParseError::PublisherNodeNotKimapSafe(self.publisher_node.clone()));
+        }
+        Ok(self)
     }
 }
 
@@ -291,7 +291,7 @@ impl std::str::FromStr for PackageId {
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        PackageId::new(package_name, publisher_node)
+        Ok(PackageId::new(package_name, publisher_node))
     }
 }
 

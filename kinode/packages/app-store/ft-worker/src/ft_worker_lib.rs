@@ -24,13 +24,13 @@ pub fn spawn_send_transfer(
     let timer_id = ProcessId::new(Some("timer"), "distro", "sys");
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
-        &format!("{}/pkg/ft_worker.wasm", our.package_id()),
+        &format!("{}/pkg/ft-worker.wasm", our.package_id()),
         OnExit::None,
         our_capabilities(),
         vec![timer_id],
         false,
     ) else {
-        return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
+        return Err(anyhow::anyhow!("failed to spawn ft-worker!"));
     };
 
     let req = Request::new()
@@ -64,13 +64,13 @@ pub fn spawn_receive_transfer(
     let timer_id = ProcessId::new(Some("timer"), "distro", "sys");
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
-        &format!("{}/pkg/ft_worker.wasm", our.package_id()),
+        &format!("{}/pkg/ft-worker.wasm", our.package_id()),
         OnExit::None,
         our_capabilities(),
         vec![timer_id],
         false,
     ) else {
-        return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
+        return Err(anyhow::anyhow!("failed to spawn ft-worker!"));
     };
 
     let req = Request::new()

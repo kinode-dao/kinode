@@ -771,8 +771,7 @@ async fn check_caps(
     package_id: &PackageId,
     vfs_path: &PathBuf,
 ) -> Result<(), VfsError> {
-    let src_package_id =
-        PackageId::new(source.process.package(), source.process.publisher()).unwrap();
+    let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
     // every action is valid if package has vfs root cap, but this should only be
     // checked for *after* non-root caps are checked, because 99% of the time,

@@ -162,6 +162,31 @@ async fn handle_kernel_request(
                     .await;
                 return None;
             };
+            if let Err(e) = t::check_process_id_kimap_safe(&id) {
+                t::Printout::new(0, &format!("kernel: {e}"))
+                    .send(send_to_terminal)
+                    .await;
+                // fire an error back
+                t::KernelMessage::builder()
+                    .id(km.id)
+                    .source((our_name, KERNEL_PROCESS_ID.clone()))
+                    .target(km.rsvp.unwrap_or(km.source))
+                    .message(t::Message::Response((
+                        t::Response {
+                            inherit: false,
+                            body: serde_json::to_vec(&t::KernelResponse::InitializeProcessError)
+                                .unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        },
+                        None,
+                    )))
+                    .build()
+                    .unwrap()
+                    .send(send_to_loop)
+                    .await;
+                return None;
+            }
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let parent_caps: &HashMap<t::Capability, Vec<u8>> =

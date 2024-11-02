@@ -260,7 +260,6 @@ pub async fn make_process_loop(
             }
         }
     }
-
     // now that we've received the run message, we can send the pre-boot queue
     for message in pre_boot_queue {
         send_to_process.send(message).await?;
@@ -389,7 +388,6 @@ pub async fn make_process_loop(
         }
         // if restart, tell ourselves to init the app again, with same capabilities
         t::OnExit::Restart => {
-            // we are out of danger of spamming infinite restart loop: restart
             // get caps before killing
             let (tx, rx) = tokio::sync::oneshot::channel();
             caps_oracle
