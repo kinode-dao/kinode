@@ -13,15 +13,15 @@ use std::str::FromStr;
 use crate::{keygen, sol::*, KIMAP_ADDRESS, MULTICALL_ADDRESS};
 
 // TODO move these into contracts registry, doublecheck optimism deployments
-const FAKE_DOTDEV_TBA: &str = "0x1a5447E634aa056Fa302E48630Da8425EC15A53A";
-const FAKE_DOTOS_TBA: &str = "0xF5FaB379Eb87599d7B5BaBeDDEFe6EfDEC6164b0";
-const _FAKE_ZEROTH_TBA: &str = "0x02dd7FB5ca377b1a6E2960EB139aF390a24D28FA";
+const FAKE_DOTDEV_TBA: &str = "0x27e913BF6dcd08E9E68530812B277224Be07890B";
+const FAKE_DOTOS_TBA: &str = "0xC026fE4950c12AdACF284689d900AcC74987c555";
+const _FAKE_ZEROTH_TBA: &str = "0x33b687295Cb095d9d962BA83732c67B96dffC8eA";
 
-const KINO_ACCOUNT_IMPL: &str = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
+const KINO_ACCOUNT_IMPL: &str = "0x00ee0e0d00F01f6FF3aCcBA2986E07f99181b9c2";
 
 const MULTICALL: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-const KIMAP: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
+const KIMAP: &str = "0x9CE8cCD2932DC727c70f9ae4f8C2b68E6Abed58C";
 
 /// Attempts to connect to a local anvil fakechain,
 /// registering a name with its KiMap contract.
