@@ -2,13 +2,13 @@ import React from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 
 import Header from "./components/Header";
-import { APP_DETAILS_PATH, DOWNLOAD_PATH, MY_DOWNLOADS_PATH, PUBLISH_PATH, STORE_PATH } from "./constants/path";
+import { APP_DETAILS_PATH, DOWNLOAD_PATH, MY_APPS_PATH, PUBLISH_PATH, STORE_PATH } from "./constants/path";
 
 import StorePage from "./pages/StorePage";
 import AppPage from "./pages/AppPage";
 import DownloadPage from "./pages/DownloadPage";
 import PublishPage from "./pages/PublishPage";
-import MyDownloadsPage from "./pages/MyDownloadsPage";
+import MyAppsPage from "./pages/MyAppsPage";
 
 
 const BASE_URL = import.meta.env.BASE_URL;
@@ -22,7 +22,7 @@ function App() {
         <Header />
         <Routes>
           <Route path={STORE_PATH} element={<StorePage />} />
-          <Route path={MY_DOWNLOADS_PATH} element={<MyDownloadsPage />} />
+          <Route path={MY_APPS_PATH} element={<MyAppsPage />} />
           <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} />
           <Route path={PUBLISH_PATH} element={<PublishPage />} />
           <Route path={`${DOWNLOAD_PATH}/:id`} element={<DownloadPage />} />

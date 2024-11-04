@@ -129,6 +129,7 @@ The distro userspace packages are:
 
 - `app_store:sys`
 - `chess:sys`
+- `contacts:sys`
 - `homepage:sys`
 - `kino_updates:sys`
 - `kns_indexer:sys`
