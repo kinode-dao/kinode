@@ -392,22 +392,22 @@ pub async fn make_process_loop(
         // if restart, tell ourselves to init the app again, with same capabilities
         t::OnExit::Restart => {
             let restart_backoff = maybe_restart_backoff.unwrap();
-            let restart_backoff_lock = restart_backoff.lock().await;
-            let now = std::time::Instant::now();
+            let mut restart_backoff_lock = restart_backoff.lock().await;
+            let now = tokio::time::Instant::now();
             let (wait_till, next_soonest_restart_time, consecutive_attempts) =
                 match *restart_backoff_lock {
-                    None => (None, now + std::time::Duration::from_secs(1), 0),
+                    None => (None, now + tokio::time::Duration::from_secs(1), 0),
                     Some(ref rb) => {
                         if rb.next_soonest_restart_time <= now {
                             // no need to wait
-                            (None, now + std::time::Duration::from_secs(1), 0)
+                            (None, now + tokio::time::Duration::from_secs(1), 0)
                         } else {
                             // must wait
                             let base: u64 = 2;
                             (
                                 Some(rb.next_soonest_restart_time.clone()),
                                 rb.next_soonest_restart_time.clone()
-                                    + std::time::Duration::from_secs(
+                                    + tokio::time::Duration::from_secs(
                                         base.pow(rb.consecutive_attempts),
                                     ),
                                 rb.consecutive_attempts.clone() + 1,
@@ -452,7 +452,7 @@ pub async fn make_process_loop(
                 .send(&send_to_loop)
                 .await;
 
-            let reinitialize = async || {
+            let reinitialize = async move {
                 // then re-initialize with same capabilities
                 t::KernelMessage::builder()
                     .id(rand::random())
@@ -503,16 +503,22 @@ pub async fn make_process_loop(
             };
 
             let restart_handle = match wait_till {
-                Some(wait_till) => Some(tokio::spawn(reinitialize)),
                 None => {
-                    reinitialize().await;
+                    reinitialize.await;
                     None
                 }
-            } * restart_backoff_lock = RestartBackoff {
+                Some(wait_till) => {
+                    Some(tokio::spawn(async move {
+                        tokio::time::sleep_until(wait_till).await;
+                        reinitialize.await;
+                    }))
+                }
+            };
+            *restart_backoff_lock = Some(RestartBackoff {
                 next_soonest_restart_time,
                 consecutive_attempts,
                 restart_handle,
-            };
+            });
         }
         // if requests, fire them
         t::OnExit::Requests(requests) => {

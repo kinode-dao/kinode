@@ -52,7 +52,7 @@ pub struct RestartBackoff {
     ///  * set `consecutive_attempts = 0`,
     /// and in either case:
     ///  set `next_soonest_restart_time += 2 ** consecutive_attempts` seconds
-    next_soonest_restart_time: std::time::Instant,
+    next_soonest_restart_time: tokio::time::Instant,
     /// how many times has process tried to restart in a row
     consecutive_attempts: u32,
     /// task that will do the restart after wait time has elapsed
@@ -284,7 +284,7 @@ async fn handle_kernel_request(
                 caps_oracle,
                 &start_process_metadata,
                 &home_directory_path,
-                &mut process_restart_backoffs,
+                process_restart_backoffs,
             )
             .await
             {
