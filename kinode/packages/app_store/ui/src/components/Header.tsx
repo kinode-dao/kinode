@@ -9,7 +9,7 @@ const Header: React.FC = () => {
         <header className="app-header">
             <div className="header-left">
                 <nav>
-                    <button onClick={() => window.location.href = '/'} className="home-button">
+                    <button onClick={() => window.location.href = window.location.origin.replace('//app-store-sys.', '//') + '/'} className="home-button">
                         <FaHome />
                     </button>
                     <Link to={STORE_PATH} className={location.pathname === STORE_PATH ? 'active' : ''}>Apps</Link>
