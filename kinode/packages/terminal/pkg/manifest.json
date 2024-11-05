@@ -7,6 +7,22 @@
         "request_capabilities": [
             "app-store:app-store:sys",
             "contacts:contacts:sys",
+            {
+                "process": "contacts:contacts:sys",
+                "params": "ReadNameOnly"
+            },
+            {
+                "process": "contacts:contacts:sys",
+                "params": "Read"
+            },
+            {
+                "process": "contacts:contacts:sys",
+                "params": "Add"
+            },
+            {
+                "process": "contacts:contacts:sys",
+                "params": "Remove"
+            },
             "chess:chess:sys",
             "eth:distro:sys",
             {

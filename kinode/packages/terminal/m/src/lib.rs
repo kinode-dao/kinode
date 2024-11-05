@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use kinode_process_lib::{println, script, Address, Request, SendErrorKind};
+use kinode_process_lib::{our_capabilities, println, script, Address, Request, SendErrorKind};
 use regex::Regex;
 
 wit_bindgen::generate!({
@@ -58,7 +58,10 @@ fn init(_our: Address, args: String) -> String {
         return format!("No body given.\n{USAGE}");
     };
 
-    let req = Request::new().target(target).body(body.as_bytes().to_vec());
+    let req = Request::new()
+        .target(target)
+        .body(body.as_bytes().to_vec())
+        .capabilities(our_capabilities());
 
     match parsed.get_one::<u64>("await") {
         Some(s) => {
