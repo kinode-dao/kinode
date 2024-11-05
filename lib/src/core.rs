@@ -8,9 +8,9 @@ use thiserror::Error;
 
 lazy_static::lazy_static! {
     pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
-    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd_manager"), "distro", "sys");
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd-manager"), "distro", "sys");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http-client"), "distro", "sys");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http-server"), "distro", "sys");
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
     pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
     pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys");
@@ -31,6 +31,49 @@ lazy_static::lazy_static! {
 
 pub type Context = Vec<u8>;
 pub type NodeId = String; // KNS domain name
+
+/// Determine if the given `input` string is Kimap-safe or not.
+/// A Kimap-safe string contains only alphanumeric characters, `-`, and `.`.
+/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
+/// `is_kimap_safe()` allows `.`s.
+/// Use `is_kimap_safe_no_dots()` to disallow `.`s.
+pub fn is_kimap_safe(input: &str) -> bool {
+    let expression = r"^[a-zA-Z0-9\-.]+$";
+    let re = regex::Regex::new(expression).unwrap();
+    re.is_match(input)
+}
+
+/// Determine if the given `input` string is Kimap-safe or not.
+/// A Kimap-safe string contains only alphanumeric characters, `-`, and `.`.
+/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
+/// `is_kimap_safe_no_dots()` disallows `.`s.
+/// Use `is_kimap_safe()` to allow `.`s.
+pub fn is_kimap_safe_no_dots(input: &str) -> bool {
+    let expression = r"^[a-zA-Z0-9\-]+$";
+    let re = regex::Regex::new(expression).unwrap();
+    re.is_match(input)
+}
+
+pub fn check_process_id_kimap_safe(p: &ProcessId) -> Result<(), AddressParseError> {
+    if !is_kimap_safe_no_dots(&p.process_name) {
+        return Err(AddressParseError::ProcessNameNotKimapSafe(
+            p.process_name.clone(),
+        ));
+    }
+    if !is_kimap_safe_no_dots(&p.package_name) {
+        return Err(AddressParseError::PackageNameNotKimapSafe(
+            p.package_name.clone(),
+        ));
+    }
+    if !is_kimap_safe(&p.publisher_node) {
+        return Err(AddressParseError::PublisherNodeNotKimapSafe(
+            p.publisher_node.clone(),
+        ));
+    }
+    Ok(())
+}
 
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
@@ -54,7 +97,7 @@ impl Serialize for ProcessId {
 }
 
 impl<'a> Deserialize<'a> for ProcessId {
-    fn deserialize<D>(deserializer: D) -> Result<ProcessId, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'a>,
     {
@@ -69,13 +112,15 @@ impl<'a> Deserialize<'a> for ProcessId {
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
     pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
-        ProcessId {
-            process_name: process_name
-                .unwrap_or(&rand::random::<u64>().to_string())
-                .into(),
-            package_name: package_name.into(),
-            publisher_node: publisher_node.into(),
-        }
+        let process_name = process_name
+            .unwrap_or(&rand::random::<u64>().to_string())
+            .to_string();
+        let process_id = ProcessId {
+            process_name,
+            package_name: package_name.to_string(),
+            publisher_node: publisher_node.to_string(),
+        };
+        process_id
     }
     pub fn process(&self) -> &str {
         &self.process_name
@@ -100,60 +145,70 @@ impl ProcessId {
             publisher_node: self.publisher_node.clone(),
         }
     }
-    pub fn de_wit(wit: wit::ProcessId) -> ProcessId {
+    pub fn de_wit(wit: wit::ProcessId) -> Self {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
     }
-    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> ProcessId {
+    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> Self {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
+    }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        check_process_id_kimap_safe(&self)?;
+        Ok(self)
     }
 }
 
 impl std::str::FromStr for ProcessId {
-    type Err = ProcessIdParseError;
+    type Err = AddressParseError;
     /// Attempts to parse a `ProcessId` from a string. To succeed, the string must contain
     /// exactly 3 segments, separated by colons `:`. The segments must not contain colons.
     /// Please note that while any string without colons will parse successfully
     /// to create a `ProcessId`, not all strings without colons are actually
     /// valid usernames, which the `publisher_node` field of a `ProcessId` will
     /// always in practice be.
-    fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
         let segments: Vec<&str> = input.split(':').collect();
         if segments.len() < 3 {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         } else if segments.len() > 3 {
-            return Err(ProcessIdParseError::TooManyColons);
+            return Err(AddressParseError::TooManyColons);
         }
-        let process_name = segments[0].to_string();
+        let process_name = segments[0];
         if process_name.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        let package_name = segments[1].to_string();
+        let package_name = segments[1];
         if package_name.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        let publisher_node = segments[2].to_string();
+        let publisher_node = segments[2];
         if publisher_node.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        Ok(ProcessId {
-            process_name,
+        Ok(ProcessId::new(
+            Some(process_name),
             package_name,
             publisher_node,
-        })
+        ))
     }
 }
 
 impl From<(&str, &str, &str)> for ProcessId {
     fn from(input: (&str, &str, &str)) -> Self {
         ProcessId::new(Some(input.0), input.1, input.2)
+    }
+}
+
+impl From<&ProcessId> for ProcessId {
+    fn from(input: &ProcessId) -> Self {
+        input.clone()
     }
 }
 
@@ -190,8 +245,8 @@ pub struct PackageId {
 impl PackageId {
     pub fn new(package_name: &str, publisher_node: &str) -> Self {
         PackageId {
-            package_name: package_name.into(),
-            publisher_node: publisher_node.into(),
+            package_name: package_name.to_string(),
+            publisher_node: publisher_node.to_string(),
         }
     }
     pub fn _package(&self) -> &str {
@@ -200,10 +255,23 @@ impl PackageId {
     pub fn _publisher(&self) -> &str {
         &self.publisher_node
     }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        if !is_kimap_safe_no_dots(&self.package_name) {
+            return Err(AddressParseError::ProcessNameNotKimapSafe(
+                self.package_name.clone(),
+            ));
+        }
+        if !is_kimap_safe(&self.publisher_node) {
+            return Err(AddressParseError::PublisherNodeNotKimapSafe(
+                self.publisher_node.clone(),
+            ));
+        }
+        Ok(self)
+    }
 }
 
 impl std::str::FromStr for PackageId {
-    type Err = ProcessIdParseError;
+    type Err = AddressParseError;
     /// Attempt to parse a `PackageId` from a string. The string must
     /// contain exactly two segments, where segments are non-empty strings
     /// separated by a colon (`:`). The segments cannot themselves contain colons.
@@ -215,59 +283,25 @@ impl std::str::FromStr for PackageId {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let segments: Vec<&str> = input.split(':').collect();
         if segments.len() < 2 {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         } else if segments.len() > 2 {
-            return Err(ProcessIdParseError::TooManyColons);
+            return Err(AddressParseError::TooManyColons);
         }
-        let package_name = segments[0].to_string();
+        let package_name = segments[0];
         if package_name.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        let publisher_node = segments[1].to_string();
+        let publisher_node = segments[1];
         if publisher_node.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-
-        Ok(PackageId {
-            package_name,
-            publisher_node,
-        })
+        Ok(PackageId::new(package_name, publisher_node))
     }
 }
 
 impl std::fmt::Display for PackageId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.package_name, self.publisher_node)
-    }
-}
-
-/// Errors that can occur when parsing a [`ProcessId`] from a string.
-/// Also used for [`PackageId`].
-#[derive(Debug)]
-pub enum ProcessIdParseError {
-    TooManyColons,
-    MissingField,
-}
-
-impl std::fmt::Display for ProcessIdParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ProcessIdParseError::TooManyColons => "Too many colons",
-                ProcessIdParseError::MissingField => "Missing field",
-            }
-        )
-    }
-}
-
-impl std::error::Error for ProcessIdParseError {
-    fn description(&self) -> &str {
-        match self {
-            ProcessIdParseError::TooManyColons => "Too many colons",
-            ProcessIdParseError::MissingField => "Missing field",
-        }
     }
 }
 
@@ -280,15 +314,14 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn new<T, U>(node: T, process: U) -> Address
+    pub fn new<T, U>(node: T, process: U) -> Self
     where
         T: Into<String>,
         U: Into<ProcessId>,
     {
-        Address {
-            node: node.into(),
-            process: process.into(),
-        }
+        let node = node.into();
+        let process = process.into();
+        Address { node, process }
     }
     pub fn en_wit(&self) -> wit::Address {
         wit::Address {
@@ -322,6 +355,13 @@ impl Address {
             },
         }
     }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        if !is_kimap_safe(&self.node) {
+            return Err(AddressParseError::NodeNotKimapSafe(self.node.clone()));
+        }
+        check_process_id_kimap_safe(&self.process)?;
+        Ok(self)
+    }
 }
 
 impl std::str::FromStr for Address {
@@ -340,7 +380,7 @@ impl std::str::FromStr for Address {
         } else if parts.len() > 2 {
             return Err(AddressParseError::TooManyAts);
         }
-        let node = parts[0].to_string();
+        let node = parts[0];
         if node.is_empty() {
             return Err(AddressParseError::MissingNodeId);
         }
@@ -352,27 +392,22 @@ impl std::str::FromStr for Address {
         } else if segments.len() > 3 {
             return Err(AddressParseError::TooManyColons);
         }
-        let process_name = segments[0].to_string();
+        let process_name = segments[0];
         if process_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        let package_name = segments[1].to_string();
+        let package_name = segments[1];
         if package_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        let publisher_node = segments[2].to_string();
+        let publisher_node = segments[2];
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-
-        Ok(Address {
+        Ok(Address::new(
             node,
-            process: ProcessId {
-                process_name,
-                package_name,
-                publisher_node,
-            },
-        })
+            (process_name, package_name, publisher_node),
+        ))
     }
 }
 
@@ -418,29 +453,28 @@ impl std::fmt::Display for Address {
     }
 }
 
-#[derive(Debug)]
+/// Errors that can occur when parsing a [`Address`] from a string.
+/// Also used for [`ProcessId`] and [`PackageId`].
+#[derive(Error, Debug)]
 pub enum AddressParseError {
+    #[error("Too many `@` chars: only one allowed")]
     TooManyAts,
+    #[error("Too many colons in ProcessId string")]
     TooManyColons,
+    #[error("Node ID missing")]
     MissingNodeId,
+    #[error("Missing field in ProcessId string")]
     MissingField,
-}
-
-impl std::fmt::Display for AddressParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
-impl std::error::Error for AddressParseError {
-    fn description(&self) -> &str {
-        match self {
-            AddressParseError::TooManyAts => "Too many '@' chars in ProcessId string",
-            AddressParseError::TooManyColons => "Too many colons in ProcessId string",
-            AddressParseError::MissingNodeId => "Node ID missing",
-            AddressParseError::MissingField => "Missing field in ProcessId string",
-        }
-    }
+    #[error("Process name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    ProcessNameNotKimapSafe(String),
+    #[error("Package name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    PackageNameNotKimapSafe(String),
+    #[error("Node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    NodeNotKimapSafe(String),
+    #[error("Publisher node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    PublisherNodeNotKimapSafe(String),
+    #[error("Other: {0}")]
+    Other(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -2080,15 +2114,15 @@ impl KnsUpdate {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum FdManagerRequest {
-    /// other process -> fd_manager
-    /// must send this to fd_manager to get an initial fds_limit
+    /// other process -> fd-manager
+    /// must send this to fd-manager to get an initial fds_limit
     RequestFdsLimit,
-    /// other process -> fd_manager
-    /// send this to notify fd_manager that limit was hit,
+    /// other process -> fd-manager
+    /// send this to notify fd-manager that limit was hit,
     /// which may or may not be reacted to
     FdsLimitHit,
 
-    /// fd_manager -> other process
+    /// fd-manager -> other process
     FdsLimit(u64),
 
     /// administrative
@@ -2120,10 +2154,10 @@ pub struct FdsLimit {
 
 #[derive(Debug, Error)]
 pub enum FdManagerError {
-    #[error("fd_manager: received a non-Request message")]
+    #[error("fd-manager: received a non-Request message")]
     NotARequest,
-    #[error("fd_manager: received a non-FdManangerRequest")]
+    #[error("fd-manager: received a non-FdManangerRequest")]
     BadRequest,
-    #[error("fd_manager: received a FdManagerRequest::FdsLimit, but I am the one who sets limits")]
+    #[error("fd-manager: received a FdManagerRequest::FdsLimit, but I am the one who sets limits")]
     FdManagerWasSentLimit,
 }

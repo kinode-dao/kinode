@@ -95,7 +95,7 @@ fn initialize(our: Address) {
     // add ourselves to the homepage
     kinode_process_lib::homepage::add_to_homepage("Chess", Some(ICON), Some("/"), None);
 
-    // create an HTTP server struct with which to manipulate `http_server:distro:sys`
+    // create an HTTP server struct with which to manipulate `http-server:distro:sys`
     let mut http_server = server::HttpServer::new(5);
     let http_config = server::HttpBindingConfig::default();
 
@@ -179,7 +179,7 @@ fn handle_request(
 
         // if the message is from the HTTP server runtime module, we should handle it
         // as an HTTP request and not a chess request
-        if message.source().process == "http_server:distro:sys" {
+        if message.source().process == "http-server:distro:sys" {
             return handle_http_request(state, http_server, message);
         }
 

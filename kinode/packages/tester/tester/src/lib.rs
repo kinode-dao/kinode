@@ -238,7 +238,7 @@ fn init(our: Address) {
             .target(("our", "kernel", "distro", "sys"))
             .body(
                 serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                    target: ProcessId::new(Some("http_server"), "distro", "sys"),
+                    target: ProcessId::new(Some("http-server"), "distro", "sys"),
                     capabilities: vec![kt::Capability {
                         issuer: Address::new(
                             our.node.clone(),

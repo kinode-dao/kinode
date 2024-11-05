@@ -156,10 +156,7 @@ pub async fn http_client(
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
-                    source: Address {
-                        node: our_name.to_string(),
-                        process: ProcessId::new(Some("http_client"), "distro", "sys"),
-                    },
+                    source: Address::new(our_name.as_str(), ("http-client", "distro", "sys")),
                     target: target.clone(),
                     rsvp: None,
                     message: Message::Response((
@@ -176,7 +173,7 @@ pub async fn http_client(
                 .await;
         }
     }
-    Err(anyhow::anyhow!("http_client: loop died"))
+    Err(anyhow::anyhow!("http-client: loop died"))
 }
 
 async fn connect_websocket(
@@ -222,7 +219,7 @@ async fn connect_websocket(
             let _ = print_tx
                 .send(Printout {
                     verbosity: 1,
-                    content: format!("http_client: underlying lib connection error {e:?}"),
+                    content: format!("http-client: underlying lib connection error {e:?}"),
                 })
                 .await;
 
@@ -409,7 +406,7 @@ async fn handle_http_request(
     let _ = print_tx
         .send(Printout {
             verbosity: 2,
-            content: format!("http_client: {req_method} request to {}", url),
+            content: format!("http-client: {req_method} request to {}", url),
         })
         .await;
 
@@ -479,7 +476,7 @@ async fn handle_http_request(
                     id,
                     source: Address {
                         node: our.to_string(),
-                        process: ProcessId::new(Some("http_client"), "distro", "sys"),
+                        process: ProcessId::new(Some("http-client"), "distro", "sys"),
                     },
                     target,
                     rsvp: None,
@@ -503,7 +500,7 @@ async fn handle_http_request(
             let _ = print_tx
                 .send(Printout {
                     verbosity: 2,
-                    content: "http_client: executed request but got error".to_string(),
+                    content: "http-client: executed request but got error".to_string(),
                 })
                 .await;
             // Forward the error to the target process
@@ -584,7 +581,7 @@ async fn http_error_message(
                 id,
                 source: Address {
                     node: our.to_string(),
-                    process: ProcessId::new(Some("http_client"), "distro", "sys"),
+                    process: ProcessId::new(Some("http-client"), "distro", "sys"),
                 },
                 target,
                 rsvp: None,
@@ -684,7 +681,7 @@ async fn handle_ws_message(
             id,
             source: Address {
                 node: our.to_string(),
-                process: ProcessId::new(Some("http_client"), "distro", "sys"),
+                process: ProcessId::new(Some("http-client"), "distro", "sys"),
             },
             target,
             rsvp: None,

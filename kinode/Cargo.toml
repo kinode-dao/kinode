@@ -79,7 +79,7 @@ snow = { git = "https://github.com/dr-frmr/snow", branch = "dr/extract_ciphersta
 socket2 = "0.5.7"
 static_dir = "0.2.0"
 thiserror = "1.0"
-tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync"] }
+tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
 unicode-segmentation = "1.11"
 unicode-width = "0.1.13"

@@ -149,7 +149,7 @@ pub async fn sqlite(
             if let Err(e) = handle_fd_request(km, &mut state).await {
                 Printout::new(
                     1,
-                    format!("sqlite: got request from fd_manager that errored: {e:?}"),
+                    format!("sqlite: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&state.send_to_terminal)
                 .await;

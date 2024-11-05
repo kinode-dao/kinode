@@ -5,7 +5,10 @@ use std::{
     path::PathBuf,
     sync::Arc,
 };
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, Mutex},
+    task::JoinHandle,
+};
 use wasmtime::{Config, Engine, WasmBacktraceDetails};
 
 /// Manipulate a single process.
@@ -37,6 +40,23 @@ enum ProcessSender {
         net_errors: Option<t::NetworkErrorSender>,
     },
     Userspace(t::ProcessMessageSender),
+}
+
+pub type ProcessRestartBackoffs = HashMap<t::ProcessId, Arc<Mutex<Option<RestartBackoff>>>>;
+
+pub struct RestartBackoff {
+    /// if try to restart before this:
+    ///  * wait till `next_soonest_restart_time`
+    ///  * increment `consecutive_attempts`
+    /// else if try to restart after this:
+    ///  * set `consecutive_attempts = 0`,
+    /// and in either case:
+    ///  set `next_soonest_restart_time += 2 ** consecutive_attempts` seconds
+    next_soonest_restart_time: tokio::time::Instant,
+    /// how many times has process tried to restart in a row
+    consecutive_attempts: u32,
+    /// task that will do the restart after wait time has elapsed
+    restart_handle: Option<JoinHandle<()>>,
 }
 
 /// persist kernel's process_map state for next bootup
@@ -78,6 +98,7 @@ async fn handle_kernel_request(
     caps_oracle: &t::CapMessageSender,
     engine: &Engine,
     home_directory_path: &PathBuf,
+    process_restart_backoffs: &mut ProcessRestartBackoffs,
 ) -> Option<()> {
     let t::Message::Request(request) = km.message else {
         return None;
@@ -111,7 +132,7 @@ async fn handle_kernel_request(
                     .send(Ok(t::KernelMessage::builder()
                         .id(km.id)
                         .source((our_name, KERNEL_PROCESS_ID.clone()))
-                        .target((our_name, process_id.clone()))
+                        .target((our_name, process_id))
                         .message(t::Message::Request(t::Request {
                             inherit: false,
                             expects_response: None,
@@ -162,6 +183,31 @@ async fn handle_kernel_request(
                     .await;
                 return None;
             };
+            if let Err(e) = t::check_process_id_kimap_safe(&id) {
+                t::Printout::new(0, &format!("kernel: {e}"))
+                    .send(send_to_terminal)
+                    .await;
+                // fire an error back
+                t::KernelMessage::builder()
+                    .id(km.id)
+                    .source((our_name, KERNEL_PROCESS_ID.clone()))
+                    .target(km.rsvp.unwrap_or(km.source))
+                    .message(t::Message::Response((
+                        t::Response {
+                            inherit: false,
+                            body: serde_json::to_vec(&t::KernelResponse::InitializeProcessError)
+                                .unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        },
+                        None,
+                    )))
+                    .build()
+                    .unwrap()
+                    .send(send_to_loop)
+                    .await;
+                return None;
+            }
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let parent_caps: &HashMap<t::Capability, Vec<u8>> =
@@ -197,7 +243,7 @@ async fn handle_kernel_request(
             // give the initializer and itself the messaging cap.
             // NOTE: we do this even if the process is public, because
             // a process might redundantly call grant_capabilities.
-            let msg_cap = t::Capability::messaging((our_name, id.clone()));
+            let msg_cap = t::Capability::messaging((our_name, &id));
             let cap_sig = keypair.sign(&rmp_serde::to_vec(&msg_cap).unwrap());
             valid_capabilities.insert(msg_cap.clone(), cap_sig.as_ref().to_vec());
 
@@ -238,6 +284,7 @@ async fn handle_kernel_request(
                 caps_oracle,
                 &start_process_metadata,
                 &home_directory_path,
+                process_restart_backoffs,
             )
             .await
             {
@@ -317,7 +364,7 @@ async fn handle_kernel_request(
                         .send(Ok(t::KernelMessage::builder()
                             .id(rand::random())
                             .source((our_name, KERNEL_PROCESS_ID.clone()))
-                            .target((our_name, process_id))
+                            .target((our_name, &process_id))
                             .message(t::Message::Request(t::Request {
                                 inherit: false,
                                 expects_response: None,
@@ -469,6 +516,7 @@ async fn start_process(
     caps_oracle: &t::CapMessageSender,
     process_metadata: &StartProcessMetadata,
     home_directory_path: &PathBuf,
+    process_restart_backoffs: &mut ProcessRestartBackoffs,
 ) -> anyhow::Result<()> {
     let (send_to_process, recv_in_process) =
         mpsc::channel::<Result<t::KernelMessage, t::WrappedSendError>>(PROCESS_CHANNEL_CAPACITY);
@@ -490,6 +538,15 @@ async fn start_process(
         on_exit: process_metadata.persisted.on_exit.clone(),
         public: process_metadata.persisted.public,
     };
+    let maybe_restart_backoff = if let t::OnExit::Restart = process_metadata.persisted.on_exit {
+        let restart_backoff = process_restart_backoffs
+            .remove(id)
+            .unwrap_or_else(|| Arc::new(Mutex::new(None)));
+        process_restart_backoffs.insert(id.clone(), Arc::clone(&restart_backoff));
+        Some(restart_backoff)
+    } else {
+        None
+    };
     process_handles.insert(
         id.clone(),
         tokio::spawn(process::make_process_loop(
@@ -503,6 +560,7 @@ async fn start_process(
             caps_oracle.clone(),
             engine.clone(),
             home_directory_path.clone(),
+            maybe_restart_backoff,
         )),
     );
     Ok(())
@@ -574,6 +632,8 @@ pub async fn kernel(
     // keeping only them in the updated post-boot process map
     let mut non_rebooted_processes: HashSet<t::ProcessId> = HashSet::new();
 
+    let mut process_restart_backoffs: ProcessRestartBackoffs = HashMap::new();
+
     for (process_id, persisted) in &process_map {
         // runtime extensions will have a bytes_handle of "", because they have no
         // Wasm code saved in filesystem.
@@ -617,7 +677,7 @@ pub async fn kernel(
                 {
                     t::KernelMessage::builder()
                         .id(rand::random())
-                        .source((&our.name, process_id.clone()))
+                        .source((&our.name, process_id))
                         .target(address.clone())
                         .message(t::Message::Request(request))
                         .lazy_load_blob(blob.clone())
@@ -651,6 +711,7 @@ pub async fn kernel(
             &caps_oracle_sender,
             &start_process_metadata,
             &home_directory_path,
+            &mut process_restart_backoffs,
         )
         .await
         {
@@ -852,7 +913,7 @@ pub async fn kernel(
                         };
                         if !persisted_target.public
                         && !persisted_source.capabilities.contains_key(
-                            &t::Capability::messaging((&our.name, kernel_message.target.process.clone()))
+                            &t::Capability::messaging((&our.name, &kernel_message.target.process))
                         ) {
                             // capabilities are not correct! skip this message.
                             t::Printout::new(
@@ -900,6 +961,7 @@ pub async fn kernel(
                         &caps_oracle_sender,
                         &engine,
                         &home_directory_path,
+                        &mut process_restart_backoffs,
                     ).await {
                         // drain process map of processes with OnExit::None
                         process_map.retain(|_, persisted| !persisted.on_exit.is_none());

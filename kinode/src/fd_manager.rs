@@ -278,7 +278,7 @@ async fn handle_message(
                     .send(send_to_loop)
                     .await;
             }
-            Some(format!("fd_manager: {:?}", state))
+            Some(format!("fd-manager: {:?}", state))
         }
         FdManagerRequest::GetProcessFdLimit(process) => {
             if expects_response.is_some() {
@@ -341,7 +341,7 @@ async fn send_all_fds_limits(our_node: &str, send_to_loop: &MessageSender, state
         KernelMessage::builder()
             .id(rand::random())
             .source((our_node, FD_MANAGER_PROCESS_ID.clone()))
-            .target((our_node, process_id.clone()))
+            .target((our_node, process_id))
             .message(Message::Request(Request {
                 inherit: false,
                 expects_response: None,

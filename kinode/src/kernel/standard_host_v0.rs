@@ -669,7 +669,8 @@ impl StandardHost for process::ProcessWasiV0 {
             Some(&name),
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
-        );
+        )
+        .check()?;
 
         let request_capabilities_filtered = {
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -737,7 +738,7 @@ impl StandardHost for process::ProcessWasiV0 {
                     on: t::ProcessId::de_wit_v0(process),
                     caps: vec![t::Capability::messaging((
                         self.process.metadata.our.node.clone(),
-                        new_process_id.clone(),
+                        &new_process_id,
                     ))],
                     responder: Some(tx),
                 })
@@ -801,7 +802,7 @@ impl StandardHost for process::ProcessWasiV0 {
                 on: self.process.metadata.our.process.clone(),
                 caps: vec![t::Capability::messaging((
                     self.process.metadata.our.node.clone(),
-                    new_process_id.clone(),
+                    &new_process_id,
                 ))],
                 responder: Some(tx),
             })

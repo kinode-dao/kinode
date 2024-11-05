@@ -9,8 +9,9 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use http::uri::Authority;
 use lib::types::core::{
-    Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo, Message, MessageReceiver,
-    MessageSender, PrintSender, Printout, ProcessId, Request, Response, HTTP_SERVER_PROCESS_ID,
+    check_process_id_kimap_safe, Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo,
+    Message, MessageReceiver, MessageSender, PrintSender, Printout, ProcessId, Request, Response,
+    HTTP_SERVER_PROCESS_ID,
 };
 use route_recognizer::Router;
 use sha2::{Digest, Sha256};
@@ -234,7 +235,7 @@ pub async fn http_server(
         )
         .await;
     }
-    Err(anyhow::anyhow!("http_server: http_server loop exited"))
+    Err(anyhow::anyhow!("http-server: http-server loop exited"))
 }
 
 /// The 'server' part. Listens on a port assigned by runtime, and handles
@@ -251,7 +252,7 @@ async fn serve(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
-    Printout::new(0, format!("http_server: running on port {our_port}"))
+    Printout::new(0, format!("http-server: running on port {our_port}"))
         .send(&print_tx)
         .await;
 
@@ -397,7 +398,7 @@ async fn ws_handler(
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
-    Printout::new(2, format!("http_server: ws request for {original_path}"))
+    Printout::new(2, format!("http-server: ws request for {original_path}"))
         .send(&print_tx)
         .await;
 
@@ -494,7 +495,7 @@ async fn http_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
     let base_path = original_path.split('/').skip(1).next().unwrap_or("");
-    Printout::new(2, format!("http_server: request for {original_path}"))
+    Printout::new(2, format!("http-server: request for {original_path}"))
         .send(&print_tx)
         .await;
 
@@ -512,7 +513,7 @@ async fn http_handler(
     } else {
         Printout::new(
             2,
-            format!("http_server: no route found for {original_path}"),
+            format!("http-server: no route found for {original_path}"),
         )
         .send(&print_tx)
         .await;
@@ -751,7 +752,7 @@ async fn handle_rpc_message(
 
     Printout::new(
         2,
-        format!("http_server: passing on RPC message to {target_process}"),
+        format!("http-server: passing on RPC message to {target_process}"),
     )
     .send(&print_tx)
     .await;
@@ -803,7 +804,7 @@ fn make_websocket_message(
     Some(KernelMessage {
         id: rand::random(),
         source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()),
-        target: Address::new(&our, app),
+        target: Address::new(&our, &app),
         rsvp: None,
         message: Message::Request(Request {
             inherit: false,
@@ -924,15 +925,15 @@ async fn maintain_websocket(
 
     Printout::new(
         2,
-        format!("http_server: new websocket connection to {app} with id {channel_id}"),
+        format!("http-server: new websocket connection to {app} with id {channel_id}"),
     )
     .send(&print_tx)
     .await;
 
     KernelMessage::builder()
         .id(rand::random())
-        .source(Address::new(&*our, HTTP_SERVER_PROCESS_ID.clone()))
-        .target(Address::new(&*our, app.clone()))
+        .source((&*our, HTTP_SERVER_PROCESS_ID.clone()))
+        .target((&*our, &app))
         .message(Message::Request(Request {
             inherit: false,
             expects_response: None,
@@ -998,7 +999,7 @@ async fn maintain_websocket(
     }
     Printout::new(
         2,
-        format!("http_server: websocket connection {channel_id} closed"),
+        format!("http-server: websocket connection {channel_id} closed"),
     )
     .send(&print_tx)
     .await;
@@ -1015,8 +1016,8 @@ async fn websocket_close(
     ws_senders.remove(&channel_id);
     KernelMessage::builder()
         .id(rand::random())
-        .source(Address::new("our", HTTP_SERVER_PROCESS_ID.clone()))
-        .target(Address::new("our", process))
+        .source(("our", HTTP_SERVER_PROCESS_ID.clone()))
+        .target(("our", &process))
         .message(Message::Request(Request {
             inherit: false,
             expects_response: None,
@@ -1092,7 +1093,7 @@ async fn handle_app_message(
         }) => {
             let Ok(message) = serde_json::from_slice::<HttpServerAction>(body) else {
                 println!(
-                    "http_server: got malformed request from {}: {:?}\r",
+                    "http-server: got malformed request from {}: {:?}\r",
                     km.source, body
                 );
                 send_action_response(
@@ -1113,6 +1114,22 @@ async fn handle_app_message(
                     local_only,
                     cache,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
@@ -1167,6 +1184,22 @@ async fn handle_app_message(
                     }
                 }
                 HttpServerAction::SecureBind { path, cache } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let subdomain = utils::generate_secure_subdomain(&km.source.process);
                     let mut path_bindings = path_bindings.write().await;
@@ -1236,6 +1269,22 @@ async fn handle_app_message(
                     encrypted,
                     extension,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
                     ws_path_bindings.add(
@@ -1254,6 +1303,22 @@ async fn handle_app_message(
                     encrypted,
                     extension,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let subdomain = utils::generate_secure_subdomain(&km.source.process);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
@@ -1380,7 +1445,7 @@ pub async fn send_action_response(
 ) {
     KernelMessage::builder()
         .id(id)
-        .source(Address::new("our", HTTP_SERVER_PROCESS_ID.clone()))
+        .source(("our", HTTP_SERVER_PROCESS_ID.clone()))
         .target(target)
         .message(Message::Response((
             Response {
