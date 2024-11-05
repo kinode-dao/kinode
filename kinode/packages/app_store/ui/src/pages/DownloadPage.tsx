@@ -178,7 +178,7 @@ export default function DownloadPage() {
 
     const handleLaunch = useCallback(() => {
         if (launchPath) {
-            window.location.href = launchPath;
+            window.location.href = window.location.origin.replace('//app-store-sys.', '//') + launchPath;
         }
     }, [launchPath]);
 
