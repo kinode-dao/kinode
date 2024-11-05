@@ -507,12 +507,10 @@ pub async fn make_process_loop(
                     reinitialize.await;
                     None
                 }
-                Some(wait_till) => {
-                    Some(tokio::spawn(async move {
-                        tokio::time::sleep_until(wait_till).await;
-                        reinitialize.await;
-                    }))
-                }
+                Some(wait_till) => Some(tokio::spawn(async move {
+                    tokio::time::sleep_until(wait_till).await;
+                    reinitialize.await;
+                })),
             };
             *restart_backoff_lock = Some(RestartBackoff {
                 next_soonest_restart_time,
