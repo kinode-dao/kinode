@@ -10,7 +10,7 @@ wit_bindgen::generate!({
 const USAGE: &str = "\x1b[1mUsage:\x1b[0m m <target> <body> [-a <await_time>]";
 
 script!(init);
-fn init(_our: Address, args: String) -> String {
+fn init(our: Address, args: String) -> String {
     if args.is_empty() {
         return format!("Send a request to a process.\n{USAGE}");
     }
@@ -58,10 +58,21 @@ fn init(_our: Address, args: String) -> String {
         return format!("No body given.\n{USAGE}");
     };
 
+    let target = if target.node() != "our" {
+        target
+    } else {
+        Address::new(our.node(), target.process)
+    };
+
+    let capabilities = our_capabilities()
+        .into_iter()
+        .filter(|cap| cap.issuer == target)
+        .collect();
+
     let req = Request::new()
         .target(target)
         .body(body.as_bytes().to_vec())
-        .capabilities(our_capabilities());
+        .capabilities(capabilities);
 
     match parsed.get_one::<u64>("await") {
         Some(s) => {
