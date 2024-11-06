@@ -292,10 +292,10 @@ async fn serve(
                 warp::reply::with_status(warp::reply::html(cloned_login_html), StatusCode::OK)
             })
             .or(warp::post()
-                .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::body::json())
                 .and(warp::filters::host::optional())
                 .and(warp::query::<HashMap<String, String>>())
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
                 .and(warp::any().map(move || cloned_our.clone()))
                 .and(warp::any().map(move || encoded_keyfile.clone()))
                 .and_then(login_handler)),
@@ -380,8 +380,7 @@ async fn login_handler(
                     if let Some(redirect) = query_params.get("redirect") {
                         response.headers_mut().append(
                             "Location",
-                            HeaderValue::from_str(&format!("{}{redirect}", host.unwrap().host()))
-                                .unwrap(),
+                            HeaderValue::from_str(&format!("{}{redirect}", host.unwrap())).unwrap(),
                         );
                     }
                     Ok(response)
