@@ -378,10 +378,19 @@ async fn login_handler(
                 Ok(v) => {
                     response.headers_mut().append("set-cookie", v);
                     if let Some(redirect) = query_params.get("redirect") {
+                        // get http/https from request headers
+                        let proto = match response.headers().get("X-Forwarded-Proto") {
+                            Some(proto) => proto.to_str().unwrap_or("http").to_string(),
+                            None => "http".to_string(),
+                        };
+
                         response.headers_mut().append(
                             "Location",
-                            HeaderValue::from_str(&format!("http://{}{redirect}", host.unwrap()))
-                                .unwrap(),
+                            HeaderValue::from_str(&format!(
+                                "{proto}://{}{redirect}",
+                                host.unwrap()
+                            ))
+                            .unwrap(),
                         );
                         response
                             .headers_mut()
