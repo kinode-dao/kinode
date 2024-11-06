@@ -231,17 +231,6 @@
         }
       });
     });
-
-    // Check for redirect parameter on page load
-    document.addEventListener("DOMContentLoaded", () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const redirectPath = urlParams.get('redirect');
-      if (redirectPath) {
-        // Ensure the redirect path starts with a slash
-        const path = redirectPath.startsWith('/') ? redirectPath : '/' + redirectPath;
-        window.location.href = path;
-      }
-    });
   </script>
 </body>
 
