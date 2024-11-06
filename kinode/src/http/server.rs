@@ -359,15 +359,15 @@ async fn login_handler(
                 }
             };
 
-            let mut response = warp::reply::with_status(
-                warp::reply::json(&base64_standard.encode(encoded_keyfile.to_vec())),
-                if let Some(redirect) = query_params.get("redirect") {
-                    StatusCode::FOUND
-                } else {
-                    StatusCode::OK
-                },
-            )
-            .into_response();
+            let mut response = if let Some(redirect) = query_params.get("redirect") {
+                warp::reply::with_status(warp::reply(), StatusCode::SEE_OTHER).into_response()
+            } else {
+                warp::reply::with_status(
+                    warp::reply::json(&base64_standard.encode(encoded_keyfile.to_vec())),
+                    StatusCode::OK,
+                )
+                .into_response()
+            };
 
             let cookie = match info.subdomain.unwrap_or_default().as_str() {
                 "" => format!("kinode-auth_{our}={token};"),
@@ -380,8 +380,12 @@ async fn login_handler(
                     if let Some(redirect) = query_params.get("redirect") {
                         response.headers_mut().append(
                             "Location",
-                            HeaderValue::from_str(&format!("{}{redirect}", host.unwrap())).unwrap(),
+                            HeaderValue::from_str(&format!("http://{}{redirect}", host.unwrap()))
+                                .unwrap(),
                         );
+                        response
+                            .headers_mut()
+                            .append("Content-Length", HeaderValue::from_str("0").unwrap());
                     }
                     Ok(response)
                 }
