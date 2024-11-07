@@ -7,7 +7,7 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-kinode_process_lib = "0.9.1"
+kinode_process_lib = "0.9.4"
 wit-bindgen = "0.24.0"
 
 [lib]
