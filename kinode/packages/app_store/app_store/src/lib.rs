@@ -178,20 +178,33 @@ fn handle_message(
                 let package_id = req.download_info.package_id;
                 let version_hash = req.download_info.version_hash;
 
-                if let Some(package) = state.packages.get(&package_id.clone().to_process_lib()) {
-                    if package.manifest_hash == Some(manifest_hash) {
-                        print_to_terminal(1, "auto_install:main, manifest_hash match");
-                        if let Err(e) =
-                            utils::install(&package_id, None, &version_hash, state, &our.node)
-                        {
-                            print_to_terminal(1, &format!("error auto_installing package: {e}"));
-                        } else {
-                            println!(
-                                "auto_installed update for package: {:?}",
-                                &package_id.to_process_lib()
-                            );
+                let process_lib_package_id = package_id.clone().to_process_lib();
+
+                // first, check if we have the package and get its manifest hash
+                let should_auto_install = state
+                    .packages
+                    .get(&process_lib_package_id)
+                    .map(|package| package.manifest_hash == Some(manifest_hash.clone()))
+                    .unwrap_or(false);
+
+                if should_auto_install {
+                    print_to_terminal(1, "auto_install:main, manifest_hash match");
+                    if let Err(e) =
+                        utils::install(&package_id, None, &version_hash, state, &our.node)
+                    {
+                        if let Some(package) = state.packages.get_mut(&process_lib_package_id) {
+                            package.pending_update_hash = Some(version_hash);
                         }
+                        print_to_terminal(1, &format!("error auto_installing package: {e}"));
                     } else {
+                        println!(
+                            "auto_installed update for package: {:?}",
+                            &process_lib_package_id
+                        );
+                    }
+                } else {
+                    if let Some(package) = state.packages.get_mut(&process_lib_package_id) {
+                        package.pending_update_hash = Some(version_hash);
                         print_to_terminal(1, "auto_install:main, manifest_hash do not match");
                     }
                 }
