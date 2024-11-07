@@ -49,6 +49,13 @@ a:hover {
     gap: 1rem;
 }
 
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    /* Provides consistent spacing between NotificationBay and ConnectButton */
+}
+
 .header-left h1 {
     margin: 0;
     font-size: 1.5rem;
@@ -432,4 +439,167 @@ td {
 
 .fa-spin {
     animation: spin 1s linear infinite;
+}
+
+.manifest-display {
+    background-color: light-dark(var(--tan), var(--tasteful-dark));
+    color: light-dark(var(--off-black), var(--off-white));
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin-bottom: 1rem;
+}
+
+.manifest-item {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--gray);
+    border-radius: var(--border-radius);
+    background-color: light-dark(var(--white), var(--off-black));
+}
+
+.manifest-item p {
+    margin: 0.5rem 0;
+}
+
+.notification-bay {
+    position: relative;
+    margin-right: 1rem;
+}
+
+.notification-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    color: light-dark(var(--off-black), var(--off-white));
+}
+
+.notification-details {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 320px;
+    max-height: 400px;
+    overflow-y: auto;
+    background-color: light-dark(var(--white), var(--tasteful-dark));
+    border-radius: var(--border-radius);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    padding: 0.5rem;
+}
+
+.badge {
+    background-color: var(--orange);
+    color: var(--white);
+    border-radius: 50%;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    min-width: 1.5rem;
+    text-align: center;
+}
+
+.notification-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    margin: 0.5rem 0;
+    border-radius: var(--border-radius);
+    background-color: light-dark(var(--tan), var(--off-black));
+    color: light-dark(var(--off-black), var(--off-white));
+}
+
+.notification-item.error {
+    background-color: light-dark(#ffe6e6, #4a2020);
+}
+
+.notification-item.success {
+    background-color: light-dark(#e6ffe6, #204a20);
+}
+
+.notification-item.warning {
+    background-color: light-dark(#fff3e6, #4a3820);
+}
+
+.notification-item.download {
+    background-color: light-dark(#e6f3ff, #20304a);
+}
+
+.notification-content {
+    flex: 1;
+    margin-right: 1rem;
+}
+
+.notification-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.dismiss-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: light-dark(var(--gray), var(--off-white));
+    padding: 0.25rem;
+}
+
+.dismiss-button:hover {
+    color: var(--orange);
+}
+
+.progress-bar {
+    margin-top: 0.5rem;
+    height: 4px;
+    background-color: light-dark(var(--white), var(--off-black));
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.progress {
+    height: 100%;
+    background-color: var(--orange);
+    transition: width 0.3s ease;
+}
+
+/* Modal styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+}
+
+.modal-content {
+    background-color: light-dark(var(--white), var(--tasteful-dark));
+    color: light-dark(var(--off-black), var(--off-white));
+    padding: 1.5rem;
+    border-radius: var(--border-radius);
+    position: relative;
+    max-width: 80%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: light-dark(var(--gray), var(--off-white));
+    padding: 0.25rem;
+}
+
+.modal-close:hover {
+    color: var(--orange);
 }
