@@ -78,6 +78,7 @@ fn init(our: Address) {
     }
 
     // killswitch timer, 2 minutes. sender or receiver gets killed/cleaned up.
+    // TODO: killswitch update bubbles up to downloads process?
     timer::set_timer(120000, None);
 
     let start = std::time::Instant::now();
@@ -167,7 +168,11 @@ fn handle_receiver(
     package_id: &PackageId,
     version_hash: &str,
 ) -> anyhow::Result<()> {
-    // TODO: write to a temporary location first, then check hash as we go, then rename to final location.
+    let timer_address = Address::from_str("our@timer:distro:sys")?;
+
+    let mut file: Option<File> = None;
+    let mut size: Option<u64> = None;
+    let mut hasher = Sha256::new();
 
     let package_dir = vfs::open_dir(
         &format!(
@@ -178,16 +183,6 @@ fn handle_receiver(
         true,
         None,
     )?;
-
-    let timer_address = Address::from_str("our@timer:distro:sys")?;
-
-    let mut file = vfs::open_file(
-        &format!("{}{}.zip", &package_dir.path, version_hash),
-        true,
-        None,
-    )?;
-    let mut size: Option<u64> = None;
-    let mut hasher = Sha256::new();
 
     loop {
         let message = await_message()?;
@@ -200,7 +195,28 @@ fn handle_receiver(
 
         match message.body().try_into()? {
             DownloadRequests::Chunk(chunk) => {
-                handle_chunk(&mut file, &chunk, parent_process, &mut size, &mut hasher)?;
+                let bytes = if let Some(blob) = get_blob() {
+                    blob.bytes
+                } else {
+                    return Err(anyhow::anyhow!("ft_worker: got no blob in chunk request"));
+                };
+
+                if file.is_none() {
+                    file = Some(vfs::open_file(
+                        &format!("{}{}.zip", &package_dir.path, version_hash),
+                        true,
+                        None,
+                    )?);
+                }
+
+                handle_chunk(
+                    file.as_mut().unwrap(),
+                    &chunk,
+                    parent_process,
+                    &mut size,
+                    &mut hasher,
+                    &bytes,
+                )?;
                 if let Some(s) = size {
                     if chunk.offset + chunk.length >= s {
                         let recieved_hash = format!("{:x}", hasher.finalize());
@@ -232,7 +248,7 @@ fn handle_receiver(
                         let manifest_filename =
                             format!("{}{}.json", package_dir.path, version_hash);
 
-                        let contents = file.read()?;
+                        let contents = file.as_mut().unwrap().read()?;
                         extract_and_write_manifest(&contents, &manifest_filename)?;
 
                         Request::new()
@@ -292,15 +308,10 @@ fn handle_chunk(
     parent: &Address,
     size: &mut Option<u64>,
     hasher: &mut Sha256,
+    bytes: &[u8],
 ) -> anyhow::Result<()> {
-    let bytes = if let Some(blob) = get_blob() {
-        blob.bytes
-    } else {
-        return Err(anyhow::anyhow!("ft_worker: got no blob"));
-    };
-
-    file.write_all(&bytes)?;
-    hasher.update(&bytes);
+    file.write_all(bytes)?;
+    hasher.update(bytes);
 
     if let Some(total_size) = size {
         // let progress = ((chunk.offset + chunk.length) as f64 / *total_size as f64 * 100.0) as u64;
