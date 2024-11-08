@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ManifestResponse, PackageManifestEntry } from '../types/Apps';
+import { FaChevronDown, FaChevronRight, FaGlobe, FaLock, FaShieldAlt } from 'react-icons/fa';
 
 interface ManifestDisplayProps {
     manifestResponse: ManifestResponse;
@@ -23,17 +24,59 @@ const transformCapabilities = (capabilities: any[]) => {
 };
 
 
-const renderManifest = (manifest: PackageManifestEntry) => (
-    <div className="manifest-item">
-        <p><strong>Process Name:</strong> {manifest.process_name}</p>
-        <p><strong>Requests Network Access:</strong> {manifest.request_networking ? 'Yes' : 'No'}</p>
-        <p><strong>Wants to Grant Capabilities:</strong> {transformCapabilities(manifest.grant_capabilities).join(', ') || 'None'}</p>
-        <p><strong>Is Public:</strong> {manifest.public ? 'Yes' : 'No'}</p>
-        <p><strong>Requests the Capabilities:</strong> {transformCapabilities(manifest.request_capabilities).join(', ') || 'None'}</p>
-        {/* <p><strong>Process Wasm Path:</strong> {manifest.process_wasm_path}</p> */}
-        {/* <p><strong>On Exit:</strong> {manifest.on_exit}</p> */}
-    </div>
-);
+const ProcessManifest: React.FC<{ manifest: PackageManifestEntry }> = ({ manifest }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const hasCapabilities = manifest.request_capabilities.length > 0 || manifest.grant_capabilities.length > 0;
+
+    return (
+        <div className="process-manifest">
+            <button
+                className="process-header"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                {isExpanded ? <FaChevronDown /> : <FaChevronRight />}
+                <span className="process-name">{manifest.process_name}</span>
+                <div className="process-indicators">
+                    {manifest.request_networking && (
+                        <FaGlobe title="Requests Network Access" className="network-icon" />
+                    )}
+                    {hasCapabilities && (
+                        <FaShieldAlt title="Has Capability Requirements" className="capability-icon" />
+                    )}
+                    {!manifest.public && (
+                        <FaLock title="Private Process" className="private-icon" />
+                    )}
+                </div>
+            </button>
+
+            {isExpanded && (
+                <div className="process-details">
+                    {manifest.request_capabilities.length > 0 && (
+                        <div className="capability-section">
+                            <h4>Requested Capabilities:</h4>
+                            <ul>
+                                {transformCapabilities(manifest.request_capabilities).map((cap, i) => (
+                                    <li key={i}>{cap}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {manifest.grant_capabilities.length > 0 && (
+                        <div className="capability-section">
+                            <h4>Granted Capabilities:</h4>
+                            <ul>
+                                {transformCapabilities(manifest.grant_capabilities).map((cap, i) => (
+                                    <li key={i}>{cap}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const ManifestDisplay: React.FC<ManifestDisplayProps> = ({ manifestResponse }) => {
     if (!manifestResponse) {
@@ -45,9 +88,7 @@ const ManifestDisplay: React.FC<ManifestDisplayProps> = ({ manifestResponse }) =
     return (
         <div className="manifest-display">
             {parsedManifests.map((manifest, index) => (
-                <div key={index}>
-                    {renderManifest(manifest)}
-                </div>
+                <ProcessManifest key={index} manifest={manifest} />
             ))}
         </div>
     );

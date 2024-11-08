@@ -442,23 +442,87 @@ td {
 }
 
 .manifest-display {
-    background-color: light-dark(var(--tan), var(--tasteful-dark));
+    background: light-dark(var(--white), var(--tasteful-dark));
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    max-width: 600px;
+}
+
+.process-manifest {
+    margin-bottom: 0.5rem;
+    border: 1px solid light-dark(var(--gray), var(--off-black));
+    border-radius: var(--border-radius);
+    overflow: hidden;
+}
+
+.process-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: none;
+    border: none;
+    cursor: pointer;
     color: light-dark(var(--off-black), var(--off-white));
+    transition: background-color 0.2s;
+}
+
+.process-header:hover {
+    background: light-dark(var(--tan), var(--off-black));
+}
+
+.process-name {
+    flex: 1;
+    text-align: left;
+    font-weight: 500;
+}
+
+.process-indicators {
+    display: flex;
+    gap: 0.5rem;
+    color: light-dark(var(--gray), var(--off-white));
+}
+
+.network-icon {
+    color: var(--orange);
+}
+
+.capability-icon {
+    color: var(--blue);
+}
+
+.private-icon {
+    color: var(--gray);
+}
+
+.process-details {
     padding: 1rem;
-    border-radius: var(--border-radius);
+    background: light-dark(var(--tan), var(--off-black));
+    border-top: 1px solid light-dark(var(--gray), var(--off-black));
+}
+
+.capability-section {
     margin-bottom: 1rem;
 }
 
-.manifest-item {
-    margin-bottom: 1rem;
-    padding: 1rem;
-    border: 1px solid var(--gray);
-    border-radius: var(--border-radius);
-    background-color: light-dark(var(--white), var(--off-black));
+.capability-section:last-child {
+    margin-bottom: 0;
 }
 
-.manifest-item p {
-    margin: 0.5rem 0;
+.capability-section h4 {
+    margin: 0 0 0.5rem 0;
+    color: light-dark(var(--off-black), var(--off-white));
+}
+
+.capability-section ul {
+    margin: 0;
+    padding-left: 1.5rem;
+    color: light-dark(var(--gray), var(--off-white));
+}
+
+.capability-section li {
+    margin-bottom: 0.25rem;
 }
 
 .notification-bay {
@@ -602,4 +666,51 @@ td {
 
 .modal-close:hover {
     color: var(--orange);
+}
+
+.notification-button.has-errors {
+    animation: shake 0.82s cubic-bezier(.36, .07, .19, .97) both;
+}
+
+.badge.error-badge {
+    background-color: var(--error-red);
+    animation: pulse 2s infinite;
+}
+
+@keyframes shake {
+
+    10%,
+    90% {
+        transform: translate3d(-1px, 0, 0);
+    }
+
+    20%,
+    80% {
+        transform: translate3d(2px, 0, 0);
+    }
+
+    30%,
+    50%,
+    70% {
+        transform: translate3d(-4px, 0, 0);
+    }
+
+    40%,
+    60% {
+        transform: translate3d(4px, 0, 0);
+    }
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+
+    100% {
+        opacity: 1;
+    }
 }

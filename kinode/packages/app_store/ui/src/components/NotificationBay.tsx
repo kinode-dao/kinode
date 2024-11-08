@@ -25,6 +25,7 @@ const Modal: React.FC<ModalProps> = ({ children, onClose }) => {
 
 const NotificationBay: React.FC = () => {
     const { notifications, removeNotification } = useAppsStore();
+    const hasErrors = notifications.some(n => n.type === 'error');
     const [isExpanded, setIsExpanded] = useState(false);
     const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
     const navigate = useNavigate();
@@ -104,12 +105,16 @@ const NotificationBay: React.FC = () => {
     return (
         <>
             <div className="notification-bay">
-                <button onClick={() => setIsExpanded(!isExpanded)} className="notification-button">
+                <button
+                    onClick={() => setIsExpanded(!isExpanded)}
+                    className={`notification-button ${hasErrors ? 'has-errors' : ''}`}
+                >
                     <FaBell />
                     {notifications.length > 0 && (
-                        <span className="badge">{notifications.length}</span>
+                        <span className={`badge ${hasErrors ? 'error-badge' : ''}`}>
+                            {notifications.length}
+                        </span>
                     )}
-                    {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
                 </button>
 
                 {isExpanded && (
