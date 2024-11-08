@@ -413,18 +413,26 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
             }
           });
         } else if (data.kind === 'complete') {
-          const { package_id, version_hash } = data.data;
+          const { package_id, version_hash, error } = data.data;
           const appId = `${package_id.package_name}:${package_id.publisher_node}:${version_hash}`;
           get().clearActiveDownload(appId);
-
           get().removeNotification(`download-${appId}`);
 
-          get().addNotification({
-            id: `complete-${appId}`,
-            type: 'success',
-            message: `Download complete: ${package_id.package_name}`,
-            timestamp: Date.now(),
-          });
+          if (error) {
+            get().addNotification({
+              id: `error-${appId}`,
+              type: 'error',
+              message: `Download failed for ${package_id.package_name}: ${error}`,
+              timestamp: Date.now(),
+            });
+          } else {
+            get().addNotification({
+              id: `complete-${appId}`,
+              type: 'success',
+              message: `Download complete: ${package_id.package_name}`,
+              timestamp: Date.now(),
+            });
+          }
 
           get().fetchData(`${package_id.package_name}:${package_id.publisher_node}`);
         }
