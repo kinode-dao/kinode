@@ -75,7 +75,7 @@ fn build_and_zip_package(
 }
 
 fn main() -> anyhow::Result<()> {
-    let matches = Command::new("build_packages")
+    let matches = Command::new("build-packages")
         .about("Build the core Kinode packages.")
         .arg(
             Arg::new("FEATURES")
