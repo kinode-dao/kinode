@@ -839,7 +839,20 @@ async fn login_with_password(
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
+    let (username, _, _, _, _, _) =
+        serde_json::from_slice::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+            &disk_keyfile,
+        )
+        .or_else(|_| {
+            bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+                &disk_keyfile,
+            )
+        })
+        .unwrap();
+
+    let salted = [username.as_bytes(), password.as_bytes()].concat();
+
+    let password_hash = format!("0x{}", hex::encode(Sha256::digest(salted)));
 
     let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
 

@@ -42,7 +42,8 @@ function Login({
 
       try {
         setLoading("Logging in...");
-        let hashed_password = sha256(toBytes(pw));
+        let salted = [knsName, pw].join("");
+        let hashed_password = sha256(toBytes(salted));
 
         const result = await fetch(
           "/login",

@@ -24,6 +24,7 @@ function ImportKeyfile({
   const [pwVet, _setPwVet] = useState<boolean>(false);
   const [pwDebounced, _setPwDebounced] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [knsName, setKnsName] = useState<string>("");
 
   useEffect(() => {
     document.title = "Import Keyfile";
@@ -55,7 +56,8 @@ function ImportKeyfile({
 
       try {
         if (keyErrs.length === 0 && localKey !== null) {
-          let hashed_password = sha256(toBytes(pw));
+          let salted = [knsName, pw].join("");
+          let hashed_password = sha256(toBytes(salted));
 
           const result = await fetch("/import-keyfile", {
             method: "POST",
@@ -103,8 +105,19 @@ function ImportKeyfile({
                   </span>
                 </label>
                 {localKeyFileName && <p className="mt-2">{localKeyFileName}</p>}
-              </div>            <div className="form-group">
-                <h4 className="form-label">2. Enter Password</h4>
+              </div>
+              <div className="form-group">
+                <h4 className="form-label">2. Enter Node ID</h4>
+                <label className="name-input-label">
+                  <input
+                    type="text"
+                    className="name-input"
+                    onChange={(e) => setKnsName(e.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="form-group">
+                <h4 className="form-label">3. Enter Password</h4>
                 <input
                   type="password"
                   id="password"

@@ -68,8 +68,7 @@ pub async fn register(
     }
 
     // This is a **temporary** identity, passed to the UI.
-    // If it is confirmed through a /boot or /confirm-change-network-keys,
-    // then it will be used to replace the current identity.
+    // If it is confirmed through a /boot, then it will be used to replace the current identity.
     let our_temp_id = Arc::new(Identity {
         networking_key: format!("0x{}", public_key),
         name: "".to_string(),
@@ -217,16 +216,6 @@ pub async fn register(
                         login_provider,
                     )
                 }),
-        ))
-        .or(warp::path("confirm-change-network-keys").and(
-            warp::post()
-                .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::body::json())
-                .and(tx)
-                .and(our_temp_id)
-                .and(net_keypair)
-                .and(keyfile)
-                .and_then(confirm_change_network_keys),
         ));
 
     let mut headers = HeaderMap::new();
@@ -571,72 +560,6 @@ async fn handle_login(
         )
         .into_response());
     }
-    success_response(sender, our, decoded_keyfile, encoded_keyfile).await
-}
-
-async fn confirm_change_network_keys(
-    info: LoginAndResetInfo,
-    sender: Arc<RegistrationSender>,
-    our: Arc<Identity>,
-    networking_keypair: Arc<Vec<u8>>,
-    encoded_keyfile: Option<Vec<u8>>,
-) -> Result<impl Reply, Rejection> {
-    if encoded_keyfile.is_none() {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Keyfile not present"),
-            StatusCode::NOT_FOUND,
-        )
-        .into_response());
-    }
-    let encoded_keyfile = encoded_keyfile.unwrap();
-    let mut our = our.as_ref().clone();
-
-    // Get our name from our current keyfile
-    let old_decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
-        Ok(k) => {
-            our.name = k.username.clone();
-            k
-        }
-        Err(_) => {
-            return Ok(warp::reply::with_status(
-                warp::reply::json(&"Invalid password"),
-                StatusCode::UNAUTHORIZED,
-            )
-            .into_response());
-        }
-    };
-
-    // Determine if direct node or not
-
-    if info.direct {
-        our.both_to_direct();
-    } else {
-        our.both_to_routers();
-    }
-
-    let decoded_keyfile = Keyfile {
-        username: our.name.clone(),
-        routers: our.routers().unwrap_or(&vec![]).clone(),
-        networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
-            .unwrap(),
-        jwt_secret_bytes: old_decoded_keyfile.jwt_secret_bytes,
-        file_key: old_decoded_keyfile.file_key,
-    };
-
-    let encoded_keyfile = keygen::encode_keyfile(
-        info.password_hash,
-        decoded_keyfile.username.clone(),
-        decoded_keyfile.routers.clone(),
-        &networking_keypair,
-        &decoded_keyfile.jwt_secret_bytes,
-        &decoded_keyfile.file_key,
-    );
-
-    our.networking_key = format!(
-        "0x{}",
-        hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref())
-    );
-
     success_response(sender, our, decoded_keyfile, encoded_keyfile).await
 }
 

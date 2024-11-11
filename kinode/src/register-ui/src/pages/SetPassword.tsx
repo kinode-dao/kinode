@@ -51,7 +51,8 @@ function SetPassword({
 
       setTimeout(async () => {
         setLoading(true);
-        let hashed_password = sha256(toBytes(pw));
+        let salted = [knsName, pw].join("");
+        let hashed_password = sha256(toBytes(salted));
         let owner = address;
         let timestamp = Date.now();
 
