@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { FaDownload, FaSpinner, FaChevronDown, FaChevronUp, FaRocket, FaTrash, FaPlay } from "react-icons/fa";
 import useAppsStore from "../store";
-import { MirrorSelector } from '../components';
+import { MirrorSelector, ManifestDisplay } from '../components';
+import { ManifestResponse } from "../types/Apps";
 
 export default function DownloadPage() {
     const { id } = useParams<{ id: string }>();
@@ -17,7 +18,7 @@ export default function DownloadPage() {
         removeDownload,
         clearAllActiveDownloads,
         fetchHomepageApps,
-        getLaunchUrl
+        getLaunchUrl,
     } = useAppsStore();
 
     const [showMetadata, setShowMetadata] = useState(false);
@@ -26,7 +27,7 @@ export default function DownloadPage() {
     const [showMyDownloads, setShowMyDownloads] = useState(false);
     const [isMirrorOnline, setIsMirrorOnline] = useState<boolean | null>(null);
     const [showCapApproval, setShowCapApproval] = useState(false);
-    const [manifest, setManifest] = useState<any>(null);
+    const [manifestResponse, setManifestResponse] = useState<ManifestResponse | null>(null);
     const [isInstalling, setIsInstalling] = useState(false);
     const [isCheckingLaunch, setIsCheckingLaunch] = useState(false);
     const [launchPath, setLaunchPath] = useState<string | null>(null);
@@ -151,8 +152,12 @@ export default function DownloadPage() {
         const download = appDownloads.find(d => d.File && d.File.name === `${hash}.zip`);
         if (download?.File?.manifest) {
             try {
-                const manifestData = JSON.parse(download.File.manifest);
-                setManifest(manifestData);
+                const manifest_response: ManifestResponse = {
+                    package_id: app.package_id,
+                    version_hash: hash,
+                    manifest: download.File.manifest
+                };
+                setManifestResponse(manifest_response);
                 setShowCapApproval(true);
             } catch (error) {
                 console.error('Failed to parse manifest:', error);
@@ -170,7 +175,7 @@ export default function DownloadPage() {
             setLaunchPath(null);
             installApp(id, versionData.hash).then(() => {
                 setShowCapApproval(false);
-                setManifest(null);
+                setManifestResponse(null);
                 fetchData(id);
             });
         }
@@ -337,13 +342,11 @@ export default function DownloadPage() {
                 )}
             </div>
 
-            {showCapApproval && manifest && (
+            {showCapApproval && manifestResponse && (
                 <div className="cap-approval-popup">
                     <div className="cap-approval-content">
                         <h3>Approve Capabilities</h3>
-                        <pre className="json-display">
-                            {JSON.stringify(manifest[0]?.request_capabilities || [], null, 2)}
-                        </pre>
+                        <ManifestDisplay manifestResponse={manifestResponse} />
                         <div className="approval-buttons">
                             <button onClick={() => setShowCapApproval(false)}>Cancel</button>
                             <button onClick={confirmInstall}>
@@ -353,7 +356,6 @@ export default function DownloadPage() {
                     </div>
                 </div>
             )}
-
 
             <div className="app-details">
                 <h3>App Details</h3>

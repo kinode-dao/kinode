@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { STORE_PATH, PUBLISH_PATH, MY_APPS_PATH } from '../constants/path';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { FaHome } from "react-icons/fa";
+import NotificationBay from './NotificationBay';
 
 const Header: React.FC = () => {
     return (
@@ -18,10 +19,10 @@ const Header: React.FC = () => {
                 </nav>
             </div>
             <div className="header-right">
+                <NotificationBay />
                 <ConnectButton />
             </div>
         </header>
     );
 };
-
 export default Header;
