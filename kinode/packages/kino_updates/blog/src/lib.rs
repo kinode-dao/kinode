@@ -1,4 +1,4 @@
-use kinode_process_lib::{call_init, http, timer, Address, Request};
+use kinode_process_lib::{call_init, http, println, timer, Address, Request};
 use serde::{Deserialize, Serialize};
 
 wit_bindgen::generate!({
