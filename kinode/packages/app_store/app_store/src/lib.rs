@@ -188,24 +188,20 @@ fn handle_message(
                     .unwrap_or(false);
 
                 if should_auto_install {
-                    print_to_terminal(1, "auto_install:main, manifest_hash match");
                     if let Err(e) =
                         utils::install(&package_id, None, &version_hash, state, &our.node)
                     {
                         if let Some(package) = state.packages.get_mut(&process_lib_package_id) {
                             package.pending_update_hash = Some(version_hash);
                         }
-                        print_to_terminal(1, &format!("error auto_installing package: {e}"));
+                        println!("error auto-installing package: {e}");
                     } else {
-                        println!(
-                            "auto_installed update for package: {:?}",
-                            &process_lib_package_id
-                        );
+                        println!("auto-installed update for package: {process_lib_package_id}");
                     }
                 } else {
                     if let Some(package) = state.packages.get_mut(&process_lib_package_id) {
                         package.pending_update_hash = Some(version_hash);
-                        print_to_terminal(1, "auto_install:main, manifest_hash do not match");
+                        println!("error auto-installing package: manifest hash mismatch");
                     }
                 }
             }
