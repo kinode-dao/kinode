@@ -20,20 +20,6 @@ pub struct RpcMessage {
     pub data: Option<String>,
 }
 
-/// Ingest an auth token given from client and return the node name or an error.
-pub fn _verify_auth_token(auth_token: &str, jwt_secret: &[u8]) -> Result<String, jwt::Error> {
-    let Ok(secret) = Hmac::<Sha256>::new_from_slice(jwt_secret) else {
-        return Err(jwt::Error::Format);
-    };
-
-    let claims: Result<http_server::JwtClaims, jwt::Error> = auth_token.verify_with_key(&secret);
-
-    match claims {
-        Ok(data) => Ok(data.username),
-        Err(err) => Err(err),
-    }
-}
-
 pub fn auth_cookie_valid(
     our_node: &str,
     subdomain: Option<&ProcessId>,
@@ -64,6 +50,13 @@ pub fn auth_cookie_valid(
     let Ok(secret) = Hmac::<Sha256>::new_from_slice(jwt_secret) else {
         return false;
     };
+
+    // Verify JWT structure (header.payload.signature) before attempting to decode
+    let jwt_format =
+        regex::Regex::new(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$").unwrap();
+    if !jwt_format.is_match(&auth_token) {
+        return false;
+    }
 
     let claims: Result<http_server::JwtClaims, _> = auth_token.verify_with_key(&secret);
 
