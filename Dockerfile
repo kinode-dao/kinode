@@ -19,7 +19,6 @@ FROM debian:12-slim
 # Create a non-root user and group
 RUN groupadd -r kinode && \
     useradd -r -g kinode -d /kinode-home/home/kinode kinode
-    #useradd -r -g kinode -d /kinode-home/home/kinode -s /bin/false kinode
 
 RUN apt-get update && \
     apt-get install openssl -y && \
