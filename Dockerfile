@@ -16,9 +16,27 @@ FROM downloader_${TARGETARCH} AS downloader
 
 FROM debian:12-slim
 
-RUN apt-get update && apt-get install openssl -y
+# Create a non-root user and group
+RUN groupadd -r kinode && \
+    useradd -r -g kinode -d /kinode-home/home/kinode kinode
+    #useradd -r -g kinode -d /kinode-home/home/kinode -s /bin/false kinode
+
+RUN apt-get update && \
+    apt-get install openssl -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create directory for kinode and set permissions
+RUN mkdir -p /kinode-home/home/kinode && \
+    chown -R kinode:kinode /kinode-home
 
 COPY --from=downloader /tmp/download/kinode /bin/kinode
+RUN chown kinode:kinode /bin/kinode && \
+    chmod 755 /bin/kinode
+
+# Switch to non-root user
+USER kinode
+
+WORKDIR /kinode-home
 
 ENTRYPOINT [ "/bin/kinode" ]
 CMD [ "/kinode-home" ]

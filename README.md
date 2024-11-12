@@ -202,20 +202,32 @@ To build a local Docker image, run the following command in this project root.
 
 ```bash
 # The `VERSION` may be replaced with the tag of a GitHub release
+export VERSION=0.9.8
 
 # Build for your system's architecture
-docker build . -t 0xlynett/kinode --build-arg VERSION=v0.9.1
+docker build . -t kinode-${VERSION} --build-arg VERSION=v${VERSION} --platform linux/amd64
 
 # Build a multiarch image
-docker buildx build . --platform arm64,amd64 --build-arg VERSION=v0.9.1 -t 0xlynett/kinode
+docker buildx build . -t kinode-${VERSION} --build-arg VERSION=v${VERSION} --platform arm64,amd64
 ```
 
-For example:
+To run, for example for a node named `helloworld.os`:
 
 ```bash
-docker volume create kinode-volume
+export NODENAME=helloworld.os
 
-docker run -d -p 8080:8080 -it --name my-kinode \
-    --mount type=volume,source=kinode-volume,destination=/kinode-home \
-    0xlynett/kinode
+docker volume create kinode-${NODENAME}
+
+docker run -p 8080:8080 --rm -it --name kinode-${VERSION}-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+```
+
+which will launch your Kinode container attached to the terminal.
+Alternatively you can run it detached:
+```
+docker run -p 8080:8080 --rm -dt --name kinode-${VERSION}-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+```
+Note that the `-t` flag *must* be passed.
+If it is not passed, you must pass the `--detached` argument to the Kinode binary, i.e.
+```
+docker run -p 8080:8080 --rm -d --name kinode-${VERSION}-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION} /kinode-home --detached
 ```
