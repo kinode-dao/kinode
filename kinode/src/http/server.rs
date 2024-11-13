@@ -30,6 +30,8 @@ const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 15;
 #[cfg(feature = "simulation-mode")]
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 600;
 
+const WS_SELF_IMPOSED_MAX_CONNECTIONS: u32 = 128;
+
 const LOGIN_HTML: &str = include_str!("login.html");
 
 /// mapping from a given HTTP request (assigned an ID) to the oneshot
@@ -401,6 +403,19 @@ async fn ws_handler(
     Printout::new(2, format!("http-server: ws request for {original_path}"))
         .send(&print_tx)
         .await;
+
+    if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS {
+        Printout::new(
+            0,
+            format!(
+                "http-server: too many open websockets ({})! rejecting incoming",
+                ws_senders.len()
+            ),
+        )
+        .send(&print_tx)
+        .await;
+        return Err(warp::reject::reject());
+    }
 
     let serialized_headers = utils::serialize_headers(&headers);
 
