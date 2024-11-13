@@ -293,6 +293,8 @@ async fn serve(
                 warp::reply::with_status(warp::reply::html(cloned_login_html), StatusCode::OK)
             })
             .or(warp::post()
+                .and(warp::filters::host::optional())
+                .and(warp::query::<HashMap<String, String>>())
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(warp::any().map(move || cloned_our.clone()))
@@ -325,7 +327,12 @@ async fn serve(
 
 /// handle non-GET requests on /login. if POST, validate password
 /// and return auth token, which will be stored in a cookie.
+///
+/// if redirect is provided in URL, such as ?redirect=/chess:chess:sys/,
+/// the browser will be redirected to that path after successful login.
 async fn login_handler(
+    host: Option<warp::host::Authority>,
+    query_params: HashMap<String, String>,
     info: LoginInfo,
     our: Arc<String>,
     encoded_keyfile: Arc<Vec<u8>>,
@@ -353,11 +360,15 @@ async fn login_handler(
                 }
             };
 
-            let mut response = warp::reply::with_status(
-                warp::reply::json(&base64_standard.encode(encoded_keyfile.to_vec())),
-                StatusCode::OK,
-            )
-            .into_response();
+            let mut response = if let Some(redirect) = query_params.get("redirect") {
+                warp::reply::with_status(warp::reply(), StatusCode::SEE_OTHER).into_response()
+            } else {
+                warp::reply::with_status(
+                    warp::reply::json(&base64_standard.encode(encoded_keyfile.to_vec())),
+                    StatusCode::OK,
+                )
+                .into_response()
+            };
 
             let cookie = match info.subdomain.unwrap_or_default().as_str() {
                 "" => format!("kinode-auth_{our}={token};"),
@@ -367,6 +378,25 @@ async fn login_handler(
             match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
                     response.headers_mut().append("set-cookie", v);
+                    if let Some(redirect) = query_params.get("redirect") {
+                        // get http/https from request headers
+                        let proto = match response.headers().get("X-Forwarded-Proto") {
+                            Some(proto) => proto.to_str().unwrap_or("http").to_string(),
+                            None => "http".to_string(),
+                        };
+
+                        response.headers_mut().append(
+                            "Location",
+                            HeaderValue::from_str(&format!(
+                                "{proto}://{}{redirect}",
+                                host.unwrap()
+                            ))
+                            .unwrap(),
+                        );
+                        response
+                            .headers_mut()
+                            .append("Content-Length", HeaderValue::from_str("0").unwrap());
+                    }
                     Ok(response)
                 }
                 Err(e) => Ok(warp::reply::with_status(

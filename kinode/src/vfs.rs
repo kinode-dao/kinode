@@ -343,6 +343,7 @@ async fn handle_request(
 
     // current prepend to filepaths needs to be: /package_id/drive/path
     let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path)?;
+    // must have prepended `/` here or else it messes up caps downstream, e.g. in run-tests
     let drive = format!("/{package_id}/{drive}");
     let action = request.action;
     let path = PathBuf::from(&request.path);

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { PackageState, AppListing, MirrorCheckFile, PackageManifest, DownloadItem, HomepageApp } from '../types/Apps'
+import { PackageState, AppListing, MirrorCheckFile, DownloadItem, HomepageApp, ManifestResponse, Notification } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http'
 import KinodeClientApi from "@kinode/client-api"
 import { WEBSOCKET_URL } from '../utils/ws'
@@ -13,6 +13,7 @@ interface AppsStore {
   downloads: Record<string, DownloadItem[]>
   ourApps: AppListing[]
   ws: KinodeClientApi
+  notifications: Notification[]
   homepageApps: HomepageApp[]
   activeDownloads: Record<string, { downloaded: number, total: number }>
 
@@ -29,11 +30,15 @@ interface AppsStore {
   fetchHomepageApps: () => Promise<void>
   getLaunchUrl: (id: string) => string | null
 
+  addNotification: (notification: Notification) => void;
+  removeNotification: (id: string) => void;
+  clearNotifications: () => void;
+
   installApp: (id: string, version_hash: string) => Promise<void>
   uninstallApp: (id: string) => Promise<void>
   downloadApp: (id: string, version_hash: string, downloadFrom: string) => Promise<void>
   removeDownload: (packageId: string, versionHash: string) => Promise<void>
-  getCaps: (id: string) => Promise<PackageManifest | null>
+  getManifest: (id: string, version_hash: string) => Promise<ManifestResponse | null>
   approveCaps: (id: string) => Promise<void>
   startMirroring: (id: string) => Promise<void>
   stopMirroring: (id: string) => Promise<void>
@@ -52,6 +57,7 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
   ourApps: [],
   activeDownloads: {},
   homepageApps: [],
+  notifications: [],
 
 
   fetchData: async (id: string) => {
@@ -282,14 +288,14 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
     }
   },
 
-  getCaps: async (id: string) => {
+  getManifest: async (id: string, version_hash: string) => {
     try {
-      const res = await fetch(`${BASE_URL}/apps/${id}/caps`);
+      const res = await fetch(`${BASE_URL}/manifest?id=${id}&version_hash=${version_hash}`);
       if (res.status === HTTP_STATUS.OK) {
-        return await res.json() as PackageManifest;
+        return await res.json() as ManifestResponse;
       }
     } catch (error) {
-      console.error("Error getting caps:", error);
+      console.error("Error getting manifest:", error);
     }
     return null;
   },
@@ -355,6 +361,18 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
     }));
   },
 
+
+  addNotification: (notification) => set(state => ({
+    notifications: [...state.notifications, notification]
+  })),
+
+  removeNotification: (id) => set(state => ({
+    notifications: state.notifications.filter(n => n.id !== id)
+  })),
+
+  clearNotifications: () => set({ notifications: [] }),
+
+
   clearActiveDownload: (appId) => {
     set((state) => {
       const { [appId]: _, ...rest } = state.activeDownloads;
@@ -374,10 +392,48 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
           const { package_id, version_hash, downloaded, total } = data.data;
           const appId = `${package_id.package_name}:${package_id.publisher_node}:${version_hash}`;
           get().setActiveDownload(appId, downloaded, total);
+
+          const existingNotification = get().notifications.find(
+            n => n.id === `download-${appId}`
+          );
+
+          if (existingNotification) {
+            get().removeNotification(`download-${appId}`);
+          }
+
+          get().addNotification({
+            id: `download-${appId}`,
+            type: 'download',
+            message: `Downloading ${package_id.package_name}`,
+            timestamp: Date.now(),
+            metadata: {
+              packageId: `${package_id.package_name}:${package_id.publisher_node}`,
+              versionHash: version_hash,
+              progress: Math.round((downloaded / total) * 100)
+            }
+          });
         } else if (data.kind === 'complete') {
-          const { package_id, version_hash } = data.data;
+          const { package_id, version_hash, error } = data.data;
           const appId = `${package_id.package_name}:${package_id.publisher_node}:${version_hash}`;
           get().clearActiveDownload(appId);
+          get().removeNotification(`download-${appId}`);
+
+          if (error) {
+            get().addNotification({
+              id: `error-${appId}`,
+              type: 'error',
+              message: `Download failed for ${package_id.package_name}: ${error}`,
+              timestamp: Date.now(),
+            });
+          } else {
+            get().addNotification({
+              id: `complete-${appId}`,
+              type: 'success',
+              message: `Download complete: ${package_id.package_name}`,
+              timestamp: Date.now(),
+            });
+          }
+
           get().fetchData(`${package_id.package_name}:${package_id.publisher_node}`);
         }
       } catch (error) {
