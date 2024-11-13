@@ -259,13 +259,13 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http_server"), "distro", "sys"),
+            ProcessId::new(Some("http-server"), "distro", "sys"),
             http_server_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("http_client"), "distro", "sys"),
+            ProcessId::new(Some("http-client"), "distro", "sys"),
             http_client_sender,
             None,
             false,
@@ -307,7 +307,7 @@ async fn main() {
             false,
         ),
         (
-            ProcessId::new(Some("fd_manager"), "distro", "sys"),
+            ProcessId::new(Some("fd-manager"), "distro", "sys"),
             fd_manager_sender,
             None,
             false,

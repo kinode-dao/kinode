@@ -1,8 +1,9 @@
 use lib::types::core::{
-    Address, Capability, Erc721Metadata, KernelMessage, LazyLoadBlob, Message, MessageReceiver,
-    MessageSender, NetworkErrorSender, OnExit, PackageManifestEntry, PersistedProcess, PrintSender,
-    Printout, ProcessId, ProcessMap, Request, Response, ReverseCapIndex, StateAction, StateError,
-    StateResponse, KERNEL_PROCESS_ID, STATE_PROCESS_ID, VFS_PROCESS_ID,
+    check_process_id_kimap_safe, Address, Capability, Erc721Metadata, KernelMessage, LazyLoadBlob,
+    Message, MessageReceiver, MessageSender, NetworkErrorSender, OnExit, PackageManifestEntry,
+    PersistedProcess, PrintSender, Printout, ProcessId, ProcessMap, Request, Response,
+    ReverseCapIndex, StateAction, StateError, StateResponse, KERNEL_PROCESS_ID, STATE_PROCESS_ID,
+    VFS_PROCESS_ID,
 };
 use ring::signature;
 use rocksdb::{checkpoint::Checkpoint, Options, DB};
@@ -63,6 +64,14 @@ pub async fn load_state(
         }
         Err(e) => {
             panic!("failed to load kernel state from db: {e:?}");
+        }
+    }
+
+    let processes = process_map.keys().cloned().collect::<Vec<_>>();
+    for process in processes {
+        if check_process_id_kimap_safe(&process).is_err() {
+            println!("bootstrap: removing non-Kimap-safe process {process}\n(all process IDs must contain only a-z A-Z 0-9 `-` and `.`s in the publisher)\r");
+            process_map.remove(&process);
         }
     }
 
@@ -491,7 +500,6 @@ async fn bootstrap(
         let package_manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&package_manifest)
             .expect("fs: manifest parse error");
 
-        // for each process-entry in manifest.json:
         for mut entry in package_manifest {
             let wasm_bytes = &mut Vec::new();
             let mut file_path = entry.process_wasm_path.to_string();
@@ -646,7 +654,6 @@ async fn bootstrap(
 
         let package_publisher = package_metadata.properties.publisher.as_str();
 
-        // for each process-entry in manifest.json:
         for entry in package_manifest {
             let our_process_id = format!(
                 "{}:{}:{}",

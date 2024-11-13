@@ -90,8 +90,8 @@ impl TerminalState {
                     ProcessId::new(Some("m"), "terminal", "sys"),
                 ),
                 (
-                    "net_diagnostics".to_string(),
-                    ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
+                    "net-diagnostics".to_string(),
+                    ProcessId::new(Some("net-diagnostics"), "terminal", "sys"),
                 ),
                 (
                     "peer".to_string(),

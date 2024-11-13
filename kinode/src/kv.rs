@@ -138,7 +138,7 @@ pub async fn kv(
             if let Err(e) = handle_fd_request(km, &mut state).await {
                 Printout::new(
                     1,
-                    format!("kv: got request from fd_manager that errored: {e:?}"),
+                    format!("kv: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&state.send_to_terminal)
                 .await;

@@ -38,7 +38,7 @@ cargo install cargo-wasi
 
 # Install NPM so we can build frontends for "distro" packages.
 # https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-# If you want to skip this step, build the packages with `cargo run -p build_packages -- --skip-build-frontend` to neglect building the frontends
+# If you want to skip this step, build the packages with `cargo run -p build-packages -- --skip-build-frontend` to neglect building the frontends
 
 # Build the "distro" Wasm modules, then, build the runtime.
 # The compiled packages will be at `kinode/target/packages.zip`.
@@ -46,7 +46,7 @@ cargo install cargo-wasi
 # OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`).
 
 cd kinode
-cargo run -p build_packages
+cargo run -p build-packages
 cargo build -p kinode
 ```
 
@@ -108,14 +108,14 @@ You can also do the same thing by using the `--rpc` boot flag with an Optimism W
 
 The base OS install comes with certain runtime modules. These are interacted with in the same way as userspace processes, but are deeply ingrained to the system and the APIs they present at their Process IDs are assumed to be available by userspace processes. All of these are identified in the `distro:sys` package.
 
-This distribution of the OS also comes with userspace packages pre-installed. Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns_indexer`. Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
+This distribution of the OS also comes with userspace packages pre-installed. Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns-indexer`. Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
 
 The runtime distro processes are:
 
 - `eth:distro:sys`
-- `fd_manager:distro:sys`
-- `http_client:distro:sys`
-- `http_server:distro:sys`
+- `fd-manager:distro:sys`
+- `http-client:distro:sys`
+- `http-server:distro:sys`
 - `kernel:distro:sys`
 - `kv:distro:sys`
 - `net:distro:sys`
@@ -127,12 +127,12 @@ The runtime distro processes are:
 
 The distro userspace packages are:
 
-- `app_store:sys`
+- `app-store:sys`
 - `chess:sys`
 - `contacts:sys`
 - `homepage:sys`
-- `kino_updates:sys`
-- `kns_indexer:sys`
+- `kino-updates:sys`
+- `kns-indexer:sys`
 - `settings:sys`
 - `terminal:sys`
 - `tester:sys` (used with `kit` for running test suites, only installed in `simulation-mode`)
@@ -167,7 +167,7 @@ Subsequent use of the shorthand will then be interpolated as the process ID.
 A list of the terminal scripts included in this distro:
 
 - `alias <shorthand> <process_id>`: create an alias for a script.
-    - Example: `alias get_block get_block:kns_indexer:sys`
+    - Example: `alias get_block get-block:kns-indexer:sys`
     - note: all of these listed commands are just default aliases for terminal scripts.
 - `cat <vfs-file-path>`: print the contents of a file in the terminal.
     - Example: `cat /terminal:sys/pkg/scripts.json`
@@ -183,7 +183,7 @@ A list of the terminal scripts included in this distro:
     - Example: `m our@eth:distro:sys "SetPublic" -a 5`
     - the '-a' flag is used to expect a response with a given timeout
     - `our` will always be interpolated by the system as your node's name
-- `net_diagnostics`: print some useful networking diagnostic data.
+- `net-diagnostics`: print some useful networking diagnostic data.
 - `peer <name>`: print the peer's PKI info, if it exists.
 - `peers`: print the peers the node currently hold connections with.
 - `top <process_id>`: display kernel debugging info about a process. Leave the process ID blank to display info about all processes and get the total number of running processes.
