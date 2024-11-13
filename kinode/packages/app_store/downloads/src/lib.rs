@@ -209,18 +209,31 @@ fn handle_message(
                         desired_version_hash,
                         worker_address: our_worker.to_string(),
                     }))
+                    .expects_response(60)
+                    .context(&download_request)
                     .send()?;
             }
             DownloadRequests::RemoteDownload(download_request) => {
-                // this is a node requesting a download from us.
-                // check if we are mirroring. we should maybe implement some back and forth here.
-                // small handshake for started? but we do not really want to wait for that in this loop..
-                // might be okay. implement.
                 let RemoteDownloadRequest {
                     package_id,
                     desired_version_hash,
                     worker_address,
                 } = download_request;
+
+                let process_lib_package_id = package_id.clone().to_process_lib();
+
+                // check if we are mirroring, if not send back an error.
+                if !state.mirroring.contains(&process_lib_package_id) {
+                    let resp = DownloadResponses::Err(DownloadError::NotMirroring);
+                    Response::new().body(&resp).send()?;
+                    return Ok(()); // return here, todo unify remote and local responses?
+                }
+
+                if !download_zip_exists(&process_lib_package_id, &desired_version_hash) {
+                    let resp = DownloadResponses::Err(DownloadError::FileNotFound);
+                    Response::new().body(&resp).send()?;
+                    return Ok(()); // return here, todo unify remote and local responses?
+                }
 
                 let target_worker = Address::from_str(&worker_address)?;
                 let _ = spawn_send_transfer(
@@ -230,6 +243,8 @@ fn handle_message(
                     APP_SHARE_TIMEOUT,
                     &target_worker,
                 )?;
+                let resp = DownloadResponses::Success;
+                Response::new().body(&resp).send()?;
             }
             DownloadRequests::Progress(ref progress) => {
                 // forward progress to main:app_store:sys,
@@ -428,11 +443,34 @@ fn handle_message(
     } else {
         match message.body().try_into()? {
             Resp::Download(download_response) => {
-                // these are handled in line.
-                print_to_terminal(
-                    1,
-                    &format!("got a weird download response: {:?}", download_response),
-                );
+                // get context of the response.
+                // handled are errors or ok responses from a remote node.
+
+                if let Some(context) = message.context() {
+                    let download_request = serde_json::from_slice::<LocalDownloadRequest>(context)?;
+                    match download_response {
+                        DownloadResponses::Err(e) => {
+                            Request::to(("our", "main", "app_store", "sys"))
+                                .body(DownloadCompleteRequest {
+                                    package_id: download_request.package_id.clone(),
+                                    version_hash: download_request.desired_version_hash.clone(),
+                                    err: Some(e),
+                                })
+                                .send()?;
+                        }
+                        DownloadResponses::Success => {
+                            // todo: maybe we do something here.
+                            print_to_terminal(
+                                1,
+                                &format!(
+                                    "downloads: got success response from remote node: {:?}",
+                                    download_request
+                                ),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
             }
             Resp::HttpClient(resp) => {
                 let Some(context) = message.context() else {
@@ -573,6 +611,22 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
     }
 
     Ok(())
+}
+
+/// Check if a download zip exists for a given package and version hash.
+/// Used to check if we can share a package or not!
+fn download_zip_exists(package_id: &PackageId, version_hash: &str) -> bool {
+    let filename = format!(
+        "/app_store:sys/downloads/{}:{}/{}.zip",
+        package_id.package_name,
+        package_id.publisher(),
+        version_hash
+    );
+    let res = vfs::metadata(&filename, None);
+    match res {
+        Ok(meta) => meta.file_type == vfs::FileType::File,
+        Err(_e) => false,
+    }
 }
 
 fn get_manifest_hash(package_id: PackageId, version_hash: String) -> anyhow::Result<String> {

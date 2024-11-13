@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, ViteDevServer } from 'vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import react from '@vitejs/plugin-react'
 
@@ -17,9 +17,14 @@ The format is "/" + "process_name:package_name:publisher_node"
 const BASE_URL = `/main:app_store:sys`;
 
 // This is the proxy URL, it must match the node you are developing against
-const PROXY_URL = (process.env.VITE_NODE_URL || 'http://127.0.0.1:8080');
+const PROXY_URL = (process.env.VITE_NODE_URL || 'http://localhost:8080').replace(/\/$/, '');
+
+const DEV_SERVER_PORT = 3000; // Hardcoded port for the dev server...
 
 console.log('process.env.VITE_NODE_URL', process.env.VITE_NODE_URL, PROXY_URL);
+
+const openUrl = `${PROXY_URL.replace(/:\d+$/, '')}:${DEV_SERVER_PORT}${BASE_URL}`;
+console.log('Server will run at:', openUrl);
 
 export default defineConfig({
   plugins: [
@@ -37,7 +42,8 @@ export default defineConfig({
     }
   },
   server: {
-    open: true,
+    open: openUrl,
+    port: DEV_SERVER_PORT,
     proxy: {
       [`^${BASE_URL}/our.js`]: {
         target: PROXY_URL,
