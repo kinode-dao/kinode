@@ -1,3 +1,6 @@
+import { ReactNode } from "react";
+import { IconType } from "react-icons/lib";
+
 export interface PackageId {
     package_name: string;
     publisher_node: string;
@@ -59,9 +62,10 @@ export interface PackageState {
     our_version_hash: string;
     verified: boolean;
     caps_approved: boolean;
+    pending_update_hash?: string;
 }
 
-export interface PackageManifest {
+export interface PackageManifestEntry {
     process_name: string
     process_wasm_path: string
     on_exit: string
@@ -69,6 +73,12 @@ export interface PackageManifest {
     request_capabilities: any[]
     grant_capabilities: any[]
     public: boolean
+}
+
+export interface ManifestResponse {
+    package_id: PackageId;
+    version_hash: string;
+    manifest: string;
 }
 
 export interface HomepageApp {
@@ -83,3 +93,35 @@ export interface HomepageApp {
     order: number;
     favorite: boolean;
 }
+
+
+export type NotificationActionType = 'click' | 'modal' | 'popup' | 'redirect';
+
+export type NotificationAction = {
+    label: string;
+    icon?: IconType;
+    variant?: 'primary' | 'secondary' | 'danger';
+    action: {
+        type: NotificationActionType;
+        onClick?: () => void;
+        modalContent?: ReactNode | (() => ReactNode);
+        popupContent?: ReactNode | (() => ReactNode);
+        path?: string;
+    };
+};
+
+export type Notification = {
+    id: string;
+    type: 'error' | 'success' | 'warning' | 'info' | 'download' | 'install' | 'update';
+    message: string;
+    timestamp: number;
+    metadata?: {
+        packageId?: string;
+        versionHash?: string;
+        progress?: number;
+        error?: string;
+    };
+    actions?: NotificationAction[];
+    renderContent?: (notification: Notification) => ReactNode;
+    persistent?: boolean;
+};

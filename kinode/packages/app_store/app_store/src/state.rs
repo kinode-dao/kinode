@@ -54,7 +54,18 @@ pub struct PackageState {
     /// capabilities have changed. if they have changed, auto-install must fail
     /// and the user must approve the new capabilities.
     pub manifest_hash: Option<String>,
+    /// stores the version hash of a failed auto-install attempt, which can be
+    /// later installed by the user by approving new caps.
+    pub pending_update_hash: Option<String>,
 }
+
+// this seems cleaner to me right now with pending_update_hash, but given how we serialize
+// the state to disk right now, with installed_apis and packages being populated directly
+// from the filesystem, not sure I'd like to serialize the whole of this state (maybe separate out the pending one?)
+// another option would be to have the download_api recheck the manifest hash? but not sure...
+// arbitrary complexity here.
+
+// alternative is main loop doing this, storing it.
 
 /// this process's saved state
 pub struct State {
@@ -122,6 +133,7 @@ impl State {
                     verified: true,       // implicitly verified (TODO re-evaluate)
                     caps_approved: false, // must re-approve if you want to do something ??
                     manifest_hash: Some(manifest_hash),
+                    pending_update_hash: None, // ... this could be a separate state saved. don't want to reflect this info on-disk as a file.
                 },
             );
 
