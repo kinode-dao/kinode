@@ -68,7 +68,7 @@ def main():
     subprocess.check_call([f'./{build_script_name}'], cwd=build_script_dir)
 
     # Run cargo build
-    subprocess.check_call(['cargo', 'build', '-p', 'build_packages'], cwd=repo_root)
+    subprocess.check_call(['cargo', 'build', '-p', 'build-packages'], cwd=repo_root)
 
     # Create the zip file
     output_zip = args.output

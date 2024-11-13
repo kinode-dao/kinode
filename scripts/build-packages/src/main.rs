@@ -75,7 +75,7 @@ fn build_and_zip_package(
 }
 
 fn main() -> anyhow::Result<()> {
-    let matches = Command::new("build_packages")
+    let matches = Command::new("build-packages")
         .about("Build the core Kinode packages.")
         .arg(
             Arg::new("FEATURES")
@@ -97,8 +97,8 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    // kinode/target/debug/build_package
-    let current_exe_dir = std::env::current_exe() // build_package
+    // kinode/target/debug/build-package
+    let current_exe_dir = std::env::current_exe() // build-package
         .unwrap();
     let top_level_dir = current_exe_dir
         .parent() // debug/
