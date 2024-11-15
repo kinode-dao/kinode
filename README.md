@@ -218,16 +218,16 @@ export NODENAME=helloworld.os
 
 docker volume create kinode-${NODENAME}
 
-docker run -p 8080:8080 --rm -it --name kinode-${VERSION}-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+docker run -p 8080:8080 --rm -it --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
 ```
 
 which will launch your Kinode container attached to the terminal.
 Alternatively you can run it detached:
 ```
-docker run -p 8080:8080 --rm -dt --name kinode-${VERSION}-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+docker run -p 8080:8080 --rm -dt --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
 ```
 Note that the `-t` flag *must* be passed.
 If it is not passed, you must pass the `--detached` argument to the Kinode binary, i.e.
 ```
-docker run -p 8080:8080 --rm -d --name kinode-${VERSION}-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION} /kinode-home --detached
+docker run -p 8080:8080 --rm -d --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION} /kinode-home --detached
 ```
