@@ -9,8 +9,7 @@ use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_sol_types::{eip712_domain, SolCall, SolStruct};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use lib::types::core::{
-    BootInfo, Identity, ImportKeyfileInfo, Keyfile, LoginAndResetInfo, LoginInfo, NodeRouting,
-    UnencryptedIdentity,
+    BootInfo, Identity, ImportKeyfileInfo, Keyfile, LoginInfo, NodeRouting, UnencryptedIdentity,
 };
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::{

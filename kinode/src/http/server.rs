@@ -404,7 +404,7 @@ async fn ws_handler(
         .send(&print_tx)
         .await;
 
-    if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS {
+    if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS as usize {
         Printout::new(
             0,
             format!(
