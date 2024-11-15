@@ -363,12 +363,28 @@ async fn login_handler(
 
             let cookie = match info.subdomain.unwrap_or_default().as_str() {
                 "" => format!("kinode-auth_{our}={token};"),
-                subdomain => format!("kinode-auth_{our}@{subdomain}={token};"),
+                subdomain => {
+                    // enforce that subdomain string only contains a-z, 0-9, and -
+                    let subdomain = subdomain
+                        .chars()
+                        .filter(|c| c.is_ascii_alphanumeric() || c == &'-')
+                        .collect::<String>();
+                    format!("kinode-auth_{our}@{subdomain}={token};")
+                }
             };
 
             match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
                     response.headers_mut().append("set-cookie", v);
+                    response
+                        .headers_mut()
+                        .append("HttpOnly", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("Secure", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("SameSite", HeaderValue::from_static("Strict"));
                     Ok(response)
                 }
                 Err(e) => Ok(warp::reply::with_status(
