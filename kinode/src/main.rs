@@ -830,10 +830,8 @@ async fn login_with_password(
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {
-        ring::signature::KeyPair,
-        sha2::{Digest, Sha256},
-    };
+    use argon2::Argon2;
+    use ring::signature::KeyPair;
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(home_directory_path.join(".keys"))
         .await
@@ -850,13 +848,19 @@ async fn login_with_password(
         })
         .unwrap();
 
-    let salted = [username.as_bytes(), password.as_bytes()].concat();
+    let mut output_key_material = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(
+            password.as_bytes(),
+            username.as_bytes(),
+            &mut output_key_material,
+        )
+        .expect("password hashing failed");
+    let password_hash = hex::encode(output_key_material);
 
-    let password_hash = format!("0x{}", hex::encode(Sha256::digest(salted)));
+    let password_hash_hex = format!("0x{}", password_hash);
 
-    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
-
-    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash)
+    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
         .expect("could not decode keyfile, password incorrect");
 
     let mut our = Identity {
@@ -874,6 +878,8 @@ async fn login_with_password(
             NodeRouting::Routers(k.routers.clone())
         },
     };
+
+    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
 
     register::assign_routing(
         &mut our,

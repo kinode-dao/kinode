@@ -483,7 +483,7 @@ async fn handle_import_keyfile(
             }
             Err(_) => {
                 return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Incorrect password_hash".to_string()),
+                    warp::reply::json(&"Incorrect password!".to_string()),
                     StatusCode::UNAUTHORIZED,
                 )
                 .into_response())
@@ -543,7 +543,7 @@ async fn handle_login(
             }
             Err(_) => {
                 return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Incorrect password_hash"),
+                    warp::reply::json(&"Incorrect password!"),
                     StatusCode::UNAUTHORIZED,
                 )
                 .into_response())

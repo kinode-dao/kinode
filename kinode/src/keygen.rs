@@ -64,7 +64,7 @@ pub fn encode_keyfile(
     .unwrap()
 }
 
-pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'static str> {
+pub fn decode_keyfile(keyfile: &[u8], password_hash: &str) -> Result<Keyfile, &'static str> {
     use generic_array::GenericArray;
 
     let (username, routers, salt, key_enc, jwt_enc, file_enc) =
@@ -84,7 +84,7 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
         PBKDF2_ALG,
         NonZeroU32::new(ITERATIONS).unwrap(),
         &salt,
-        password.as_bytes(),
+        password_hash.as_bytes(),
         &mut disk_key,
     );
 

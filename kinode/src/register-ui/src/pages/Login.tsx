@@ -2,7 +2,6 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
 import { useNavigate } from "react-router-dom";
-import { sha256, toBytes } from "viem";
 import { Tooltip } from "../components/Tooltip";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
 
@@ -40,10 +39,9 @@ function Login({
       e?.preventDefault();
       e?.stopPropagation();
 
-      try {
-        setLoading("Logging in...");
-        let salted = [knsName, pw].join("");
-        let hashed_password = sha256(toBytes(salted));
+      setLoading("Logging in...");
+      argon2.hash({ pass: pw, salt: knsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
+        const hashed_password_hex = `0x${h.hashHex}`;
 
         const result = await fetch(
           "/login",
@@ -51,7 +49,7 @@ function Login({
             method: "POST",
             credentials: 'include',
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password_hash: hashed_password }),
+            body: JSON.stringify({ password_hash: hashed_password_hex }),
           }
         );
 
@@ -59,11 +57,10 @@ function Login({
           throw new Error(await result.text());
         }
         redirectToHomepage();
-
-      } catch (err: any) {
+      }).catch(err => {
         setKeyErrs([String(err)]);
         setLoading("");
-      }
+      });
     },
     [pw]
   );

@@ -6,7 +6,6 @@ import {
 } from "react";
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
-import { sha256, toBytes } from "viem";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
 
 interface ImportKeyfileProps extends PageProps { }
@@ -56,27 +55,30 @@ function ImportKeyfile({
 
       try {
         if (keyErrs.length === 0 && localKey !== null) {
-          let salted = [knsName, pw].join("");
-          let hashed_password = sha256(toBytes(salted));
+          argon2.hash({ pass: pw, salt: knsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
+            const hashed_password_hex = `0x${h.hashHex}`;
 
-          const result = await fetch("/import-keyfile", {
-            method: "POST",
-            credentials: 'include',
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              keyfile: Buffer.from(localKey).toString('utf8'),
-              password_hash: hashed_password,
-            }),
+            const result = await fetch("/import-keyfile", {
+              method: "POST",
+              credentials: 'include',
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                keyfile: Buffer.from(localKey).toString('utf8'),
+                password_hash: hashed_password_hex,
+              }),
+            });
+
+            if (result.status > 399) {
+              throw new Error(await result.text());
+            }
+            redirectToHomepage();
+          }).catch(err => {
+            window.alert(String(err));
+            setLoading(false);
           });
-
-          if (result.status > 399) {
-            throw new Error("Incorrect password");
-          }
-          redirectToHomepage();
-
         }
-      } catch {
-        window.alert("An error occurred, please try again.");
+      } catch (err) {
+        window.alert(String(err));
         setLoading(false);
       }
     },
