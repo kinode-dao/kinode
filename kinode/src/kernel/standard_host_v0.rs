@@ -103,8 +103,10 @@ impl process::ProcessState {
                     ref expects_response,
                     ..
                 }) => {
-                    self.last_blob = km.lazy_load_blob;
-                    km.lazy_load_blob = None;
+                    if km.lazy_load_blob.is_some() {
+                        self.last_blob = km.lazy_load_blob;
+                        km.lazy_load_blob = None;
+                    }
                     if expects_response.is_some() || km.rsvp.is_some() {
                         // update prompting_message iff there is someone to reply to
                         self.prompting_message = Some(km.clone());
@@ -113,14 +115,18 @@ impl process::ProcessState {
                 }
                 t::Message::Response(_) => match self.contexts.remove(&km.id) {
                     Some((context, _timeout_handle)) => {
-                        self.last_blob = km.lazy_load_blob;
-                        km.lazy_load_blob = None;
+                        if km.lazy_load_blob.is_some() {
+                            self.last_blob = km.lazy_load_blob;
+                            km.lazy_load_blob = None;
+                        }
                         self.prompting_message = context.prompting_message;
                         (km, context.context)
                     }
                     None => {
-                        self.last_blob = km.lazy_load_blob;
-                        km.lazy_load_blob = None;
+                        if km.lazy_load_blob.is_some() {
+                            self.last_blob = km.lazy_load_blob;
+                            km.lazy_load_blob = None;
+                        }
                         self.prompting_message = Some(km.clone());
                         (km, None)
                     }
