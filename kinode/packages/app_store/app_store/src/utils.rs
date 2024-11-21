@@ -8,8 +8,8 @@ use {
         VFS_TIMEOUT,
     },
     kinode_process_lib::{
-        get_blob, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId, ProcessId,
-        Request,
+        get_blob, kernel_types as kt, println, vfs, Address, Capability, LazyLoadBlob, PackageId,
+        ProcessId, Request,
     },
     std::collections::{HashMap, HashSet},
 };
@@ -404,7 +404,7 @@ pub fn install(
 
 /// given a `PackageId`, read its manifest, kill all processes declared in it,
 /// then remove its drive in the virtual filesystem.
-pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
+pub fn uninstall(our: &Address, state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
     if !state.packages.contains_key(package_id) {
         return Err(anyhow::anyhow!("package not found"));
     }
@@ -426,13 +426,30 @@ pub fn uninstall(state: &mut State, package_id: &PackageId) -> anyhow::Result<()
     let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(&blob.bytes)?;
 
     // reading from the package manifest, kill every process named
+    // *and* remove it from the homepage!
     for entry in &manifest {
-        kernel_request(kt::KernelCommand::KillProcess(ProcessId::new(
+        let process_id = ProcessId::new(
             Some(&entry.process_name),
             package_id.package(),
             package_id.publisher(),
-        )))
-        .send()?;
+        );
+
+        kernel_request(kt::KernelCommand::KillProcess(process_id.clone())).send()?;
+
+        // we have a unique capability that allows this, which we must attach
+        Request::to(("our", "homepage", "homepage", "sys"))
+            .body(
+                serde_json::json!({
+                    "RemoveOther": process_id,
+                })
+                .to_string()
+                .as_bytes(),
+            )
+            .capabilities(vec![Capability::new(
+                Address::new(&our.node, ("homepage", "homepage", "sys")),
+                "\"RemoveOther\"".to_string(),
+            )])
+            .send()?;
     }
 
     // then, delete the drive
