@@ -225,6 +225,7 @@ pub fn install(
         verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
         caps_approved: true, // TODO see if we want to auto-approve local installs
         manifest_hash: Some(manifest_hash),
+        pending_update_hash: None, // TODO: doublecheck if problematically overwrites auto_update state.
     };
 
     if let Ok(extracted) = extract_api(&process_package_id) {

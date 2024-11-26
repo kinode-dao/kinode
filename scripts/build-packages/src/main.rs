@@ -97,8 +97,8 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    // kinode/target/debug/build_package
-    let current_exe_dir = std::env::current_exe() // build_package
+    // kinode/target/debug/build-package
+    let current_exe_dir = std::env::current_exe() // build-package
         .unwrap();
     let top_level_dir = current_exe_dir
         .parent() // debug/

@@ -5,7 +5,7 @@
 use crate::{
     kinode::process::chain::{ChainRequests, ChainResponses},
     kinode::process::downloads::{
-        DownloadRequests, DownloadResponses, LocalDownloadRequest, RemoveFileRequest,
+        DownloadRequests, DownloadResponses, Entry, LocalDownloadRequest, RemoveFileRequest,
     },
     state::{MirrorCheck, PackageState, State},
 };
@@ -31,6 +31,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/apps/:id",      // detail about an on-chain app
         "/downloads/:id", // local downloads for an app
         "/installed/:id", // detail about an installed app
+        "/manifest",      // manifest of a downloaded app, id & version hash in query params
         // actions
         "/apps/:id/download",    // download a listed app
         "/apps/:id/install",     // install a downloaded app
@@ -190,6 +191,7 @@ fn make_widget() -> String {
 /// - get all apps we've published: GET /ourapps
 /// - get detail about a specific app: GET /apps/:id
 /// - get detail about a specific apps downloads: GET /downloads/:id
+/// - get manifest of a specific downloaded app: GET /manifest?id={id}&version_hash={version_hash}
 /// - remove a downloaded app: POST /downloads/:id/remove
 
 /// - get online/offline mirrors for a listed app: GET /mirrorcheck/:node
@@ -225,8 +227,8 @@ pub fn handle_http_request(
     }
 }
 
-fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<PackageId> {
-    let Some(package_id) = url_params.get("id") else {
+fn get_package_id(params: &HashMap<String, String>) -> anyhow::Result<PackageId> {
+    let Some(package_id) = params.get("id") else {
         return Err(anyhow::anyhow!("Missing id"));
     };
 
@@ -246,6 +248,7 @@ fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
         "our_version_hash": state.our_version_hash,
         "verified": state.verified,
         "caps_approved": state.caps_approved,
+        "pending_update_hash": state.pending_update_hash,
     })
 }
 
@@ -258,6 +261,7 @@ fn serve_paths(
 
     let bound_path: &str = req.bound_path(Some(&our.process.to_string()));
     let url_params = req.url_params();
+    let query_params = req.query_params();
 
     match bound_path {
         // GET all apps
@@ -359,6 +363,73 @@ fn serve_paths(
                 _ => Err(anyhow::anyhow!(
                     "Invalid response from downloads: {:?}",
                     msg
+                )),
+            }
+        }
+        "/manifest" => {
+            // get manifest of a downloaded app, version hash and id in query params
+            let Ok(package_id) = get_package_id(query_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id in query params.").into_bytes(),
+                ));
+            };
+
+            let Some(version_hash) = query_params.get("version_hash") else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing version_hash in query params.").into_bytes(),
+                ));
+            };
+
+            let package_id = crate::kinode::process::main::PackageId::from_process_lib(package_id);
+
+            // get the file corresponding to the version hash, extract manifest and return.
+            let resp = Request::to(("our", "downloads", "app_store", "sys"))
+                .body(serde_json::to_vec(&DownloadRequests::GetFiles(Some(
+                    package_id.clone(),
+                )))?)
+                .send_and_await_response(5)??;
+
+            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            match msg {
+                DownloadResponses::GetFiles(files) => {
+                    let file_name = format!("{version_hash}.zip");
+                    let file_entry = files.into_iter().find(|entry| match entry {
+                        Entry::File(file) => file.name == file_name,
+                        _ => false,
+                    });
+
+                    match file_entry {
+                        Some(Entry::File(file)) => {
+                            let response = serde_json::json!({
+                                "package_id": package_id,
+                                "version_hash": version_hash,
+                                "manifest": file.manifest,
+                            });
+                            return Ok((StatusCode::OK, None, serde_json::to_vec(&response)?));
+                        }
+                        _ => {
+                            return Ok((
+                                StatusCode::NOT_FOUND,
+                                None,
+                                format!("File with version hash {} not found", version_hash)
+                                    .into_bytes(),
+                            ));
+                        }
+                    }
+                }
+                DownloadResponses::Err(e) => Ok((
+                    StatusCode::NOT_FOUND,
+                    None,
+                    format!("Error from downloads: {:?}", e).into_bytes(),
+                )),
+                _ => Ok((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    None,
+                    format!("Invalid response from downloads: {:?}", msg).into_bytes(),
                 )),
             }
         }
