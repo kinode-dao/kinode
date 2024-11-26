@@ -416,7 +416,7 @@ async fn login_handler(
                             .headers_mut()
                             .append("Content-Length", HeaderValue::from_str("0").unwrap());
                     }
-                  
+
                     Ok(response)
                 }
                 Err(e) => Ok(warp::reply::with_status(
