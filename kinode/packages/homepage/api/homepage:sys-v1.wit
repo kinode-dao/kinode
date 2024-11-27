@@ -1,4 +1,9 @@
 interface homepage {
+    enum capability {
+        remove-other,
+        set-stylesheet,
+    }
+
     /// The request format to add or remove an app from the homepage. You must have messaging
     /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
     variant request {
@@ -6,9 +11,15 @@ interface homepage {
         /// the path will automatically have the process_id prepended.
         /// the icon is a base64 encoded image.
         add(add-request),
+        /// remove ourself from homepage (message source will be item removed)
         remove,
-        /// ONLY settings:settings:sys may call this request
-        /// (this is checked in-code)
+        /// remove another app from homepage
+        /// using this requires RemoveOther capability
+        /// app store uses this to remove apps on uninstall
+        remove-other(string),
+        /// set the stylesheet for the homepage
+        /// using this requires SetStylesheet capability
+        /// settings:settings:sys uses this to set the stylesheet
         set-stylesheet(string),
     }
 
@@ -20,7 +31,7 @@ interface homepage {
     }
 }
 
-world homepage-sys-v0 {
+world homepage-sys-v1 {
     import homepage;
     include process-v0;
 }
