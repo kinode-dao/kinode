@@ -65,6 +65,10 @@
             "terminal:terminal:sys",
             "filesystem:distro:sys",
             "homepage:homepage:sys",
+            {
+                "process": "homepage:homepage:sys",
+                "params": "RemoveOther"
+            },
             "http_server:distro:sys",
             "http_client:distro:sys",
             "net:distro:sys",

@@ -305,7 +305,7 @@ fn serve_paths(
                 }
                 Method::DELETE => {
                     // uninstall an app
-                    crate::utils::uninstall(state, &package_id)?;
+                    crate::utils::uninstall(our, state, &package_id)?;
                     println!("successfully uninstalled {:?}", package_id);
                     Ok((
                         StatusCode::NO_CONTENT,
