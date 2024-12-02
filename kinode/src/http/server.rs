@@ -15,12 +15,13 @@ use lib::types::core::{
 };
 use route_recognizer::Router;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::RwLock;
 use warp::{
-    http::{header::HeaderValue, StatusCode},
+    http::{
+        header::{HeaderValue, SET_COOKIE},
+        StatusCode,
+    },
     ws::{WebSocket, Ws},
     Filter, Reply,
 };
@@ -29,6 +30,8 @@ use warp::{
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 15;
 #[cfg(feature = "simulation-mode")]
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 600;
+
+const WS_SELF_IMPOSED_MAX_CONNECTIONS: u32 = 128;
 
 const LOGIN_HTML: &str = include_str!("login.html");
 
@@ -372,12 +375,29 @@ async fn login_handler(
 
             let cookie = match info.subdomain.unwrap_or_default().as_str() {
                 "" => format!("kinode-auth_{our}={token};"),
-                subdomain => format!("kinode-auth_{our}@{subdomain}={token};"),
+                subdomain => {
+                    // enforce that subdomain string only contains a-z, 0-9, and -
+                    let subdomain = subdomain
+                        .chars()
+                        .filter(|c| c.is_ascii_alphanumeric() || c == &'-')
+                        .collect::<String>();
+                    format!("kinode-auth_{our}@{subdomain}={token};")
+                }
             };
 
             match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
-                    response.headers_mut().append("set-cookie", v);
+                    response.headers_mut().append(SET_COOKIE, v);
+                    response
+                        .headers_mut()
+                        .append("HttpOnly", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("Secure", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("SameSite", HeaderValue::from_static("Strict"));
+
                     if let Some(redirect) = query_params.get("redirect") {
                         // get http/https from request headers
                         let proto = match response.headers().get("X-Forwarded-Proto") {
@@ -397,6 +417,7 @@ async fn login_handler(
                             .headers_mut()
                             .append("Content-Length", HeaderValue::from_str("0").unwrap());
                     }
+
                     Ok(response)
                 }
                 Err(e) => Ok(warp::reply::with_status(
@@ -432,6 +453,19 @@ async fn ws_handler(
         .send(&print_tx)
         .await;
 
+    if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS as usize {
+        Printout::new(
+            0,
+            format!(
+                "http-server: too many open websockets ({})! rejecting incoming",
+                ws_senders.len()
+            ),
+        )
+        .send(&print_tx)
+        .await;
+        return Err(warp::reject::reject());
+    }
+
     let serialized_headers = utils::serialize_headers(&headers);
 
     let ws_path_bindings = ws_path_bindings.read().await;
@@ -458,12 +492,12 @@ async fn ws_handler(
             // parse out subdomain from host (there can only be one)
             let request_subdomain = host.host().split('.').next().unwrap_or("");
             if request_subdomain != subdomain
-                || !utils::auth_cookie_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
+                || !utils::auth_token_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
             {
                 return Err(warp::reject::not_found());
             }
         } else {
-            if !utils::auth_cookie_valid(&our, None, auth_token, &jwt_secret_bytes) {
+            if !utils::auth_token_valid(&our, None, auth_token, &jwt_secret_bytes) {
                 return Err(warp::reject::not_found());
             }
         }
@@ -598,7 +632,7 @@ async fn http_handler(
                     .body(vec![])
                     .into_response());
             }
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 Some(&app),
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),
@@ -611,7 +645,7 @@ async fn http_handler(
                     .into_response());
             }
         } else {
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 None,
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),

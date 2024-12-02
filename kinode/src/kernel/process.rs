@@ -515,7 +515,7 @@ pub async fn make_process_loop(
             *restart_backoff_lock = Some(RestartBackoff {
                 next_soonest_restart_time,
                 consecutive_attempts,
-                restart_handle,
+                _restart_handle: restart_handle,
             });
         }
         // if requests, fire them
