@@ -4,8 +4,8 @@ use crate::kinode::process::kns_indexer::{
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
-    await_message, call_init, eth, kimap, net, print_to_terminal, println, timer, Address, Message,
-    Request, Response,
+    await_message, call_init, eth, get_state, kimap, net, print_to_terminal, println, set_state,
+    timer, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -39,11 +39,23 @@ const MAX_PENDING_ATTEMPTS: u8 = 3;
 const SUBSCRIPTION_TIMEOUT: u64 = 60;
 const DELAY_MS: u64 = 1_000; // 1s
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct State {
-    chain_id: u64,
-    // what contract this state pertains to
-    contract_address: eth::Address,
+pub const CURRENT_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VersionedState {
+    version: u32,
+    #[serde(flatten)]
+    state: StateEnum,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum StateEnum {
+    V1(KnsState),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnsState {
     // namehash to human readable name
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
@@ -52,12 +64,93 @@ struct State {
     last_block: u64,
 }
 
+impl KnsState {
+    pub fn save(&self) -> anyhow::Result<()> {
+        let versioned_state = VersionedState {
+            version: CURRENT_VERSION,
+            state: StateEnum::V1(self.clone()),
+        };
+        set_state(&serde_json::to_vec(&versioned_state)?);
+        Ok(())
+    }
+}
+
+impl VersionedState {
+    pub fn new() -> Self {
+        Self {
+            version: CURRENT_VERSION,
+            state: StateEnum::V1(KnsState {
+                last_block: 0,
+                names: HashMap::new(),
+                nodes: HashMap::new(),
+            }),
+        }
+    }
+
+    pub fn state(&self) -> &KnsState {
+        match &self.state {
+            StateEnum::V1(state) => state,
+        }
+    }
+
+    pub fn state_mut(&mut self) -> &mut KnsState {
+        match &mut self.state {
+            StateEnum::V1(state) => state,
+        }
+    }
+
+    pub fn update_block(&mut self, block: u64) {
+        if block > 2 {
+            self.state_mut().last_block = block - 2;
+        }
+    }
+
+    pub fn save(&self) -> anyhow::Result<()> {
+        set_state(&serde_json::to_vec(self).unwrap());
+        Ok(())
+    }
+
+    pub fn load_or_create() -> Self {
+        match get_state() {
+            Some(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(state) => {
+                    let state: VersionedState = state;
+                    if state.version != CURRENT_VERSION {
+                        println!(
+                            "migrating state from version {} to {}",
+                            state.version, CURRENT_VERSION
+                        );
+                        state.migrate()
+                    } else {
+                        state
+                    }
+                }
+                Err(e) => {
+                    println!("failed to deserialize state: {e}, creating new"); // note, dangerous but we can always re-index.
+                    Self::new()
+                }
+            },
+            None => Self::new(),
+        }
+    }
+
+    // potential future migrations can be added here.
+    fn migrate(self) -> Self {
+        match self.version {
+            1 => self, // current version
+            // 2 => migrate_to_v3(self),
+            // 3 => migrate_to_v4(self),
+            _ => Self::new(), // unknown version, start fresh
+        }
+    }
+}
+
 // note: not defined in wit api right now like IndexerRequests.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum IndexerResponses {
     Name(Option<String>),
     NodeInfo(Option<net::KnsUpdate>),
-    GetState(State),
+    GetState(KnsState),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -75,26 +168,27 @@ fn init(our: Address) {
     // us to quickly verify we have the updated mapping with root hash, but right
     // now it's tricky to recover from missed events.
 
-    let state = State {
-        chain_id: CHAIN_ID,
-        contract_address: KIMAP_ADDRESS.parse::<eth::Address>().unwrap(),
-        nodes: HashMap::new(),
-        names: HashMap::new(),
-        last_block: KIMAP_FIRST_BLOCK,
-    };
+    // Create or load versioned state
 
-    if let Err(e) = main(our, state) {
+    let versioned_state = VersionedState::load_or_create();
+
+    if let Err(e) = main(our, versioned_state) {
         println!("fatal error: {e}");
     }
 }
 
-fn main(our: Address, mut state: State) -> anyhow::Result<()> {
+fn main(our: Address, mut versioned_state: VersionedState) -> anyhow::Result<()> {
+    let mut state = versioned_state.state_mut();
+
     #[cfg(feature = "simulation-mode")]
     add_temp_hardcoded_tlzs(&mut state);
 
+    let contract_address = KIMAP_ADDRESS.parse::<eth::Address>().unwrap();
+
     // sub_id: 1
     let mints_filter = eth::Filter::new()
-        .address(state.contract_address)
+        .address(contract_address)
+        .from_block(state.last_block - 2)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
@@ -108,21 +202,22 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // sub_id: 2
     let notes_filter = eth::Filter::new()
-        .address(state.contract_address)
+        .address(contract_address)
+        .from_block(state.last_block - 2)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
         .topic3(notes);
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
-    let eth_provider: eth::Provider = eth::Provider::new(state.chain_id, SUBSCRIPTION_TIMEOUT);
+    let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, SUBSCRIPTION_TIMEOUT);
 
     print_to_terminal(
         1,
         &format!(
             "subscribing, state.block: {}, chain_id: {}",
             state.last_block - 1,
-            state.chain_id
+            CHAIN_ID
         ),
     );
 
@@ -218,7 +313,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 }
 
 fn handle_eth_message(
-    state: &mut State,
+    state: &mut KnsState,
     eth_provider: &eth::Provider,
     tick: bool,
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
@@ -261,7 +356,7 @@ fn handle_eth_message(
 }
 
 fn handle_pending_notes(
-    state: &mut State,
+    state: &mut KnsState,
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
 ) -> anyhow::Result<()> {
     if pending_notes.is_empty() {
@@ -314,7 +409,7 @@ fn handle_pending_notes(
     Ok(())
 }
 
-fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Result<()> {
+fn handle_note(state: &mut KnsState, note: &kimap::contract::Note) -> anyhow::Result<()> {
     let note_label = String::from_utf8(note.label.to_vec())?;
     let node_hash = note.parenthash.to_string();
 
@@ -392,7 +487,7 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
 }
 
 fn handle_log(
-    state: &mut State,
+    state: &mut KnsState,
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
     log: &eth::Log,
 ) -> anyhow::Result<()> {
@@ -456,6 +551,9 @@ fn handle_log(
         }
     };
 
+    if let Err(e) = state.save() {
+        print_to_terminal(1, &format!("state-saving error! {e:?}"));
+    }
     Ok(())
 }
 
@@ -463,7 +561,7 @@ fn handle_log(
 
 fn fetch_and_process_logs(
     eth_provider: &eth::Provider,
-    state: &mut State,
+    state: &mut KnsState,
     filter: eth::Filter,
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
 ) {
@@ -519,7 +617,7 @@ fn get_parent_name(names: &HashMap<String, String>, parent_hash: &str) -> Option
 // TEMP. Either remove when event reimitting working with anvil,
 // or refactor into better structure(!)
 #[cfg(feature = "simulation-mode")]
-fn add_temp_hardcoded_tlzs(state: &mut State) {
+fn add_temp_hardcoded_tlzs(state: &mut KnsState) {
     // add some hardcoded top level zones
     state.names.insert(
         "0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
@@ -532,7 +630,7 @@ fn add_temp_hardcoded_tlzs(state: &mut State) {
 }
 
 /// Decodes bytes into an array of keccak256 hashes (32 bytes each) and returns their full names.
-fn decode_routers(data: &[u8], state: &State) -> Vec<String> {
+fn decode_routers(data: &[u8], state: &KnsState) -> Vec<String> {
     if data.len() % 32 != 0 {
         print_to_terminal(
             1,
