@@ -184,21 +184,17 @@ pub enum HttpServerError {
 }
 
 /// Structure sent from client websocket to this server upon opening a new connection.
-/// After this is sent, depending on the `encrypted` flag, the channel will either be
-/// open to send and receive plaintext messages or messages encrypted with a symmetric
-/// key derived from the JWT.
+/// After this is sent the channel will be open to send and receive plaintext messages.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegister {
     pub auth_token: String,
     pub target_process: String,
-    pub encrypted: bool, // TODO symmetric key exchange here if true
 }
 
 /// Structure sent from this server to client websocket upon opening a new connection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegisterResponse {
     pub channel_id: u32,
-    // TODO symmetric key exchange here
 }
 
 #[derive(Debug, Serialize, Deserialize)]
