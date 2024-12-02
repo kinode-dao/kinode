@@ -695,6 +695,15 @@ async fn success_response(
     match HeaderValue::from_str(&format!("kinode-auth_{}={token};", our.name)) {
         Ok(v) => {
             response.headers_mut().append(SET_COOKIE, v);
+            response
+                .headers_mut()
+                .append("HttpOnly", HeaderValue::from_static("true"));
+            response
+                .headers_mut()
+                .append("Secure", HeaderValue::from_static("true"));
+            response
+                .headers_mut()
+                .append("SameSite", HeaderValue::from_static("Strict"));
         }
         Err(_) => {
             return Ok(warp::reply::with_status(

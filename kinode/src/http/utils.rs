@@ -20,13 +20,13 @@ pub struct RpcMessage {
     pub data: Option<String>,
 }
 
-pub fn auth_cookie_valid(
+pub fn auth_token_valid(
     our_node: &str,
     subdomain: Option<&ProcessId>,
-    cookie: &str,
+    auth_token: &str,
     jwt_secret: &[u8],
 ) -> bool {
-    let cookie: Vec<&str> = cookie.split("; ").collect();
+    let token: Vec<&str> = auth_token.split("; ").collect();
 
     let token_label = match subdomain {
         None => format!("kinode-auth_{our_node}"),
@@ -34,10 +34,10 @@ pub fn auth_cookie_valid(
     };
 
     let mut auth_token = None;
-    for entry in cookie {
-        let cookie_parts: Vec<&str> = entry.split('=').collect();
-        if cookie_parts.len() == 2 && cookie_parts[0] == token_label {
-            auth_token = Some(cookie_parts[1].to_string());
+    for entry in token {
+        let token_parts: Vec<&str> = entry.split('=').collect();
+        if token_parts.len() == 2 && token_parts[0] == token_label {
+            auth_token = Some(token_parts[1].to_string());
             break;
         }
     }
@@ -61,7 +61,11 @@ pub fn auth_cookie_valid(
     let claims: Result<http_server::JwtClaims, _> = auth_token.verify_with_key(&secret);
 
     match claims {
-        Ok(data) => data.username == our_node && data.subdomain == subdomain.map(|s| s.to_string()),
+        Ok(data) => {
+            data.username == our_node
+                && data.subdomain == subdomain.map(|s| s.to_string())
+                && data.expiration > chrono::Utc::now().timestamp() as u64
+        }
         Err(_) => false,
     }
 }

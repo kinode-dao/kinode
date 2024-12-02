@@ -11,6 +11,7 @@ use ring::signature::{self, KeyPair};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     num::NonZeroU32,
+    ops::Add,
 };
 
 type DiskKey = [u8; CREDENTIAL_LEN];
@@ -134,10 +135,15 @@ pub fn generate_jwt(
         subdomain => Some(subdomain.to_string()),
     };
 
+    // set JWT to expire in 6 months
+    let expiration = chrono::Utc::now()
+        .add(chrono::Duration::weeks(26))
+        .timestamp() as u64;
+
     let claims = crate::http::server_types::JwtClaims {
         username: username.to_string(),
         subdomain,
-        expiration: 0,
+        expiration,
     };
 
     claims.sign_with_key(&jwt_secret).ok()

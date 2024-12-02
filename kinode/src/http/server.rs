@@ -15,12 +15,13 @@ use lib::types::core::{
 };
 use route_recognizer::Router;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::RwLock;
 use warp::{
-    http::{header::HeaderValue, StatusCode},
+    http::{
+        header::{HeaderValue, SET_COOKIE},
+        StatusCode,
+    },
     ws::{WebSocket, Ws},
     Filter, Reply,
 };
@@ -386,7 +387,7 @@ async fn login_handler(
 
             match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
-                    response.headers_mut().append("set-cookie", v);
+                    response.headers_mut().append(SET_COOKIE, v);
                     response
                         .headers_mut()
                         .append("HttpOnly", HeaderValue::from_static("true"));
@@ -491,12 +492,12 @@ async fn ws_handler(
             // parse out subdomain from host (there can only be one)
             let request_subdomain = host.host().split('.').next().unwrap_or("");
             if request_subdomain != subdomain
-                || !utils::auth_cookie_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
+                || !utils::auth_token_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
             {
                 return Err(warp::reject::not_found());
             }
         } else {
-            if !utils::auth_cookie_valid(&our, None, auth_token, &jwt_secret_bytes) {
+            if !utils::auth_token_valid(&our, None, auth_token, &jwt_secret_bytes) {
                 return Err(warp::reject::not_found());
             }
         }
@@ -631,7 +632,7 @@ async fn http_handler(
                     .body(vec![])
                     .into_response());
             }
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 Some(&app),
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),
@@ -644,7 +645,7 @@ async fn http_handler(
                     .into_response());
             }
         } else {
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 None,
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),
