@@ -255,9 +255,13 @@ async fn serve(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
-    Printout::new(0, HTTP_SERVER_PROCESS_ID.clone(), format!("http-server: running on port {our_port}"))
-        .send(&print_tx)
-        .await;
+    Printout::new(
+        0,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: running on port {our_port}"),
+    )
+    .send(&print_tx)
+    .await;
 
     // filter to receive websockets
     let cloned_our = our.clone();
@@ -449,9 +453,13 @@ async fn ws_handler(
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
-    Printout::new(2, HTTP_SERVER_PROCESS_ID.clone(), format!("http-server: ws request for {original_path}"))
-        .send(&print_tx)
-        .await;
+    Printout::new(
+        2,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: ws request for {original_path}"),
+    )
+    .send(&print_tx)
+    .await;
 
     if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS as usize {
         Printout::new(
@@ -560,9 +568,13 @@ async fn http_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
     let base_path = original_path.split('/').skip(1).next().unwrap_or("");
-    Printout::new(2, HTTP_SERVER_PROCESS_ID.clone(), format!("http-server: request for {original_path}"))
-        .send(&print_tx)
-        .await;
+    Printout::new(
+        2,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: request for {original_path}"),
+    )
+    .send(&print_tx)
+    .await;
 
     let id: u64 = rand::random();
     let serialized_headers = utils::serialize_headers(&headers);

@@ -429,12 +429,16 @@ pub async fn parse_hello_message(
 
 /// Create a terminal printout at verbosity level 0.
 pub async fn print_loud(print_tx: &PrintSender, content: &str) {
-    Printout::new(0, NET_PROCESS_ID.clone(), content).send(print_tx).await;
+    Printout::new(0, NET_PROCESS_ID.clone(), content)
+        .send(print_tx)
+        .await;
 }
 
 /// Create a terminal printout at verbosity level 2.
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
-    Printout::new(2, NET_PROCESS_ID.clone(), content).send(print_tx).await;
+    Printout::new(2, NET_PROCESS_ID.clone(), content)
+        .send(print_tx)
+        .await;
 }
 
 pub fn get_now() -> u64 {

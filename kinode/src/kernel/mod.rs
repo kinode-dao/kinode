@@ -105,9 +105,13 @@ async fn handle_kernel_request(
     };
     let command: t::KernelCommand = match serde_json::from_slice(&request.body) {
         Err(e) => {
-            t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: couldn't parse command: {e:?}"))
-                .send(send_to_terminal)
-                .await;
+            t::Printout::new(
+                0,
+                KERNEL_PROCESS_ID.clone(),
+                format!("kernel: couldn't parse command: {e:?}"),
+            )
+            .send(send_to_terminal)
+            .await;
             return None;
         }
         Ok(c) => c,
@@ -159,9 +163,13 @@ async fn handle_kernel_request(
             public,
         } => {
             let Some(blob) = km.lazy_load_blob else {
-                t::Printout::new(0, KERNEL_PROCESS_ID.clone(), "kernel: process startup requires bytes")
-                    .send(send_to_terminal)
-                    .await;
+                t::Printout::new(
+                    0,
+                    KERNEL_PROCESS_ID.clone(),
+                    "kernel: process startup requires bytes",
+                )
+                .send(send_to_terminal)
+                .await;
                 // fire an error back
                 t::KernelMessage::builder()
                     .id(km.id)
@@ -302,9 +310,13 @@ async fn handle_kernel_request(
                     t::KernelResponse::InitializedProcess
                 }
                 Err(e) => {
-                    t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: error initializing process: {e:?}"))
-                        .send(send_to_terminal)
-                        .await;
+                    t::Printout::new(
+                        0,
+                        KERNEL_PROCESS_ID.clone(),
+                        format!("kernel: error initializing process: {e:?}"),
+                    )
+                    .send(send_to_terminal)
+                    .await;
                     t::KernelResponse::InitializeProcessError
                 }
             };
@@ -382,9 +394,13 @@ async fn handle_kernel_request(
                         t::KernelResponse::RunProcessError
                     }
                 } else {
-                    t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: no such process {process_id} to run"))
-                        .send(send_to_terminal)
-                        .await;
+                    t::Printout::new(
+                        0,
+                        KERNEL_PROCESS_ID.clone(),
+                        format!("kernel: no such process {process_id} to run"),
+                    )
+                    .send(send_to_terminal)
+                    .await;
                     t::KernelResponse::RunProcessError
                 };
             t::KernelMessage::builder()
@@ -417,9 +433,13 @@ async fn handle_kernel_request(
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
                 None => {
-                    t::Printout::new(2, KERNEL_PROCESS_ID.clone(), format!("kernel: no such process {process_id} to kill"))
-                        .send(send_to_terminal)
-                        .await;
+                    t::Printout::new(
+                        2,
+                        KERNEL_PROCESS_ID.clone(),
+                        format!("kernel: no such process {process_id} to kill"),
+                    )
+                    .send(send_to_terminal)
+                    .await;
                     return None;
                 }
             };
@@ -436,14 +456,22 @@ async fn handle_kernel_request(
                     .expect("event loop: fatal: sender died");
             }
             if request.expects_response.is_none() {
-                t::Printout::new(2, KERNEL_PROCESS_ID.clone(), format!("kernel: killing process {process_id}"))
-                    .send(send_to_terminal)
-                    .await;
-                return None;
-            }
-            t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: killing process {process_id}"))
+                t::Printout::new(
+                    2,
+                    KERNEL_PROCESS_ID.clone(),
+                    format!("kernel: killing process {process_id}"),
+                )
                 .send(send_to_terminal)
                 .await;
+                return None;
+            }
+            t::Printout::new(
+                0,
+                KERNEL_PROCESS_ID.clone(),
+                format!("kernel: killing process {process_id}"),
+            )
+            .send(send_to_terminal)
+            .await;
             t::KernelMessage::builder()
                 .id(km.id)
                 .source(("our", KERNEL_PROCESS_ID.clone()))
@@ -719,9 +747,13 @@ pub async fn kernel(
         {
             Ok(()) => {}
             Err(e) => {
-                t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: couldn't reboot process: {e}"))
-                    .send(&send_to_terminal)
-                    .await;
+                t::Printout::new(
+                    0,
+                    KERNEL_PROCESS_ID.clone(),
+                    format!("kernel: couldn't reboot process: {e}"),
+                )
+                .send(&send_to_terminal)
+                .await;
                 non_rebooted_processes.insert(process_id.clone());
             }
         }

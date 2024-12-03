@@ -1,8 +1,8 @@
-use lib::types::core::ETH_PROCESS_ID;
 use crate::eth::*;
 use alloy::pubsub::RawSubscription;
 use alloy::rpc::types::eth::pubsub::SubscriptionResult;
 use alloy::rpc::types::pubsub;
+use lib::types::core::ETH_PROCESS_ID;
 
 /// cleans itself up when the subscription is closed or fails.
 pub async fn create_new_subscription(
@@ -192,9 +192,13 @@ async fn build_subscription(
         return Err(EthError::PermissionDenied); // will never hit
     };
     if *kind == pubsub::SubscriptionKind::NewHeads {
-        Printout::new(0, ETH_PROCESS_ID.clone(), format!("newHeads subscription requested by {target}!"))
-            .send(print_tx)
-            .await;
+        Printout::new(
+            0,
+            ETH_PROCESS_ID.clone(),
+            format!("newHeads subscription requested by {target}!"),
+        )
+        .send(print_tx)
+        .await;
     }
     let mut urls = {
         // in code block to drop providers lock asap to avoid deadlock

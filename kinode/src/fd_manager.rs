@@ -173,12 +173,18 @@ pub async fn fd_manager(
         if let Some(message) = recv_from_loop.recv().await {
             match handle_message(&our_node, message, &mut state, &send_to_loop).await {
                 Ok(Some(to_print)) => {
-                    Printout::new(2, FD_MANAGER_PROCESS_ID.clone(), to_print).send(&send_to_terminal).await;
-                }
-                Err(e) => {
-                    Printout::new(1, FD_MANAGER_PROCESS_ID.clone(), &format!("handle_message error: {e:?}"))
+                    Printout::new(2, FD_MANAGER_PROCESS_ID.clone(), to_print)
                         .send(&send_to_terminal)
                         .await;
+                }
+                Err(e) => {
+                    Printout::new(
+                        1,
+                        FD_MANAGER_PROCESS_ID.clone(),
+                        &format!("handle_message error: {e:?}"),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
                 }
                 _ => {}
             }

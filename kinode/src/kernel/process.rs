@@ -296,9 +296,13 @@ pub async fn make_process_loop(
             // the process will run until it returns from init() or crashes
             match bindings.call_init(&mut store, &our.to_string()).await {
                 Ok(()) => {
-                    t::Printout::new(1, t::KERNEL_PROCESS_ID.clone(), format!("process {our} returned without error"))
-                        .send(&send_to_terminal)
-                        .await;
+                    t::Printout::new(
+                        1,
+                        t::KERNEL_PROCESS_ID.clone(),
+                        format!("process {our} returned without error"),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
                 }
                 Err(e) => {
                     let stderr = wasi_stderr.contents().into();
@@ -330,9 +334,13 @@ pub async fn make_process_loop(
             // the process will run until it returns from init() or crashes
             match bindings.call_init(&mut store, &our.to_string()).await {
                 Ok(()) => {
-                    t::Printout::new(1, t::KERNEL_PROCESS_ID.clone(), format!("process {our} returned without error"))
-                        .send(&send_to_terminal)
-                        .await;
+                    t::Printout::new(
+                        1,
+                        t::KERNEL_PROCESS_ID.clone(),
+                        format!("process {our} returned without error"),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
                 }
                 Err(e) => {
                     let stderr = wasi_stderr.contents().into();
