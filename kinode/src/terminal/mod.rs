@@ -9,9 +9,10 @@ use crossterm::{
 use futures::{future::FutureExt, StreamExt};
 use lib::types::core::{
     DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender, PrintReceiver,
-    PrintSender, Printout, Request, TERMINAL_PROCESS_ID,
+    PrintSender, Printout, ProcessId, Request, TERMINAL_PROCESS_ID,
 };
 use std::{
+    collections::HashMap,
     fs::{read_to_string, OpenOptions},
     io::BufWriter,
     path::PathBuf,
@@ -44,6 +45,8 @@ struct State {
     pub logging_mode: bool,
     /// verbosity mode (increased by CTRL+V)
     pub verbose_mode: u8,
+    /// process-level verbosities: override verbose_mode when populated
+    pub process_verbosity: HashMap<ProcessId, u8>,
 }
 
 impl State {
@@ -238,6 +241,7 @@ pub async fn terminal(
         search_depth,
         logging_mode,
         verbose_mode,
+        process_verbosity: HashMap::new(),
     };
 
     // use to trigger cleanup if receive signal to kill process
@@ -342,7 +346,10 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     }
     // skip writing print to terminal if it's of a greater
     // verbosity level than our current mode
-    if printout.verbosity > state.verbose_mode {
+    let current_verbosity = state.process_verbosity
+        .get(&printout.source)
+        .unwrap_or_else(|| &state.verbose_mode);
+    if &printout.verbosity > current_verbosity {
         return Ok(());
     }
     let now = Local::now();
