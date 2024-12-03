@@ -536,6 +536,7 @@ async fn handle_key_event(
             }
             Printout::new(
                 0,
+                TERMINAL_PROCESS_ID.clone(),
                 format!(
                     "verbose mode: {}",
                     match verbose_mode {
@@ -563,6 +564,7 @@ async fn handle_key_event(
             *in_step_through = !*in_step_through;
             Printout::new(
                 0,
+                TERMINAL_PROCESS_ID.clone(),
                 format!(
                     "debug mode {}",
                     match in_step_through {
@@ -597,6 +599,7 @@ async fn handle_key_event(
             *logging_mode = !*logging_mode;
             Printout::new(
                 0,
+                TERMINAL_PROCESS_ID.clone(),
                 format!("logging mode: {}", if *logging_mode { "on" } else { "off" }),
             )
             .send(&print_tx)

@@ -105,7 +105,7 @@ async fn handle_kernel_request(
     };
     let command: t::KernelCommand = match serde_json::from_slice(&request.body) {
         Err(e) => {
-            t::Printout::new(0, format!("kernel: couldn't parse command: {e:?}"))
+            t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: couldn't parse command: {e:?}"))
                 .send(send_to_terminal)
                 .await;
             return None;
@@ -159,7 +159,7 @@ async fn handle_kernel_request(
             public,
         } => {
             let Some(blob) = km.lazy_load_blob else {
-                t::Printout::new(0, "kernel: process startup requires bytes")
+                t::Printout::new(0, KERNEL_PROCESS_ID.clone(), "kernel: process startup requires bytes")
                     .send(send_to_terminal)
                     .await;
                 // fire an error back
@@ -184,7 +184,7 @@ async fn handle_kernel_request(
                 return None;
             };
             if let Err(e) = t::check_process_id_kimap_safe(&id) {
-                t::Printout::new(0, &format!("kernel: {e}"))
+                t::Printout::new(0, KERNEL_PROCESS_ID.clone(), &format!("kernel: {e}"))
                     .send(send_to_terminal)
                     .await;
                 // fire an error back
@@ -228,6 +228,7 @@ async fn handle_kernel_request(
                         None => {
                             t::Printout::new(
                                     0,
+                                    KERNEL_PROCESS_ID.clone(),
                                     format!(
                                         "kernel: InitializeProcess caller {} doesn't have capability {}",
                                         km.source.process,
@@ -301,7 +302,7 @@ async fn handle_kernel_request(
                     t::KernelResponse::InitializedProcess
                 }
                 Err(e) => {
-                    t::Printout::new(0, format!("kernel: error initializing process: {e:?}"))
+                    t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: error initializing process: {e:?}"))
                         .send(send_to_terminal)
                         .await;
                     t::KernelResponse::InitializeProcessError
@@ -381,7 +382,7 @@ async fn handle_kernel_request(
                         t::KernelResponse::RunProcessError
                     }
                 } else {
-                    t::Printout::new(0, format!("kernel: no such process {process_id} to run"))
+                    t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: no such process {process_id} to run"))
                         .send(send_to_terminal)
                         .await;
                     t::KernelResponse::RunProcessError
@@ -416,7 +417,7 @@ async fn handle_kernel_request(
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
                 None => {
-                    t::Printout::new(2, format!("kernel: no such process {process_id} to kill"))
+                    t::Printout::new(2, KERNEL_PROCESS_ID.clone(), format!("kernel: no such process {process_id} to kill"))
                         .send(send_to_terminal)
                         .await;
                     return None;
@@ -435,12 +436,12 @@ async fn handle_kernel_request(
                     .expect("event loop: fatal: sender died");
             }
             if request.expects_response.is_none() {
-                t::Printout::new(2, format!("kernel: killing process {process_id}"))
+                t::Printout::new(2, KERNEL_PROCESS_ID.clone(), format!("kernel: killing process {process_id}"))
                     .send(send_to_terminal)
                     .await;
                 return None;
             }
-            t::Printout::new(0, format!("kernel: killing process {process_id}"))
+            t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: killing process {process_id}"))
                 .send(send_to_terminal)
                 .await;
             t::KernelMessage::builder()
@@ -655,6 +656,7 @@ pub async fn kernel(
             Err(e) => {
                 t::Printout::new(
                     0,
+                    KERNEL_PROCESS_ID.clone(),
                     format!("kernel: couldn't read wasm bytes for process: {process_id} at {path:?}: {e}"),
                 )
                 .send(&send_to_terminal)
@@ -717,7 +719,7 @@ pub async fn kernel(
         {
             Ok(()) => {}
             Err(e) => {
-                t::Printout::new(0, format!("kernel: couldn't reboot process: {e}"))
+                t::Printout::new(0, KERNEL_PROCESS_ID.clone(), format!("kernel: couldn't reboot process: {e}"))
                     .send(&send_to_terminal)
                     .await;
                 non_rebooted_processes.insert(process_id.clone());
@@ -788,7 +790,7 @@ pub async fn kernel(
             Some(wrapped_network_error) = network_error_recv.recv() => {
                 // display every single event when verbose
                 if print_full_event_loop {
-                    t::Printout::new(3, format!("{wrapped_network_error:?}")).send(&send_to_terminal).await;
+                    t::Printout::new(3, KERNEL_PROCESS_ID.clone(), format!("{wrapped_network_error:?}")).send(&send_to_terminal).await;
                 }
                 // forward the error to the relevant process
                 match senders.get(&wrapped_network_error.source.process) {
@@ -803,6 +805,7 @@ pub async fn kernel(
                     None => {
                         t::Printout::new(
                             0,
+                            KERNEL_PROCESS_ID.clone(),
                             format!(
                                 "event loop: {} failed to deliver a message {}; but process has already terminated",
                                 wrapped_network_error.source.process,
@@ -841,6 +844,7 @@ pub async fn kernel(
                         // capabilities are not correct! skip this message.
                         t::Printout::new(
                             0,
+                            KERNEL_PROCESS_ID.clone(),
                             format!(
                                 "event loop: process {} doesn't have capability to send networked messages",
                                 kernel_message.source.process
@@ -848,6 +852,7 @@ pub async fn kernel(
                         ).send(&send_to_terminal).await;
                         t::Printout::new(
                             0,
+                            KERNEL_PROCESS_ID.clone(),
                             format!("their capabilities: {:?}", proc.capabilities)
                         ).send(&send_to_terminal).await;
                         throw_timeout(&our.name, &senders, kernel_message).await;
@@ -860,6 +865,7 @@ pub async fn kernel(
                     let Some(persisted) = process_map.get(&kernel_message.target.process) else {
                         t::Printout::new(
                             2,
+                            KERNEL_PROCESS_ID.clone(),
                             format!(
                                 "event loop: got {} from network for {}, but process does not exist{}",
                                 match kernel_message.message {
@@ -882,6 +888,7 @@ pub async fn kernel(
                         // capabilities are not correct! skip this message.
                         t::Printout::new(
                             0,
+                            KERNEL_PROCESS_ID.clone(),
                             format!(
                                 "event loop: process {} got a message from over the network, but doesn't have capability to receive networked messages",
                                 kernel_message.target.process
@@ -903,6 +910,7 @@ pub async fn kernel(
                         let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
                             t::Printout::new(
                                 2,
+                                KERNEL_PROCESS_ID.clone(),
                                 format!(
                                     "event loop: process {} sent message to non-existing {}; dropping message",
                                     kernel_message.source.process, kernel_message.target.process
@@ -918,6 +926,7 @@ pub async fn kernel(
                             // capabilities are not correct! skip this message.
                             t::Printout::new(
                                 0,
+                                KERNEL_PROCESS_ID.clone(),
                                 format!(
                                     "event loop: process {} doesn't have capability to message process {}",
                                     kernel_message.source.process, kernel_message.target.process
@@ -941,7 +950,7 @@ pub async fn kernel(
                 }
                 // display every single event when verbose
                 if print_full_event_loop {
-                    t::Printout::new(3, format!("{kernel_message}")).send(&send_to_terminal).await;
+                    t::Printout::new(3, KERNEL_PROCESS_ID.clone(), format!("{kernel_message}")).send(&send_to_terminal).await;
                 }
 
                 if our.name != kernel_message.target.node {
@@ -982,6 +991,7 @@ pub async fn kernel(
                         None => {
                             t::Printout::new(
                                 0,
+                                KERNEL_PROCESS_ID.clone(),
                                 format!(
                                     "event loop: got {} from {:?} for {:?}, but target doesn't exist (perhaps it terminated): {}",
                                     match kernel_message.message {
@@ -1001,7 +1011,7 @@ pub async fn kernel(
             // capabilities oracle: handles all requests to add, drop, and check capabilities
             Some(cap_message) = caps_oracle_receiver.recv() => {
                 if print_full_event_loop {
-                    t::Printout::new(3, format!("{cap_message}")).send(&send_to_terminal).await;
+                    t::Printout::new(3, KERNEL_PROCESS_ID.clone(), format!("{cap_message}")).send(&send_to_terminal).await;
                 }
                 match cap_message {
                     t::CapMessage::Add { on, caps, responder } => {

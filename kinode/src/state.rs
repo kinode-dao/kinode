@@ -110,6 +110,7 @@ pub async fn state_sender(
         if *our_node != km.source.node {
             Printout::new(
                 1,
+                STATE_PROCESS_ID.clone(),
                 format!(
                     "state: got request from {}, but requests must come from our node {our_node}",
                     km.source.node

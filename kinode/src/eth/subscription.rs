@@ -1,3 +1,4 @@
+use lib::types::core::ETH_PROCESS_ID;
 use crate::eth::*;
 use alloy::pubsub::RawSubscription;
 use alloy::rpc::types::eth::pubsub::SubscriptionResult;
@@ -191,7 +192,7 @@ async fn build_subscription(
         return Err(EthError::PermissionDenied); // will never hit
     };
     if *kind == pubsub::SubscriptionKind::NewHeads {
-        Printout::new(0, format!("newHeads subscription requested by {target}!"))
+        Printout::new(0, ETH_PROCESS_ID.clone(), format!("newHeads subscription requested by {target}!"))
             .send(print_tx)
             .await;
     }
