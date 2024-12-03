@@ -35,13 +35,19 @@ fn main() -> anyhow::Result<()> {
             if !path.exists() {
                 let path = std::env::current_dir()?;
                 let Some(path) = path.parent() else {
-                    return Err(anyhow::anyhow!("Given path to packages {env_var} not found (cwd: {:?})", std::env::current_dir()));
+                    return Err(anyhow::anyhow!(
+                        "Given path to packages {env_var} not found (cwd: {:?})",
+                        std::env::current_dir()
+                    ));
                 };
                 let path = path.join(&env_var);
                 if path.exists() {
                     path.display().to_string()
                 } else {
-                    return Err(anyhow::anyhow!("Given path to packages {env_var} not found in parent of cwd: {:?}", std::env::current_dir()));
+                    return Err(anyhow::anyhow!(
+                        "Given path to packages {env_var} not found in parent of cwd: {:?}",
+                        std::env::current_dir()
+                    ));
                 }
             } else {
                 env_var
