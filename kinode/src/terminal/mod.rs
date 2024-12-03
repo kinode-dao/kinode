@@ -346,7 +346,8 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     }
     // skip writing print to terminal if it's of a greater
     // verbosity level than our current mode
-    let current_verbosity = state.process_verbosity
+    let current_verbosity = state
+        .process_verbosity
         .get(&printout.source)
         .unwrap_or_else(|| &state.verbose_mode);
     if &printout.verbosity > current_verbosity {
