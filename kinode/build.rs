@@ -59,7 +59,7 @@ fn main() -> anyhow::Result<()> {
                 p!("No path given via PATH_TO_PACKAGES_ZIP envvar. Defaulting to path of `kinode/target/packages.zip`.");
                 CANONICAL_PACKAGES_ZIP_PATH.to_string()
             } else {
-                return Err(anyhow::anyhow!("You must build packages.zip with scripts/build_packages or set PATH_TO_PACKAGES_ZIP to point to your desired pacakges.zip (default path at kinode/target/packages.zip was not populated)."));
+                return Err(anyhow::anyhow!("You must build packages.zip with scripts/build-packages or set PATH_TO_PACKAGES_ZIP to point to your desired pacakges.zip (default path at kinode/target/packages.zip was not populated)."));
             }
         }
     };

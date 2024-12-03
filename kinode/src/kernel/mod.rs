@@ -56,7 +56,7 @@ pub struct RestartBackoff {
     /// how many times has process tried to restart in a row
     consecutive_attempts: u32,
     /// task that will do the restart after wait time has elapsed
-    restart_handle: Option<JoinHandle<()>>,
+    _restart_handle: Option<JoinHandle<()>>,
 }
 
 /// persist kernel's process_map state for next bootup
