@@ -1559,8 +1559,8 @@ dependencies = [
 
 [[package]]
 name = "kinode_process_lib"
-version = "0.9.4"
-source = "git+https://github.com/kinode-dao/process_lib?rev=778457a#778457ae52c934fd17e0e846127a9472a8e03170"
+version = "0.10.0"
+source = "git+https://github.com/kinode-dao/process_lib?rev=1fe8612#1fe8612a24f6806270ac9b02c7bd4f464a1422ed"
 dependencies = [
  "alloy",
  "alloy-primitives 0.7.7",
