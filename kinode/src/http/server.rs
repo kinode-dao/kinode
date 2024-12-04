@@ -1357,10 +1357,7 @@ async fn handle_app_message(
                         },
                     );
                 }
-                HttpServerAction::WebSocketSecureBind {
-                    path,
-                    extension,
-                } => {
+                HttpServerAction::WebSocketSecureBind { path, extension } => {
                     if check_process_id_kimap_safe(&km.source.process).is_err() {
                         let source = km.source.clone();
                         send_action_response(
