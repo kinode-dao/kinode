@@ -375,10 +375,12 @@ async fn login_handler(
             let cookie = match info.subdomain.unwrap_or_default().as_str() {
                 "" => format!("kinode-auth_{our}={token};"),
                 subdomain => {
-                    // enforce that subdomain string only contains a-z, 0-9, and -
+                    // enforce that subdomain string only contains a-z, 0-9, ., :, and -
                     let subdomain = subdomain
                         .chars()
-                        .filter(|c| c.is_ascii_alphanumeric() || c == &'-')
+                        .filter(|c| {
+                            c.is_ascii_alphanumeric() || c == &'-' || c == &':' || c == &'.'
+                        })
                         .collect::<String>();
                     format!("kinode-auth_{our}@{subdomain}={token};")
                 }
