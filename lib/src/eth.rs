@@ -70,7 +70,7 @@ pub enum EthAction {
 pub type EthSubResult = Result<EthSub, EthSubError>;
 
 /// Incoming type for successful subscription updates.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthSub {
     pub id: u64,
     /// can be parsed to [`alloy::rpc::types::eth::pubsub::SubscriptionResult`]
@@ -78,15 +78,15 @@ pub struct EthSub {
 }
 
 /// If your subscription is closed unexpectedly, you will receive this.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthSubError {
     pub id: u64,
     pub error: String,
 }
 
-/// The Response type which a process will get from requesting with an [`EthAction`] will be
-/// of this type, serialized and deserialized using `serde_json::to_vec`
-/// and `serde_json::from_slice`.
+/// The Response body type which a process will get from requesting
+/// with an [`EthAction`] will be of this type, serialized and deserialized
+/// using [`serde_json::to_vec`] and [`serde_json::from_slice`].
 ///
 /// In the case of an [`EthAction::SubscribeLogs`] request, the response will indicate if
 /// the subscription was successfully created or not.
@@ -97,7 +97,7 @@ pub enum EthResponse {
     Err(EthError),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum EthError {
     /// RPC provider returned an error.
     /// Can be parsed to [`alloy::rpc::json_rpc::ErrorPayload`]
@@ -122,7 +122,7 @@ pub enum EthError {
 
 /// The action type used for configuring eth:distro:sys. Only processes which have the "root"
 /// capability from eth:distro:sys can successfully send this action.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum EthConfigAction {
     /// Add a new provider to the list of providers.
     AddProvider(ProviderConfig),
@@ -153,7 +153,7 @@ pub enum EthConfigAction {
 }
 
 /// Response type from an [`EthConfigAction`] request.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum EthConfigResponse {
     Ok,
     /// Response from a GetProviders request.
