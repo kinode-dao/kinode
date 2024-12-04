@@ -63,7 +63,6 @@ struct BoundWsPath {
     pub app: Option<ProcessId>, // if None, path has been unbound
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
-    pub encrypted: bool, // TODO use
     pub extension: bool,
 }
 
@@ -533,7 +532,6 @@ async fn ws_handler(
             our.clone(),
             app,
             formatted_path,
-            jwt_secret_bytes.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
             print_tx.clone(),
@@ -977,7 +975,6 @@ async fn maintain_websocket(
     our: Arc<String>,
     app: ProcessId,
     path: String,
-    _jwt_secret_bytes: Arc<Vec<u8>>, // TODO use for encrypted channels
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
@@ -1332,7 +1329,6 @@ async fn handle_app_message(
                 HttpServerAction::WebSocketBind {
                     path,
                     authenticated,
-                    encrypted,
                     extension,
                 } => {
                     if check_process_id_kimap_safe(&km.source.process).is_err() {
@@ -1359,16 +1355,11 @@ async fn handle_app_message(
                             app: Some(km.source.process.clone()),
                             secure_subdomain: None,
                             authenticated,
-                            encrypted,
                             extension,
                         },
                     );
                 }
-                HttpServerAction::WebSocketSecureBind {
-                    path,
-                    encrypted,
-                    extension,
-                } => {
+                HttpServerAction::WebSocketSecureBind { path, extension } => {
                     if check_process_id_kimap_safe(&km.source.process).is_err() {
                         let source = km.source.clone();
                         send_action_response(
@@ -1394,7 +1385,6 @@ async fn handle_app_message(
                             app: Some(km.source.process.clone()),
                             secure_subdomain: Some(subdomain),
                             authenticated: true,
-                            encrypted,
                             extension,
                         },
                     );
@@ -1408,7 +1398,6 @@ async fn handle_app_message(
                             app: None,
                             secure_subdomain: None,
                             authenticated: false,
-                            encrypted: false,
                             extension: false,
                         },
                     );
