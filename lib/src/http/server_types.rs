@@ -102,18 +102,13 @@ pub enum HttpServerAction {
     WebSocketBind {
         path: String,
         authenticated: bool,
-        encrypted: bool,
         extension: bool,
     },
     /// SecureBind is the same as Bind, except that it forces new connections to be made
     /// from the unique subdomain of the process that bound the path. These are *always*
     /// authenticated. Since the subdomain is unique, it will require the user to be
     /// logged in separately to the general domain authentication.
-    WebSocketSecureBind {
-        path: String,
-        encrypted: bool,
-        extension: bool,
-    },
+    WebSocketSecureBind { path: String, extension: bool },
     /// Unbind a previously-bound WebSocket path
     WebSocketUnbind { path: String },
     /// Processes will RECEIVE this kind of request when a client connects to them.
