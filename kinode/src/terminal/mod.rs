@@ -125,7 +125,7 @@ impl State {
         execute!(
             self.stdout,
             terminal::EnterAlternateScreen,
-            cursor::Hide,  // Hide cursor while in alternate screen
+            cursor::Hide, // Hide cursor while in alternate screen
         )?;
 
         self.display_process_verbosity()?;
@@ -134,11 +134,7 @@ impl State {
 
     fn exit_process_verbosity_mode(&mut self) -> Result<(), std::io::Error> {
         // Leave alternate screen and restore cursor
-        execute!(
-            self.stdout,
-            cursor::Show,
-            terminal::LeaveAlternateScreen,
-        )?;
+        execute!(self.stdout, cursor::Show, terminal::LeaveAlternateScreen,)?;
         Ok(())
     }
 
@@ -157,24 +153,23 @@ impl State {
             style::SetForegroundColor(style::Color::Green),
             Print("=== Process Verbosity Mode ===\n\r"),
             style::SetForegroundColor(style::Color::Reset),
-            Print(format!("Overall verbosity: {}\n\r", match self.verbose_mode {
-                0 => "off",
-                1 => "debug",
-                2 => "super-debug",
-                3 => "full event loop",
-                _ => "unknown",
-            })),
+            Print(format!(
+                "Overall verbosity: {}\n\r",
+                match self.verbose_mode {
+                    0 => "off",
+                    1 => "debug",
+                    2 => "super-debug",
+                    3 => "full event loop",
+                    _ => "unknown",
+                }
+            )),
             Print("\n\rProcess-specific verbosity levels:\n\r"),
         )?;
 
         // Display current process verbosities
         let mut row = 4;
         if self.process_verbosity.is_empty() {
-            execute!(
-                self.stdout,
-                cursor::MoveTo(0, row),
-                Print("(none set)\n\r"),
-            )?;
+            execute!(self.stdout, cursor::MoveTo(0, row), Print("(none set)\n\r"),)?;
             row += 1;
         } else {
             for (process_id, verbosity) in &self.process_verbosity {
@@ -1002,7 +997,9 @@ async fn handle_key_event(
                 KeyCode::Enter => {
                     // if we were in process verbosity mode, update state
                     if state.process_verbosity_mode {
-                        if let Some((process_id, verbosity)) = State::parse_process_verbosity(&current_line.line) {
+                        if let Some((process_id, verbosity)) =
+                            State::parse_process_verbosity(&current_line.line)
+                        {
                             state.process_verbosity.insert(process_id, verbosity);
                             current_line.line.clear();
                             current_line.line_col = 0;
