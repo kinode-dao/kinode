@@ -220,27 +220,6 @@ impl State {
 
         Some((process_id, verbosity))
     }
-
-    fn restore_screen(&mut self) -> Result<(), std::io::Error> {
-        // Clear everything
-        execute!(
-            self.stdout,
-            cursor::MoveTo(0, 0),
-            terminal::Clear(ClearType::All),
-        )?;
-
-        // Move cursor back to bottom and restore normal input line
-        execute!(
-            self.stdout,
-            cursor::MoveTo(0, self.win_rows),
-            Print(&self.current_line.prompt),
-            Print(&self.current_line.line),
-            cursor::MoveTo(
-                self.current_line.prompt_len as u16 + self.current_line.cursor_col,
-                self.win_rows
-            ),
-        )
-    }
 }
 
 struct CurrentLine {
@@ -315,6 +294,7 @@ pub async fn terminal(
     is_logging: bool,
     max_log_size: Option<u64>,
     number_log_files: Option<u64>,
+    process_verbosity: HashMap<ProcessId, u8>,
 ) -> anyhow::Result<()> {
     let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
@@ -349,7 +329,6 @@ pub async fn terminal(
     let log_dir_path = home_directory_path.join(".terminal_logs");
     let logger = utils::Logger::new(log_dir_path, max_log_size, number_log_files);
 
-    let process_verbosity = HashMap::new();
     let process_verbosity_mode = false;
     let saved_line = None;
 

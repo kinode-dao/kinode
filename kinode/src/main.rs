@@ -8,6 +8,7 @@ use lib::types::core::{
 };
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -105,6 +106,10 @@ async fn main() {
 
     // detached determines whether terminal is interactive
     let detached = *matches.get_one::<bool>("detached").unwrap();
+
+    let process_verbosity = matches.get_one::<String>("process-verbosity").unwrap();
+    let process_verbosity: HashMap<ProcessId, u8> = serde_json::from_str(&process_verbosity)
+        .expect("failed to parse given --process-verbosity to HashMap<ProcessId, u8>");
 
     #[cfg(feature = "simulation-mode")]
     let (fake_node_name, fakechain_port) = (
@@ -477,6 +482,7 @@ async fn main() {
             is_logging,
             max_log_size.copied(),
             number_log_files.copied(),
+            process_verbosity,
         ) => {
             match quit {
                 Ok(()) => {
@@ -726,6 +732,10 @@ fn build_command() -> Command {
         .arg(
             arg!(--"soft-ulimit" <SOFT_ULIMIT> "Enforce a static maximum number of file descriptors (default fetched from system)")
                 .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"process-verbosity" <JSON_STRING> "ProcessId: verbosity JSON object")
+                .default_value("")
         );
 
     #[cfg(feature = "simulation-mode")]
