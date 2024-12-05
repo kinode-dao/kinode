@@ -1085,12 +1085,6 @@ pub struct LoginInfo {
     pub subdomain: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoginAndResetInfo {
-    pub password_hash: String,
-    pub direct: bool,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Identity {
     pub name: NodeId,

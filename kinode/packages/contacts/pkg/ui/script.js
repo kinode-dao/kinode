@@ -77,12 +77,7 @@ function populate_contacts(contacts) {
 
 document.getElementById('back-button').addEventListener('click', () => {
     // set page to `/` while also removing the subdomain
-    const url = new URL(window.location.href);
-    if (url.hostname.split('.')[0] === 'contacts-sys') {
-        url.hostname = url.hostname.split('.').slice(1).join('.');
-    }
-    url.pathname = '/';
-    window.location.href = url.toString();
+    window.location.href = window.location.origin.replace('//contacts-sys.', '//') + '/'
 });
 
 document.getElementById('add-contact').addEventListener('submit', (e) => {

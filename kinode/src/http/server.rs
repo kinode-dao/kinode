@@ -15,12 +15,13 @@ use lib::types::core::{
 };
 use route_recognizer::Router;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::RwLock;
 use warp::{
-    http::{header::HeaderValue, StatusCode},
+    http::{
+        header::{HeaderValue, SET_COOKIE},
+        StatusCode,
+    },
     ws::{WebSocket, Ws},
     Filter, Reply,
 };
@@ -29,6 +30,8 @@ use warp::{
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 15;
 #[cfg(feature = "simulation-mode")]
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 600;
+
+const WS_SELF_IMPOSED_MAX_CONNECTIONS: u32 = 128;
 
 const LOGIN_HTML: &str = include_str!("login.html");
 
@@ -60,7 +63,6 @@ struct BoundWsPath {
     pub app: Option<ProcessId>, // if None, path has been unbound
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
-    pub encrypted: bool, // TODO use
     pub extension: bool,
 }
 
@@ -293,6 +295,8 @@ async fn serve(
                 warp::reply::with_status(warp::reply::html(cloned_login_html), StatusCode::OK)
             })
             .or(warp::post()
+                .and(warp::filters::host::optional())
+                .and(warp::query::<HashMap<String, String>>())
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(warp::any().map(move || cloned_our.clone()))
@@ -325,7 +329,12 @@ async fn serve(
 
 /// handle non-GET requests on /login. if POST, validate password
 /// and return auth token, which will be stored in a cookie.
+///
+/// if redirect is provided in URL, such as ?redirect=/chess:chess:sys/,
+/// the browser will be redirected to that path after successful login.
 async fn login_handler(
+    host: Option<warp::host::Authority>,
+    query_params: HashMap<String, String>,
     info: LoginInfo,
     our: Arc<String>,
     encoded_keyfile: Arc<Vec<u8>>,
@@ -353,20 +362,63 @@ async fn login_handler(
                 }
             };
 
-            let mut response = warp::reply::with_status(
-                warp::reply::json(&base64_standard.encode(encoded_keyfile.to_vec())),
-                StatusCode::OK,
-            )
-            .into_response();
+            let mut response = if let Some(redirect) = query_params.get("redirect") {
+                warp::reply::with_status(warp::reply(), StatusCode::SEE_OTHER).into_response()
+            } else {
+                warp::reply::with_status(
+                    warp::reply::json(&base64_standard.encode(encoded_keyfile.to_vec())),
+                    StatusCode::OK,
+                )
+                .into_response()
+            };
 
             let cookie = match info.subdomain.unwrap_or_default().as_str() {
                 "" => format!("kinode-auth_{our}={token};"),
-                subdomain => format!("kinode-auth_{our}@{subdomain}={token};"),
+                subdomain => {
+                    // enforce that subdomain string only contains a-z, 0-9, ., :, and -
+                    let subdomain = subdomain
+                        .chars()
+                        .filter(|c| {
+                            c.is_ascii_alphanumeric() || c == &'-' || c == &':' || c == &'.'
+                        })
+                        .collect::<String>();
+                    format!("kinode-auth_{our}@{subdomain}={token};")
+                }
             };
 
             match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
-                    response.headers_mut().append("set-cookie", v);
+                    response.headers_mut().append(SET_COOKIE, v);
+                    response
+                        .headers_mut()
+                        .append("HttpOnly", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("Secure", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("SameSite", HeaderValue::from_static("Strict"));
+
+                    if let Some(redirect) = query_params.get("redirect") {
+                        // get http/https from request headers
+                        let proto = match response.headers().get("X-Forwarded-Proto") {
+                            Some(proto) => proto.to_str().unwrap_or("http").to_string(),
+                            None => "http".to_string(),
+                        };
+
+                        response.headers_mut().append(
+                            "Location",
+                            HeaderValue::from_str(&format!(
+                                "{proto}://{}{redirect}",
+                                host.unwrap()
+                            ))
+                            .unwrap(),
+                        );
+                        response
+                            .headers_mut()
+                            .append("Content-Length", HeaderValue::from_str("0").unwrap());
+                    }
+
                     Ok(response)
                 }
                 Err(e) => Ok(warp::reply::with_status(
@@ -402,6 +454,19 @@ async fn ws_handler(
         .send(&print_tx)
         .await;
 
+    if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS as usize {
+        Printout::new(
+            0,
+            format!(
+                "http-server: too many open websockets ({})! rejecting incoming",
+                ws_senders.len()
+            ),
+        )
+        .send(&print_tx)
+        .await;
+        return Err(warp::reject::reject());
+    }
+
     let serialized_headers = utils::serialize_headers(&headers);
 
     let ws_path_bindings = ws_path_bindings.read().await;
@@ -428,12 +493,12 @@ async fn ws_handler(
             // parse out subdomain from host (there can only be one)
             let request_subdomain = host.host().split('.').next().unwrap_or("");
             if request_subdomain != subdomain
-                || !utils::auth_cookie_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
+                || !utils::auth_token_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
             {
                 return Err(warp::reject::not_found());
             }
         } else {
-            if !utils::auth_cookie_valid(&our, None, auth_token, &jwt_secret_bytes) {
+            if !utils::auth_token_valid(&our, None, auth_token, &jwt_secret_bytes) {
                 return Err(warp::reject::not_found());
             }
         }
@@ -467,7 +532,6 @@ async fn ws_handler(
             our.clone(),
             app,
             formatted_path,
-            jwt_secret_bytes.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
             print_tx.clone(),
@@ -568,7 +632,7 @@ async fn http_handler(
                     .body(vec![])
                     .into_response());
             }
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 Some(&app),
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),
@@ -581,7 +645,7 @@ async fn http_handler(
                     .into_response());
             }
         } else {
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 None,
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),
@@ -911,7 +975,6 @@ async fn maintain_websocket(
     our: Arc<String>,
     app: ProcessId,
     path: String,
-    _jwt_secret_bytes: Arc<Vec<u8>>, // TODO use for encrypted channels
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
@@ -1266,7 +1329,6 @@ async fn handle_app_message(
                 HttpServerAction::WebSocketBind {
                     path,
                     authenticated,
-                    encrypted,
                     extension,
                 } => {
                     if check_process_id_kimap_safe(&km.source.process).is_err() {
@@ -1293,16 +1355,11 @@ async fn handle_app_message(
                             app: Some(km.source.process.clone()),
                             secure_subdomain: None,
                             authenticated,
-                            encrypted,
                             extension,
                         },
                     );
                 }
-                HttpServerAction::WebSocketSecureBind {
-                    path,
-                    encrypted,
-                    extension,
-                } => {
+                HttpServerAction::WebSocketSecureBind { path, extension } => {
                     if check_process_id_kimap_safe(&km.source.process).is_err() {
                         let source = km.source.clone();
                         send_action_response(
@@ -1328,7 +1385,6 @@ async fn handle_app_message(
                             app: Some(km.source.process.clone()),
                             secure_subdomain: Some(subdomain),
                             authenticated: true,
-                            encrypted,
                             extension,
                         },
                     );
@@ -1342,7 +1398,6 @@ async fn handle_app_message(
                             app: None,
                             secure_subdomain: None,
                             authenticated: false,
-                            encrypted: false,
                             extension: false,
                         },
                     );
