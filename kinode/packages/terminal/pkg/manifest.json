@@ -6,7 +6,6 @@
         "request_networking": true,
         "request_capabilities": [
             "app-store:app-store:sys",
-            "contacts:contacts:sys",
             "chess:chess:sys",
             "eth:distro:sys",
             {
