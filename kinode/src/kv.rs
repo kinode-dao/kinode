@@ -124,6 +124,7 @@ pub async fn kv(
         if state.our.node != km.source.node {
             Printout::new(
                 1,
+                KV_PROCESS_ID.clone(),
                 format!(
                     "kv: got request from {}, but requests must come from our node {}",
                     km.source.node, state.our.node,
@@ -138,6 +139,7 @@ pub async fn kv(
             if let Err(e) = handle_fd_request(km, &mut state).await {
                 Printout::new(
                     1,
+                    KV_PROCESS_ID.clone(),
                     format!("kv: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&state.send_to_terminal)
@@ -167,7 +169,7 @@ pub async fn kv(
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
                 if let Err(e) = handle_request(km, &mut state, &send_to_caps_oracle).await {
-                    Printout::new(1, format!("kv: {e}"))
+                    Printout::new(1, KV_PROCESS_ID.clone(), format!("kv: {e}"))
                         .send(&state.send_to_terminal)
                         .await;
                     KernelMessage::builder()

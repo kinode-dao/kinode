@@ -154,6 +154,8 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
+- CTRL+W to set process-level verbosities that override the verbosity mode set with CTRL+V (0-3, 0 is default and lowest verbosity)
+
 ### Built-in terminal scripts
 
 The terminal package contains a number of built-in scripts.
