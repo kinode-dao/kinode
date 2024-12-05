@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use kinode_process_lib::{our_capabilities, println, script, Address, Request, SendErrorKind};
+use kinode_process_lib::{println, script, Address, Request, SendErrorKind};
 use regex::Regex;
 
 wit_bindgen::generate!({
@@ -64,15 +64,9 @@ fn init(our: Address, args: String) -> String {
         Address::new(our.node(), target.process)
     };
 
-    let capabilities = our_capabilities()
-        .into_iter()
-        .filter(|cap| cap.issuer == target)
-        .collect();
-
-    let req = Request::new()
-        .target(target)
+    let req = Request::to(&target)
         .body(body.as_bytes().to_vec())
-        .capabilities(capabilities);
+        .attach_all(&target);
 
     match parsed.get_one::<u64>("await") {
         Some(s) => {
