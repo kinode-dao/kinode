@@ -42,7 +42,7 @@ pub enum SubscriptionKind {
 /// The Action and Request type that can be made to eth:distro:sys. Any process with messaging
 /// capabilities can send this action to the eth provider.
 ///
-/// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
+/// Will be serialized and deserialized using [`serde_json::to_vec`] and [`serde_json::from_slice`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum EthAction {
     /// Subscribe to logs with a custom filter. ID is to be used to unsubscribe.
