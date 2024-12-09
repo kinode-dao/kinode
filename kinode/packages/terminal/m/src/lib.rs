@@ -66,7 +66,8 @@ fn init(our: Address, args: String) -> String {
 
     let req = Request::to(&target)
         .body(body.as_bytes().to_vec())
-        .attach_all(&target);
+        .try_attach_all()
+        .unwrap();
 
     match parsed.get_one::<u64>("await") {
         Some(s) => {
