@@ -8,6 +8,8 @@ const KINODE_WIT_0_7_0_URL: &str =
     "https://raw.githubusercontent.com/kinode-dao/kinode-wit/aa2c8b11c9171b949d1991c32f58591c0e881f85/kinode.wit";
 const KINODE_WIT_0_8_0_URL: &str =
     "https://raw.githubusercontent.com/kinode-dao/kinode-wit/v0.8/kinode.wit";
+const KINODE_WIT_1_0_0_URL: &str =
+    "https://raw.githubusercontent.com/kinode-dao/kinode-wit/1.0/kinode.wit";
 
 /// copied from `kit`
 async fn download_file(url: &str, path: &Path) -> anyhow::Result<()> {
@@ -77,5 +79,14 @@ fn main() {
         download_file(KINODE_WIT_0_8_0_URL, &wit_file)
             .await
             .expect("Failed to download WIT 0.8");
-    })
+    });
+
+    let wit_file = pwd.join("wit-v1.0.0").join("kinode.wit");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        download_file(KINODE_WIT_1_0_0_URL, &wit_file)
+            .await
+            .expect("Failed to download WIT 1.0");
+    });
 }

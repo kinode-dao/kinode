@@ -17,6 +17,8 @@ pub mod process;
 mod standard_host;
 /// Implement the functions served to processes by `wit-v0.8.0/kinode.wit`.
 mod standard_host_v0;
+/// Implement the functions served to processes by `wit-v1.0.0/kinode.wit`.
+mod standard_host_v1;
 
 pub const LATEST_WIT_VERSION: u32 = 0;
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
