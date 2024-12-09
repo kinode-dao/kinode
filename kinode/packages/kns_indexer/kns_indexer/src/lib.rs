@@ -4,13 +4,15 @@ use crate::kinode::process::kns_indexer::{
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
-    await_message, call_init, eth, kimap, net, print_to_terminal, println, timer, Address, Message,
-    Request, Response,
+    await_message, call_init, eth, kimap,
+    kv::{self, Kv},
+    net, print_to_terminal, println, timer, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{hash_map::HashMap, BTreeMap},
+    collections::BTreeMap,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    str::FromStr,
 };
 
 wit_bindgen::generate!({
@@ -41,15 +43,172 @@ const DELAY_MS: u64 = 1_000; // 1s
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
-    chain_id: u64,
-    // what contract this state pertains to
-    contract_address: eth::Address,
-    // namehash to human readable name
-    names: HashMap<String, String>,
-    // human readable name to most recent on-chain routing information as json
-    nodes: HashMap<String, net::KnsUpdate>,
+    // TODO: maybe these shouldn't even be stored in-mem.
+    // version of the state in kv
+    version: u32,
     // last block we have an update from
     last_block: u64,
+    // kv handle
+    // includes keys and values for:
+    // "chain_id", "version", "last_block", "contract_address",
+    // "{namehash}" -> "{name}", "{name}" -> "{node_info}"
+    kv: Kv<String, Vec<u8>>, // todo: maybe serialize directly into known enum of possible types?
+}
+
+impl State {
+    fn load(our: &Address) -> Self {
+        let kv: Kv<String, Vec<u8>> = match kv::open(our.package_id(), "kns_indexer", Some(10)) {
+            Ok(kv) => kv,
+            Err(e) => panic!("fatal: error opening kns_indexer key_value database: {e:?}"),
+        };
+
+        let mut state = Self {
+            kv,
+            version: 0,
+            last_block: 0,
+        };
+
+        // Load or initialize chain_id
+        let chain_id = state.get_chain_id();
+        if chain_id == 0 {
+            state.set_chain_id(CHAIN_ID);
+        }
+
+        // Load or initialize contract_address
+        let contract_address = state.get_contract_address();
+        if contract_address
+            == eth::Address::from_str(KIMAP_ADDRESS)
+                .expect("Failed to parse KIMAP_ADDRESS constant")
+        {
+            state.set_contract_address(contract_address);
+        }
+
+        // Load or initialize last_block
+        let last_block = state.get_last_block();
+        if last_block == 0 {
+            state.set_last_block(KIMAP_FIRST_BLOCK);
+        }
+
+        // Load or initialize version
+        let version = state.get_version();
+        if version == 0 {
+            state.set_version(1); // Start at version 1
+        }
+
+        // Update state struct with final values
+        state.version = state.get_version();
+        state.last_block = state.get_last_block();
+
+        println!(
+            "kns_indexer: loaded state: version: {}, last_block: {}, chain_id: {}, kimap_address: {}",
+            state.version,
+            state.last_block,
+            state.get_chain_id(),
+            state.get_contract_address()
+        );
+
+        state
+    }
+
+    fn get_last_block(&self) -> u64 {
+        self.kv
+            .get(&"last_block".to_string())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or(0)
+    }
+
+    fn set_last_block(&mut self, block: u64) {
+        self.kv
+            .set(
+                &"last_block".to_string(),
+                &serde_json::to_vec(&block).unwrap(),
+                None,
+            )
+            .unwrap();
+    }
+
+    fn get_version(&self) -> u32 {
+        self.kv
+            .get(&"version".to_string())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or(0)
+    }
+
+    fn set_version(&mut self, version: u32) {
+        self.kv
+            .set(
+                &"version".to_string(),
+                &serde_json::to_vec(&version).unwrap(),
+                None,
+            )
+            .unwrap();
+    }
+
+    fn get_name(&self, namehash: &str) -> Option<String> {
+        self.kv
+            .get(&namehash.to_string())
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+    }
+
+    fn set_name(&mut self, namehash: &str, name: &str) {
+        self.kv
+            .set(&namehash.to_string(), &name.as_bytes().to_vec(), None)
+            .unwrap();
+    }
+
+    fn get_node(&self, name: &str) -> Option<net::KnsUpdate> {
+        self.kv
+            .get(&name.to_string())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    }
+
+    fn set_node(&mut self, name: &str, node: &net::KnsUpdate) {
+        self.kv
+            .set(&name.to_string(), &serde_json::to_vec(&node).unwrap(), None)
+            .unwrap();
+    }
+
+    fn get_chain_id(&self) -> u64 {
+        self.kv
+            .get(&"chain_id".to_string())
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or(CHAIN_ID)
+    }
+
+    fn set_chain_id(&mut self, chain_id: u64) {
+        self.kv
+            .set(
+                &"chain_id".to_string(),
+                &serde_json::to_vec(&chain_id).unwrap(),
+                None,
+            )
+            .unwrap();
+    }
+
+    fn get_contract_address(&self) -> eth::Address {
+        match self.kv.get(&"contract_address".to_string()) {
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(addr) => addr,
+                Err(_) => eth::Address::from_str(KIMAP_ADDRESS)
+                    .expect("Failed to parse KIMAP_ADDRESS constant"),
+            },
+            Err(_) => eth::Address::from_str(KIMAP_ADDRESS)
+                .expect("Failed to parse KIMAP_ADDRESS constant"),
+        }
+    }
+
+    fn set_contract_address(&mut self, contract_address: eth::Address) {
+        if let Ok(bytes) = serde_json::to_vec(&contract_address) {
+            self.kv
+                .set(&"contract_address".to_string(), &bytes, None)
+                .expect("Failed to set contract address");
+        }
+    }
 }
 
 // note: not defined in wit api right now like IndexerRequests.
@@ -70,18 +229,8 @@ call_init!(init);
 fn init(our: Address) {
     println!("indexing on contract address {KIMAP_ADDRESS}");
 
-    // we **can** persist PKI state between boots but with current size, it's
-    // more robust just to reload the whole thing. the new contracts will allow
-    // us to quickly verify we have the updated mapping with root hash, but right
-    // now it's tricky to recover from missed events.
-
-    let state = State {
-        chain_id: CHAIN_ID,
-        contract_address: KIMAP_ADDRESS.parse::<eth::Address>().unwrap(),
-        nodes: HashMap::new(),
-        names: HashMap::new(),
-        last_block: KIMAP_FIRST_BLOCK,
-    };
+    // state is loaded from kv, and updated with the current block number and version.
+    let state = State::load(&our);
 
     if let Err(e) = main(our, state) {
         println!("fatal error: {e}");
@@ -94,7 +243,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // sub_id: 1
     let mints_filter = eth::Filter::new()
-        .address(state.contract_address)
+        .address(state.get_contract_address())
+        .from_block(state.get_last_block())
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
@@ -108,21 +258,23 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // sub_id: 2
     let notes_filter = eth::Filter::new()
-        .address(state.contract_address)
+        .address(state.get_contract_address())
+        .from_block(state.get_last_block())
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
         .topic3(notes);
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
-    let eth_provider: eth::Provider = eth::Provider::new(state.chain_id, SUBSCRIPTION_TIMEOUT);
+    let eth_provider: eth::Provider =
+        eth::Provider::new(state.get_chain_id(), SUBSCRIPTION_TIMEOUT);
 
     print_to_terminal(
         1,
         &format!(
             "subscribing, state.block: {}, chain_id: {}",
-            state.last_block - 1,
-            state.chain_id
+            state.get_last_block() - 1,
+            state.get_chain_id()
         ),
     );
 
@@ -197,7 +349,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     // sending a response to the proper place.
                     Response::new()
                         .body(serde_json::to_vec(&IndexerResponses::Name(
-                            state.names.get(hash).cloned(),
+                            state.get_name(hash),
                         ))?)
                         .send()?;
                 }
@@ -205,10 +357,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 IndexerRequests::NodeInfo(NodeInfoRequest { ref name, .. }) => {
                     Response::new()
                         .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
-                            state.nodes.get(name).cloned(),
+                            state.get_node(name),
                         ))?)
                         .send()?;
                 }
+                // note no longer relevant.
+                // TODO: redo with iterator once available.
                 IndexerRequests::GetState(GetStateRequest { .. }) => {
                     Response::new().body(serde_json::to_vec(&state)?).send()?;
                 }
@@ -322,68 +476,53 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
         return Err(anyhow::anyhow!("skipping invalid note: {note_label}"));
     }
 
-    let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
+    let Some(node_name) = get_parent_name(&state, &node_hash) else {
         return Err(KnsError::NoParentError.into());
     };
 
-    match note_label.as_str() {
-        "~ws-port" => {
-            let ws = bytes_to_port(&note.data)?;
-            if let Some(node) = state.nodes.get_mut(&node_name) {
+    if let Some(mut node) = state.get_node(&node_name) {
+        match note_label.as_str() {
+            "~ws-port" => {
+                let ws = bytes_to_port(&note.data)?;
                 node.ports.insert("ws".to_string(), ws);
-                // port defined, -> direct
-                node.routers = vec![];
+                node.routers = vec![]; // port defined, -> direct
             }
-        }
-        "~tcp-port" => {
-            let tcp = bytes_to_port(&note.data)?;
-            if let Some(node) = state.nodes.get_mut(&node_name) {
+            "~tcp-port" => {
+                let tcp = bytes_to_port(&note.data)?;
                 node.ports.insert("tcp".to_string(), tcp);
-                // port defined, -> direct
-                node.routers = vec![];
+                node.routers = vec![]; // port defined, -> direct
             }
-        }
-        "~net-key" => {
-            if note.data.len() != 32 {
-                return Err(anyhow::anyhow!("invalid net-key length"));
-            }
-            if let Some(node) = state.nodes.get_mut(&node_name) {
+            "~net-key" => {
+                if note.data.len() != 32 {
+                    return Err(anyhow::anyhow!("invalid net-key length"));
+                }
                 node.public_key = hex::encode(&note.data);
             }
-        }
-        "~routers" => {
-            let routers = decode_routers(&note.data, state);
-            if let Some(node) = state.nodes.get_mut(&node_name) {
+            "~routers" => {
+                let routers = decode_routers(&note.data, state);
                 node.routers = routers;
-                // -> indirect
-                node.ports = BTreeMap::new();
+                node.ports = BTreeMap::new(); // -> indirect
                 node.ips = vec![];
             }
-        }
-        "~ip" => {
-            let ip = bytes_to_ip(&note.data)?;
-            if let Some(node) = state.nodes.get_mut(&node_name) {
+            "~ip" => {
+                let ip = bytes_to_ip(&note.data)?;
                 node.ips = vec![ip.to_string()];
-                // -> direct
-                node.routers = vec![];
+                node.routers = vec![]; // -> direct
+            }
+            _other => {
+                // Ignore unknown notes
             }
         }
-        _other => {
-            // Ignore unknown notes
-        }
-    }
 
-    // only send an update if we have a *full* set of data for networking:
-    // a node name, plus either <routers> or <ip, port(s)>
-    if let Some(node_info) = state.nodes.get(&node_name) {
-        if !node_info.public_key.is_empty()
-            && ((!node_info.ips.is_empty() && !node_info.ports.is_empty())
-                || node_info.routers.len() > 0)
+        // Update the node in the state
+        state.set_node(&node_name, &node);
+
+        // Only send an update if we have a *full* set of data for networking
+        if !node.public_key.is_empty()
+            && ((!node.ips.is_empty() && !node.ports.is_empty()) || !node.routers.is_empty())
         {
             Request::to(("our", "net", "distro", "sys"))
-                .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
-                    node_info.clone(),
-                ))?)
+                .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(node))?)
                 .send()?;
         }
     }
@@ -411,15 +550,15 @@ fn handle_log(
                 return Err(anyhow::anyhow!("skipping invalid name: {name}"));
             }
 
-            let full_name = match get_parent_name(&state.names, &parent_hash) {
+            let full_name = match get_parent_name(&state, &parent_hash) {
                 Some(parent_name) => format!("{name}.{parent_name}"),
                 None => name,
             };
 
-            state.names.insert(child_hash.clone(), full_name.clone());
-            state.nodes.insert(
-                full_name.clone(),
-                net::KnsUpdate {
+            state.set_name(&child_hash.clone(), &full_name.clone());
+            state.set_node(
+                &full_name.clone(),
+                &net::KnsUpdate {
                     name: full_name.clone(),
                     public_key: String::new(),
                     ips: Vec::new(),
@@ -486,13 +625,13 @@ fn fetch_and_process_logs(
     }
 }
 
-fn get_parent_name(names: &HashMap<String, String>, parent_hash: &str) -> Option<String> {
-    let mut current_hash = parent_hash;
+fn get_parent_name(state: &State, parent_hash: &str) -> Option<String> {
+    let mut current_hash = parent_hash.to_string();
     let mut components = Vec::new(); // Collect components in a vector
     let mut visited_hashes = std::collections::HashSet::new();
 
-    while let Some(parent_name) = names.get(current_hash) {
-        if !visited_hashes.insert(current_hash) {
+    while let Some(parent_name) = state.get_name(&current_hash) {
+        if !visited_hashes.insert(current_hash.clone()) {
             break;
         }
 
@@ -501,7 +640,7 @@ fn get_parent_name(names: &HashMap<String, String>, parent_hash: &str) -> Option
         }
 
         // Update current_hash to the parent's hash for the next iteration
-        if let Some(new_parent_hash) = names.get(parent_name) {
+        if let Some(new_parent_hash) = state.get_name(&parent_name) {
             current_hash = new_parent_hash;
         } else {
             break;
@@ -521,13 +660,13 @@ fn get_parent_name(names: &HashMap<String, String>, parent_hash: &str) -> Option
 #[cfg(feature = "simulation-mode")]
 fn add_temp_hardcoded_tlzs(state: &mut State) {
     // add some hardcoded top level zones
-    state.names.insert(
-        "0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
-        "os".to_string(),
+    state.set_name(
+        &"0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
+        &"os".to_string(),
     );
-    state.names.insert(
-        "0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
-        "dev".to_string(),
+    state.set_name(
+        &"0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
+        &"dev".to_string(),
     );
 }
 
@@ -545,7 +684,7 @@ fn decode_routers(data: &[u8], state: &State) -> Vec<String> {
     for chunk in data.chunks(32) {
         let hash_str = format!("0x{}", hex::encode(chunk));
 
-        match state.names.get(&hash_str) {
+        match state.get_name(&hash_str) {
             Some(full_name) => routers.push(full_name.clone()),
             None => print_to_terminal(
                 1,
