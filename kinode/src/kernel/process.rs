@@ -1,5 +1,5 @@
 use crate::KERNEL_PROCESS_ID;
-use lib::{types::core as t, v0::ProcessV0, Process};
+use lib::{types::core as t, v0::ProcessV0, v1::ProcessV1, Process};
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
@@ -71,6 +71,7 @@ impl WasiView for ProcessWasi {
     }
 }
 
+/// **can be removed in 1.0.0**
 pub struct ProcessWasiV0 {
     pub process: ProcessState,
     table: Table,
@@ -78,6 +79,21 @@ pub struct ProcessWasiV0 {
 }
 
 impl WasiView for ProcessWasiV0 {
+    fn table(&mut self) -> &mut Table {
+        &mut self.table
+    }
+    fn ctx(&mut self) -> &mut WasiCtx {
+        &mut self.wasi
+    }
+}
+
+pub struct ProcessWasiV1 {
+    pub process: ProcessState,
+    table: Table,
+    wasi: WasiCtx,
+}
+
+impl WasiView for ProcessWasiV1 {
     fn table(&mut self) -> &mut Table {
         &mut self.table
     }
@@ -134,6 +150,7 @@ async fn make_table_and_wasi(
     (table, wasi.stderr(wasi_stderr.clone()).build(), wasi_stderr)
 }
 
+/// **can be removed in 1.0.0**
 async fn make_component(
     engine: Engine,
     wasm_bytes: &[u8],
@@ -177,6 +194,7 @@ async fn make_component(
     Ok((bindings, store, wasi_stderr))
 }
 
+/// **can be removed in 1.0.0**
 async fn make_component_v0(
     engine: Engine,
     wasm_bytes: &[u8],
@@ -205,6 +223,49 @@ async fn make_component_v0(
 
     let (bindings, _bindings) =
         match ProcessV0::instantiate_async(&mut store, &component, &linker).await {
+            Ok(b) => b,
+            Err(e) => {
+                t::Printout::new(
+                    0,
+                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+                )
+                .send(&send_to_terminal)
+                .await;
+                return Err(e);
+            }
+        };
+
+    Ok((bindings, store, wasi_stderr))
+}
+
+async fn make_component_v1(
+    engine: Engine,
+    wasm_bytes: &[u8],
+    home_directory_path: PathBuf,
+    process_state: ProcessState,
+) -> anyhow::Result<(ProcessV1, Store<ProcessWasiV1>, MemoryOutputPipe)> {
+    let component =
+        Component::new(&engine, wasm_bytes.to_vec()).expect("make_component: couldn't read file");
+
+    let mut linker = Linker::new(&engine);
+    ProcessV1::add_to_linker(&mut linker, |state: &mut ProcessWasiV1| state).unwrap();
+    let (table, wasi, wasi_stderr) = make_table_and_wasi(home_directory_path, &process_state).await;
+    wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
+
+    let our_process_id = process_state.metadata.our.process.clone();
+    let send_to_terminal = process_state.send_to_terminal.clone();
+
+    let mut store = Store::new(
+        &engine,
+        ProcessWasiV1 {
+            process: process_state,
+            table,
+            wasi,
+        },
+    );
+
+    let (bindings, _bindings) =
+        match ProcessV1::instantiate_async(&mut store, &component, &linker).await {
             Ok(b) => b,
             Err(e) => {
                 t::Printout::new(
@@ -287,6 +348,7 @@ pub async fn make_process_loop(
 
     let metadata = match wit_version {
         // assume missing version is oldest wit version
+        // **can be removed in 1.0.0**
         None => {
             let (bindings, mut store, wasi_stderr) =
                 make_component(engine, &wasm_bytes, home_directory_path, process_state).await?;
@@ -319,10 +381,41 @@ pub async fn make_process_loop(
             store.data().process.metadata.to_owned()
         }
         // match version numbers
-        // assume higher uncovered version number is latest version
-        Some(0) | _ => {
+        // **can be removed in 1.0.0**
+        Some(0) => {
             let (bindings, mut store, wasi_stderr) =
                 make_component_v0(engine, &wasm_bytes, home_directory_path, process_state).await?;
+
+            // the process will run until it returns from init() or crashes
+            match bindings.call_init(&mut store, &our.to_string()).await {
+                Ok(()) => {
+                    t::Printout::new(1, format!("process {our} returned without error"))
+                        .send(&send_to_terminal)
+                        .await;
+                }
+                Err(e) => {
+                    let stderr = wasi_stderr.contents().into();
+                    let stderr = String::from_utf8(stderr)?;
+                    let output = if stderr != String::new() {
+                        stderr
+                    } else {
+                        format!("{}", e.root_cause())
+                    };
+                    t::Printout::new(
+                        0,
+                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{output}"),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
+                }
+            };
+
+            // update metadata to what was mutated by process in store
+            store.data().process.metadata.to_owned()
+        }
+        Some(1) | _ => {
+            let (bindings, mut store, wasi_stderr) =
+                make_component_v1(engine, &wasm_bytes, home_directory_path, process_state).await?;
 
             // the process will run until it returns from init() or crashes
             match bindings.call_init(&mut store, &our.to_string()).await {
