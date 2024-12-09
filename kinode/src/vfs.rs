@@ -63,6 +63,7 @@ pub async fn vfs(
         if *our_node != km.source.node {
             Printout::new(
                 1,
+                VFS_PROCESS_ID.clone(),
                 format!(
                     "vfs: got request from {}, but requests must come from our node {our_node}",
                     km.source.node
@@ -77,6 +78,7 @@ pub async fn vfs(
             if let Err(e) = handle_fd_request(km, &mut files).await {
                 Printout::new(
                     1,
+                    VFS_PROCESS_ID.clone(),
                     format!("vfs: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&send_to_terminal)

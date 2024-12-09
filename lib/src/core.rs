@@ -1332,16 +1332,19 @@ pub struct WrappedSendError {
 /// - `3`: very verbose: shows every event in event loop
 pub struct Printout {
     pub verbosity: u8,
+    pub source: ProcessId,
     pub content: String,
 }
 
 impl Printout {
-    pub fn new<T>(verbosity: u8, content: T) -> Self
+    pub fn new<T, U>(verbosity: u8, source: T, content: U) -> Self
     where
-        T: Into<String>,
+        T: Into<ProcessId>,
+        U: Into<String>,
     {
         Self {
             verbosity,
+            source: source.into(),
             content: content.into(),
         }
     }
