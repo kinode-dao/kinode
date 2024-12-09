@@ -145,7 +145,11 @@ fn handle_request(
                         .collect(),
                     caps_map["grant_capabilities"]
                         .iter()
-                        .map(|cap| cap.parse().unwrap())
+                        .map(|cap| {
+                            serde_json::from_str::<(ProcessId, String)>(cap).unwrap_or_else(|_| {
+                                (cap.parse::<ProcessId>().unwrap(), "messaging".to_string())
+                            })
+                        })
                         .collect(),
                 ))
             })

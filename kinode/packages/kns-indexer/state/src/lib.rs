@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 /// From main kns-indexer process

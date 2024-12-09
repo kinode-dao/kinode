@@ -146,7 +146,9 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                 }
 
                 if let Ok(eth::EthSub { result, .. }) = eth_result {
-                    if let eth::SubscriptionResult::Log(ref log) = result {
+                    if let Ok(eth::SubscriptionResult::Log(ref log)) =
+                        serde_json::from_value(result)
+                    {
                         // delay handling of ETH RPC subscriptions by DELAY_MS
                         // to allow kns to have a chance to process block
                         timer::set_timer(DELAY_MS, Some(serde_json::to_vec(log)?));

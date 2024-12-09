@@ -27,7 +27,7 @@ pub fn spawn_send_transfer(
         &format!("{}/pkg/ft-worker.wasm", our.package_id()),
         OnExit::None,
         our_capabilities(),
-        vec![timer_id],
+        vec![(timer_id, "\"messaging\"".to_string())],
         false,
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft-worker!"));
@@ -67,7 +67,7 @@ pub fn spawn_receive_transfer(
         &format!("{}/pkg/ft-worker.wasm", our.package_id()),
         OnExit::None,
         our_capabilities(),
-        vec![timer_id],
+        vec![(timer_id, "\"messaging\"".to_string())],
         false,
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft-worker!"));

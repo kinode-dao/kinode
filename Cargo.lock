@@ -3943,7 +3943,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.10.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=1fe8612#1fe8612a24f6806270ac9b02c7bd4f464a1422ed"
+source = "git+https://github.com/kinode-dao/process_lib?rev=6ed0cda#6ed0cda955de018f49bd38251810c68415b20e54"
 dependencies = [
  "alloy 0.1.4",
  "alloy-primitives 0.7.7",
@@ -3964,8 +3964,8 @@ dependencies = [
 
 [[package]]
 name = "kit"
-version = "0.8.0"
-source = "git+https://github.com/kinode-dao/kit?tag=v0.8.0#db197211498d35228fc9a94cfd2efcba804fcaf7"
+version = "0.8.3"
+source = "git+https://github.com/kinode-dao/kit?rev=23ee399#23ee39938ffd37adaa3b601cc0026036340960c2"
 dependencies = [
  "alloy 0.1.4",
  "alloy-sol-macro",
@@ -3973,6 +3973,7 @@ dependencies = [
  "anyhow",
  "base64 0.21.7",
  "cargo_metadata",
+ "chrono",
  "clap",
  "color-eyre",
  "dirs 5.0.1",
