@@ -43,15 +43,14 @@ const DELAY_MS: u64 = 1_000; // 1s
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
-    // TODO: maybe these shouldn't even be stored in-mem.
     // version of the state in kv
     version: u32,
     // last block we have an update from
     last_block: u64,
     // kv handle
     // includes keys and values for:
-    // "chain_id", "version", "last_block", "contract_address",
-    // "{namehash}" -> "{name}", "{name}" -> "{node_info}"
+    // "meta:chain_id", "meta:version", "meta:last_block", "meta:contract_address",
+    // "names:{namehash}" -> "{name}", "nodes:{name}" -> "{node_info}"
     kv: Kv<String, Vec<u8>>, // todo: maybe serialize directly into known enum of possible types?
 }
 
@@ -68,13 +67,13 @@ impl State {
             last_block: 0,
         };
 
-        // Load or initialize chain_id
+        // load or initialize chain_id
         let chain_id = state.get_chain_id();
         if chain_id == 0 {
             state.set_chain_id(CHAIN_ID);
         }
 
-        // Load or initialize contract_address
+        // load or initialize contract_address
         let contract_address = state.get_contract_address();
         if contract_address
             == eth::Address::from_str(KIMAP_ADDRESS)
@@ -83,19 +82,19 @@ impl State {
             state.set_contract_address(contract_address);
         }
 
-        // Load or initialize last_block
+        // load or initialize last_block
         let last_block = state.get_last_block();
         if last_block == 0 {
             state.set_last_block(KIMAP_FIRST_BLOCK);
         }
 
-        // Load or initialize version
+        // load or initialize version
         let version = state.get_version();
         if version == 0 {
             state.set_version(1); // Start at version 1
         }
 
-        // Update state struct with final values
+        // update state struct with final values
         state.version = state.get_version();
         state.last_block = state.get_last_block();
 
@@ -110,9 +109,30 @@ impl State {
         state
     }
 
+    fn meta_version_key() -> &'static str {
+        "meta:version"
+    }
+    fn meta_last_block_key() -> &'static str {
+        "meta:last_block"
+    }
+    fn meta_chain_id_key() -> &'static str {
+        "meta:chain_id"
+    }
+    fn meta_contract_address_key() -> &'static str {
+        "meta:contract_address"
+    }
+
+    fn name_key(namehash: &str) -> String {
+        format!("names:{namehash}")
+    }
+
+    fn node_key(name: &str) -> String {
+        format!("nodes:{name}")
+    }
+
     fn get_last_block(&self) -> u64 {
         self.kv
-            .get(&"last_block".to_string())
+            .get(&Self::meta_last_block_key().to_string())
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or(0)
@@ -121,16 +141,17 @@ impl State {
     fn set_last_block(&mut self, block: u64) {
         self.kv
             .set(
-                &"last_block".to_string(),
+                &Self::meta_last_block_key().to_string(),
                 &serde_json::to_vec(&block).unwrap(),
                 None,
             )
             .unwrap();
+        self.last_block = block;
     }
 
     fn get_version(&self) -> u32 {
         self.kv
-            .get(&"version".to_string())
+            .get(&Self::meta_version_key().to_string())
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or(0)
@@ -139,42 +160,47 @@ impl State {
     fn set_version(&mut self, version: u32) {
         self.kv
             .set(
-                &"version".to_string(),
+                &Self::meta_version_key().to_string(),
                 &serde_json::to_vec(&version).unwrap(),
                 None,
             )
             .unwrap();
+        self.version = version;
     }
 
     fn get_name(&self, namehash: &str) -> Option<String> {
         self.kv
-            .get(&namehash.to_string())
+            .get(&Self::name_key(namehash))
             .ok()
             .and_then(|bytes| String::from_utf8(bytes).ok())
     }
 
     fn set_name(&mut self, namehash: &str, name: &str) {
         self.kv
-            .set(&namehash.to_string(), &name.as_bytes().to_vec(), None)
+            .set(&Self::name_key(namehash), &name.as_bytes().to_vec(), None)
             .unwrap();
     }
 
     fn get_node(&self, name: &str) -> Option<net::KnsUpdate> {
         self.kv
-            .get(&name.to_string())
+            .get(&Self::node_key(name))
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
     }
 
     fn set_node(&mut self, name: &str, node: &net::KnsUpdate) {
         self.kv
-            .set(&name.to_string(), &serde_json::to_vec(&node).unwrap(), None)
+            .set(
+                &Self::node_key(name),
+                &serde_json::to_vec(&node).unwrap(),
+                None,
+            )
             .unwrap();
     }
 
     fn get_chain_id(&self) -> u64 {
         self.kv
-            .get(&"chain_id".to_string())
+            .get(&Self::meta_chain_id_key().to_string())
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or(CHAIN_ID)
@@ -183,7 +209,7 @@ impl State {
     fn set_chain_id(&mut self, chain_id: u64) {
         self.kv
             .set(
-                &"chain_id".to_string(),
+                &Self::meta_chain_id_key().to_string(),
                 &serde_json::to_vec(&chain_id).unwrap(),
                 None,
             )
@@ -191,7 +217,7 @@ impl State {
     }
 
     fn get_contract_address(&self) -> eth::Address {
-        match self.kv.get(&"contract_address".to_string()) {
+        match self.kv.get(&Self::meta_contract_address_key().to_string()) {
             Ok(bytes) => match serde_json::from_slice(&bytes) {
                 Ok(addr) => addr,
                 Err(_) => eth::Address::from_str(KIMAP_ADDRESS)
@@ -205,7 +231,7 @@ impl State {
     fn set_contract_address(&mut self, contract_address: eth::Address) {
         if let Ok(bytes) = serde_json::to_vec(&contract_address) {
             self.kv
-                .set(&"contract_address".to_string(), &bytes, None)
+                .set(&Self::meta_contract_address_key().to_string(), &bytes, None)
                 .expect("Failed to set contract address");
         }
     }
@@ -402,7 +428,7 @@ fn handle_eth_message(
         let block_number = eth_provider.get_block_number();
         if let Ok(block_number) = block_number {
             print_to_terminal(2, &format!("new block: {}", block_number));
-            state.last_block = block_number;
+            state.set_last_block(block_number);
         }
     }
     handle_pending_notes(state, pending_notes)?;
@@ -440,15 +466,9 @@ fn handle_pending_notes(
                         None => {
                             print_to_terminal(1, &format!("pending note handling error: {e:?}"))
                         }
-                        Some(ee) => match ee {
-                            KnsError::NoParentError => {
-                                // print_to_terminal(
-                                //     1,
-                                //     &format!("note still awaiting mint; attempt {attempt}"),
-                                // );
-                                keep_notes.push((note, attempt + 1));
-                            }
-                        },
+                        Some(KnsError::NoParentError) => {
+                            keep_notes.push((note, attempt + 1));
+                        }
                     }
                 }
             }
@@ -536,7 +556,7 @@ fn handle_log(
     log: &eth::Log,
 ) -> anyhow::Result<()> {
     if let Some(block) = log.block_number {
-        state.last_block = block;
+        state.set_last_block(block);
     }
 
     match log.topics()[0] {
