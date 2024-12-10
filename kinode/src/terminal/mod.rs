@@ -186,7 +186,7 @@ impl State {
         execute!(
             self.stdout,
             cursor::MoveTo(0, row + 1),
-            Print("To set process verbosity, input '<ProcessId> <verbosity (u8)>' and press <Enter>\n\r"),
+            Print("To set process verbosity, input '<ProcessId> <verbosity (u8)>' and then press <Enter>\n\r  e.g.\n\r  chat:chat:template.os 3\n\rTo mute a process, input '<ProcessId> m' or 'mute' or 'muted' and then press <Enter>.\n\rTo remove a previously set process verbosity, input '<ProcessId>' and then press <Enter>.\n\r"),
             Print("Press CTRL+W to exit\n\r"),
         )?;
 
@@ -1012,19 +1012,38 @@ async fn handle_key_event(
                         if let Some((process_id, verbosity)) =
                             State::parse_process_verbosity(&current_line.line)
                         {
+                            // add ProcessId
                             let old_verbosity = state.process_verbosity
                                 .insert(process_id.clone(), verbosity.clone())
                                 .and_then(|ov| ov.get_verbosity().map(|ov| ov.clone()))
                                 .unwrap_or_default();
                             let verbosity = verbosity
                                 .get_verbosity()
-                                .map(|ov| ov.clone())
+                                .map(|v| v.clone())
                                 .unwrap_or_default();
                             if (old_verbosity == 3 && verbosity != 3) || (verbosity == 3 && old_verbosity != 3) {
                                 debug_event_loop
                                     .send(DebugCommand::ToggleEventLoopForProcess(process_id.clone()))
                                     .await
                                     .expect("failed to toggle process-level full event loop on");
+                            }
+                            current_line.line.clear();
+                            current_line.line_col = 0;
+                            current_line.cursor_col = 0;
+                            state.display_process_verbosity()?;
+                        } else if let Ok(process_id) = &current_line.line.parse() {
+                            // remove ProcessId
+                            if let Some(old_verbosity) = state.process_verbosity.remove(&process_id) {
+                                let old_verbosity = old_verbosity
+                                    .get_verbosity()
+                                    .map(|ov| ov.clone())
+                                    .unwrap_or_default();
+                                if old_verbosity == 3 {
+                                    debug_event_loop
+                                        .send(DebugCommand::ToggleEventLoopForProcess(process_id.clone()))
+                                        .await
+                                        .expect("failed to toggle process-level full event loop on");
+                                }
                             }
                             current_line.line.clear();
                             current_line.line_col = 0;
