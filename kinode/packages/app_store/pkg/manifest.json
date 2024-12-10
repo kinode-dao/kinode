@@ -39,6 +39,7 @@
             "eth:distro:sys",
             "http_server:distro:sys",
             "http_client:distro:sys",
+            "sqlite:distro:sys",
             {
                 "process": "vfs:distro:sys",
                 "params": {
@@ -52,6 +53,7 @@
             "vfs:distro:sys",
             "http_client:distro:sys",
             "eth:distro:sys",
+            "sqlite:distro:sys",
             "timer:distro:sys"
         ],
         "public": false
