@@ -33,14 +33,14 @@ use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode::process::chain::ChainResponses;
 use kinode_process_lib::{
-    await_message, call_init, eth, http, kimap, get_blob,
-    print_to_terminal, println, timer, Address, Message, PackageId, Request, Response,
+    await_message, call_init, eth, get_blob, http, kernel_types as kt, kimap, print_to_terminal,
+    println,
     sqlite::{self, Sqlite},
-    kernel_types as kt,
+    timer, Address, Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
-use std::str::FromStr;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -82,7 +82,7 @@ pub struct PackageListing {
     pub metadata_hash: String,
     pub metadata: Option<kt::Erc721Metadata>,
     pub auto_update: bool,
-    pub block: u64
+    pub block: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
@@ -128,13 +128,17 @@ impl DB {
         Ok(())
     }
 
-    pub fn insert_or_update_listing(&self, package_id: &PackageId, listing: &PackageListing) -> anyhow::Result<()> {
+    pub fn insert_or_update_listing(
+        &self,
+        package_id: &PackageId,
+        listing: &PackageListing,
+    ) -> anyhow::Result<()> {
         let metadata_json = if let Some(m) = &listing.metadata {
             serde_json::to_string(m)?
         } else {
             "".to_string()
         };
-    
+
         let query = "INSERT INTO listings (package_name, publisher_node, tba, metadata_uri, metadata_hash, metadata_json, auto_update, block)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(package_name, publisher_node) 
@@ -152,14 +156,13 @@ impl DB {
             listing.metadata_uri.clone().into(),
             listing.metadata_hash.clone().into(),
             metadata_json.into(),
-            (if listing.auto_update {1} else {0}).into(),
-            listing.block.into()
+            (if listing.auto_update { 1 } else { 0 }).into(),
+            listing.block.into(),
         ];
 
         self.inner.write(query.into(), params, None)?;
         Ok(())
     }
-    
 
     pub fn delete_listing(&self, package_id: &PackageId) -> anyhow::Result<()> {
         let query = "DELETE FROM listings WHERE package_name = ? AND publisher_node = ?";
@@ -200,7 +203,11 @@ impl DB {
         Ok(listings)
     }
 
-    pub fn get_listings_batch(&self, limit: u64, offset: u64) -> anyhow::Result<Vec<(PackageId, PackageListing)>> {
+    pub fn get_listings_batch(
+        &self,
+        limit: u64,
+        offset: u64,
+    ) -> anyhow::Result<Vec<(PackageId, PackageListing)>> {
         let query = format!(
             "SELECT package_name, publisher_node, tba, metadata_uri, metadata_hash, metadata_json, auto_update, block
              FROM listings
@@ -222,7 +229,10 @@ impl DB {
         Ok(listings)
     }
 
-    pub fn get_listings_since_block(&self, block_number: u64) -> anyhow::Result<Vec<(PackageId, PackageListing)>> {
+    pub fn get_listings_since_block(
+        &self,
+        block_number: u64,
+    ) -> anyhow::Result<Vec<(PackageId, PackageListing)>> {
         let query = "SELECT package_name, publisher_node, tba, metadata_uri, metadata_hash, metadata_json, auto_update, block
                      FROM listings 
                      WHERE block > ?";
@@ -240,14 +250,18 @@ impl DB {
         Ok(listings)
     }
 
-
-    pub fn row_to_listing(&self, row: &HashMap<String, serde_json::Value>) -> anyhow::Result<PackageListing> {
-        let tba_str = row["tba"].as_str().ok_or_else(|| anyhow::anyhow!("Invalid tba"))?;
+    pub fn row_to_listing(
+        &self,
+        row: &HashMap<String, serde_json::Value>,
+    ) -> anyhow::Result<PackageListing> {
+        let tba_str = row["tba"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid tba"))?;
         let tba = tba_str.parse::<eth::Address>()?;
         let metadata_uri = row["metadata_uri"].as_str().unwrap_or("").to_string();
         let metadata_hash = row["metadata_hash"].as_str().unwrap_or("").to_string();
         let metadata_json = row["metadata_json"].as_str().unwrap_or("");
-        let metadata: Option<kinode_process_lib::kernel_types::Erc721Metadata> = 
+        let metadata: Option<kinode_process_lib::kernel_types::Erc721Metadata> =
             if metadata_json.is_empty() {
                 None
             } else {
@@ -342,7 +356,8 @@ fn init(our: Address) {
     let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
 
     let db = DB::connect(&our).expect("failed to open DB");
-    let kimap_helper = kimap::Kimap::new(eth_provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap());
+    let kimap_helper =
+        kimap::Kimap::new(eth_provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap());
     let last_saved_block = db.get_last_saved_block().unwrap_or(0);
 
     println!(
@@ -397,7 +412,10 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                     }
                 } else {
                     // re-subscribe if error
-                    state.kimap.provider.subscribe_loop(1, app_store_filter(state));
+                    state
+                        .kimap
+                        .provider
+                        .subscribe_loop(1, app_store_filter(state));
                 }
             }
             Req::Request(chains) => {
@@ -601,7 +619,10 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
     let updated_listings = match state.db.get_listings_since_block(last_saved_block) {
         Ok(listings) => listings,
         Err(e) => {
-            print_to_terminal(1, &format!("error fetching updated listings since block {last_saved_block}: {e}"));
+            print_to_terminal(
+                1,
+                &format!("error fetching updated listings since block {last_saved_block}: {e}"),
+            );
             return;
         }
     };
@@ -638,7 +659,10 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                                 // no data again after retry
                                 if listing.metadata_uri.is_empty() {
                                     if let Err(e) = state.db.delete_published(&pid) {
-                                        print_to_terminal(1, &format!("error deleting published: {e}"));
+                                        print_to_terminal(
+                                            1,
+                                            &format!("error deleting published: {e}"),
+                                        );
                                     }
                                 }
                                 if let Err(e) = state.db.delete_listing(&pid) {
@@ -648,12 +672,18 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                             }
                         }
                         Err(e2) => {
-                            print_to_terminal(1, &format!("error retrieving metadata-hash after retry: {e2:?}"));
+                            print_to_terminal(
+                                1,
+                                &format!("error retrieving metadata-hash after retry: {e2:?}"),
+                            );
                             continue;
                         }
                     }
                 } else {
-                    print_to_terminal(1, &format!("error retrieving metadata-hash: {e:?} for {pid}"));
+                    print_to_terminal(
+                        1,
+                        &format!("error retrieving metadata-hash: {e:?} for {pid}"),
+                    );
                     continue;
                 }
             }
@@ -663,15 +693,16 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
         listing.tba = tba;
         listing.metadata_hash = metadata_hash;
 
-        let metadata = match fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30) {
-            Ok(md) => Some(md),
-            Err(err) => {
-                print_to_terminal(1, &format!("error fetching metadata for {}: {err}", pid));
-                None
-            }
-        };
+        let metadata =
+            match fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30) {
+                Ok(md) => Some(md),
+                Err(err) => {
+                    print_to_terminal(1, &format!("error fetching metadata for {}: {err}", pid));
+                    None
+                }
+            };
         listing.metadata = metadata.clone();
-        
+
         if let Err(e) = state.db.insert_or_update_listing(&pid, &listing) {
             print_to_terminal(1, &format!("error updating listing {}: {e}", pid));
         }
@@ -681,7 +712,9 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                 print_to_terminal(0, &format!("kicking off auto-update for: {}", pid));
                 if let Err(e) = Request::to(("our", "downloads", "app_store", "sys"))
                     .body(&DownloadRequests::AutoUpdate(AutoUpdateRequest {
-                        package_id: crate::kinode::process::main::PackageId::from_process_lib(pid.clone()),
+                        package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                            pid.clone(),
+                        ),
                         metadata: md.into(),
                     }))
                     .send()
@@ -713,7 +746,7 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
     // subscribe first so we don't miss any logs
-     state.kimap.provider.subscribe_loop(1, filter.clone());
+    state.kimap.provider.subscribe_loop(1, filter.clone());
     println!("fetching old logs from block {last_saved_block}");
     for log in fetch_logs(&state.kimap.provider, &filter.from_block(last_saved_block)) {
         if let Err(e) = handle_eth_log(our, state, log, true) {

@@ -183,7 +183,8 @@ impl State {
     }
 
     fn get_node(&self, name: &str) -> Option<net::KnsUpdate> {
-        let x = self.kv
+        let x = self
+            .kv
             .get(&Self::node_key(name))
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok());
@@ -192,12 +193,11 @@ impl State {
     }
 
     fn set_node(&mut self, name: &str, node: &net::KnsUpdate) {
-        let x = self.kv
-            .set(
-                &Self::node_key(name),
-                &serde_json::to_vec(&node).unwrap(),
-                None,
-            );
+        let x = self.kv.set(
+            &Self::node_key(name),
+            &serde_json::to_vec(&node).unwrap(),
+            None,
+        );
         println!("set_node({name}, {:?})", node);
         x.unwrap();
     }
