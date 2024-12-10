@@ -283,7 +283,7 @@ fn handle_local_request(
             None,
         ),
         LocalRequest::Uninstall(package_id) => (
-            match utils::uninstall(state, &package_id.clone().to_process_lib()) {
+            match utils::uninstall(our, state, &package_id.clone().to_process_lib()) {
                 Ok(()) => {
                     println!(
                         "successfully uninstalled package: {:?}",

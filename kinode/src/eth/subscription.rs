@@ -190,9 +190,13 @@ async fn build_subscription(
         return Err(EthError::PermissionDenied); // will never hit
     };
     if *kind == SubscriptionKind::NewHeads {
-        Printout::new(0, format!("newHeads subscription requested by {target}!"))
-            .send(print_tx)
-            .await;
+        Printout::new(
+            0,
+            ETH_PROCESS_ID.clone(),
+            format!("newHeads subscription requested by {target}!"),
+        )
+        .send(print_tx)
+        .await;
     }
     let mut urls = {
         // in code block to drop providers lock asap to avoid deadlock

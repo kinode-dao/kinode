@@ -67,6 +67,10 @@
             "homepage:homepage:sys",
             "http-server:distro:sys",
             "http-client:distro:sys",
+            {
+                "process": "homepage:homepage:sys",
+                "params": "RemoveOther"
+            },
             "net:distro:sys",
             "downloads:app-store:sys",
             "chain:app-store:sys",
