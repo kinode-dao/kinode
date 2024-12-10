@@ -3,7 +3,7 @@ use clap::{arg, value_parser, Command};
 use lib::types::core::{
     CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
     KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
-    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, ProcessVerbosity, Request,
     KERNEL_PROCESS_ID,
 };
 #[cfg(feature = "simulation-mode")]
@@ -108,7 +108,7 @@ async fn main() {
     let detached = *matches.get_one::<bool>("detached").unwrap();
 
     let process_verbosity = matches.get_one::<String>("process-verbosity").unwrap();
-    let process_verbosity: HashMap<ProcessId, u8> = if process_verbosity.is_empty() {
+    let process_verbosity: ProcessVerbosity = if process_verbosity.is_empty() {
         HashMap::new()
     } else {
         serde_json::from_str(&process_verbosity)

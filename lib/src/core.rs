@@ -1355,6 +1355,55 @@ impl Printout {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum ProcessVerbosityValError {
+    #[error("Parse failed; must be `m` `mute` or `muted` (-> `Muted`) OR a u8")]
+    ParseFailed,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+pub enum ProcessVerbosityVal {
+    U8(u8),
+    Muted,
+}
+
+impl ProcessVerbosityVal {
+    pub fn get_verbosity(&self) -> Option<&u8> {
+        match self {
+            ProcessVerbosityVal::U8(v) => Some(v),
+            ProcessVerbosityVal::Muted => None,
+        }
+    }
+}
+
+impl std::str::FromStr for ProcessVerbosityVal {
+    type Err = ProcessVerbosityValError;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        if input == "m" || input == "mute" || input == "muted" {
+            return Ok(Self::Muted);
+        }
+        let Ok(u) = input.parse::<u8>() else {
+            return Err(ProcessVerbosityValError::ParseFailed);
+        };
+        Ok(Self::U8(u))
+    }
+}
+
+impl std::fmt::Display for ProcessVerbosityVal {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ProcessVerbosityVal::U8(verbosity) => format!("{verbosity}"),
+                ProcessVerbosityVal::Muted => "muted".to_string(),
+            },
+        )
+    }
+}
+
+pub type ProcessVerbosity = HashMap<ProcessId, ProcessVerbosityVal>;
+
 /// kernel sets in case, e.g.,
 ///  A requests response from B does not request response from C
 ///  -> kernel sets `Some(A) = Rsvp` for B's request to C

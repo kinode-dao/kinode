@@ -9,7 +9,7 @@ use crossterm::{
 use futures::{future::FutureExt, StreamExt};
 use lib::types::core::{
     DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender, PrintReceiver,
-    PrintSender, Printout, ProcessId, Request, TERMINAL_PROCESS_ID,
+    PrintSender, Printout, ProcessId, ProcessVerbosity, ProcessVerbosityVal, Request, TERMINAL_PROCESS_ID,
 };
 use std::{
     collections::HashMap,
@@ -46,7 +46,7 @@ struct State {
     /// verbosity mode (increased by CTRL+V)
     pub verbose_mode: u8,
     /// process-level verbosities: override verbose_mode when populated
-    pub process_verbosity: HashMap<ProcessId, u8>,
+    pub process_verbosity: HashMap<ProcessId, ProcessVerbosityVal>,
     /// flag representing whether we are in process verbosity mode (activated by CTRL+W, exited by CTRL+W)
     pub process_verbosity_mode: bool,
     /// line to be restored when exiting process_verbosity_mode
@@ -134,7 +134,7 @@ impl State {
 
     fn exit_process_verbosity_mode(&mut self) -> Result<(), std::io::Error> {
         // Leave alternate screen and restore cursor
-        execute!(self.stdout, cursor::Show, terminal::LeaveAlternateScreen,)?;
+        execute!(self.stdout, cursor::Show, terminal::LeaveAlternateScreen)?;
         Ok(())
     }
 
@@ -206,17 +206,14 @@ impl State {
         Ok(())
     }
 
-    fn parse_process_verbosity(input: &str) -> Option<(ProcessId, u8)> {
+    fn parse_process_verbosity(input: &str) -> Option<(ProcessId, ProcessVerbosityVal)> {
         let parts: Vec<&str> = input.trim().split_whitespace().collect();
         if parts.len() != 2 {
             return None;
         }
 
         let process_id: ProcessId = parts[0].parse().ok()?;
-        let verbosity = parts[1].parse::<u8>().ok()?;
-        if verbosity > 3 {
-            return None;
-        }
+        let verbosity = parts[1].parse::<ProcessVerbosityVal>().ok()?;
 
         Some((process_id, verbosity))
     }
@@ -294,7 +291,7 @@ pub async fn terminal(
     is_logging: bool,
     max_log_size: Option<u64>,
     number_log_files: Option<u64>,
-    process_verbosity: HashMap<ProcessId, u8>,
+    process_verbosity: ProcessVerbosity,
 ) -> anyhow::Result<()> {
     let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
@@ -390,11 +387,13 @@ pub async fn terminal(
     // in contrast, "full event loop" per-process is default off:
     //  here, we toggle it ON if we have any given at that level
     for (process, verbosity) in state.process_verbosity.iter() {
-        if *verbosity == 3 {
-            debug_event_loop
-                .send(DebugCommand::ToggleEventLoopForProcess(process.clone()))
-                .await
-                .expect("failed to toggle process-level full event loop on");
+        if let ProcessVerbosityVal::U8(verbosity) = verbosity {
+            if *verbosity == 3 {
+                debug_event_loop
+                    .send(DebugCommand::ToggleEventLoopForProcess(process.clone()))
+                    .await
+                    .expect("failed to toggle process-level full event loop on");
+            }
         }
     }
 
@@ -468,10 +467,15 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     }
     // skip writing print to terminal if it's of a greater
     // verbosity level than our current mode
-    let current_verbosity = state
+    let current_verbosity = match state
         .process_verbosity
-        .get(&printout.source)
-        .unwrap_or_else(|| &state.verbose_mode);
+        .get(&printout.source) {
+            None => &state.verbose_mode,
+            Some(cv) => match cv.get_verbosity() {
+                Some(v) => v,
+                None => return Ok(()), // process is muted
+            }
+        };
     if &printout.verbosity > current_verbosity {
         return Ok(());
     }
@@ -1010,6 +1014,11 @@ async fn handle_key_event(
                         {
                             let old_verbosity = state.process_verbosity
                                 .insert(process_id.clone(), verbosity.clone())
+                                .and_then(|ov| ov.get_verbosity().map(|ov| ov.clone()))
+                                .unwrap_or_default();
+                            let verbosity = verbosity
+                                .get_verbosity()
+                                .map(|ov| ov.clone())
                                 .unwrap_or_default();
                             if (old_verbosity == 3 && verbosity != 3) || (verbosity == 3 && old_verbosity != 3) {
                                 debug_event_loop
