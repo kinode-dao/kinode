@@ -9,7 +9,8 @@ use crossterm::{
 use futures::{future::FutureExt, StreamExt};
 use lib::types::core::{
     DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender, PrintReceiver,
-    PrintSender, Printout, ProcessId, ProcessVerbosity, ProcessVerbosityVal, Request, TERMINAL_PROCESS_ID,
+    PrintSender, Printout, ProcessId, ProcessVerbosity, ProcessVerbosityVal, Request,
+    TERMINAL_PROCESS_ID,
 };
 use std::{
     collections::{HashMap, VecDeque},
@@ -506,15 +507,13 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     }
     // skip writing print to terminal if it's of a greater
     // verbosity level than our current mode
-    let current_verbosity = match state
-        .process_verbosity
-        .get(&printout.source) {
-            None => &state.verbose_mode,
-            Some(cv) => match cv.get_verbosity() {
-                Some(v) => v,
-                None => return Ok(()), // process is muted
-            }
-        };
+    let current_verbosity = match state.process_verbosity.get(&printout.source) {
+        None => &state.verbose_mode,
+        Some(cv) => match cv.get_verbosity() {
+            Some(v) => v,
+            None => return Ok(()), // process is muted
+        },
+    };
     if &printout.verbosity > current_verbosity {
         return Ok(());
     }
@@ -1052,7 +1051,8 @@ async fn handle_key_event(
                             State::parse_process_verbosity(&current_line.line)
                         {
                             // add ProcessId
-                            let old_verbosity = state.process_verbosity
+                            let old_verbosity = state
+                                .process_verbosity
                                 .insert(process_id.clone(), verbosity.clone())
                                 .and_then(|ov| ov.get_verbosity().map(|ov| ov.clone()))
                                 .unwrap_or_default();
@@ -1060,9 +1060,13 @@ async fn handle_key_event(
                                 .get_verbosity()
                                 .map(|v| v.clone())
                                 .unwrap_or_default();
-                            if (old_verbosity == 3 && verbosity != 3) || (verbosity == 3 && old_verbosity != 3) {
+                            if (old_verbosity == 3 && verbosity != 3)
+                                || (verbosity == 3 && old_verbosity != 3)
+                            {
                                 debug_event_loop
-                                    .send(DebugCommand::ToggleEventLoopForProcess(process_id.clone()))
+                                    .send(DebugCommand::ToggleEventLoopForProcess(
+                                        process_id.clone(),
+                                    ))
                                     .await
                                     .expect("failed to toggle process-level full event loop on");
                             }
@@ -1072,16 +1076,21 @@ async fn handle_key_event(
                             state.display_process_verbosity()?;
                         } else if let Ok(process_id) = &current_line.line.parse() {
                             // remove ProcessId
-                            if let Some(old_verbosity) = state.process_verbosity.remove(&process_id) {
+                            if let Some(old_verbosity) = state.process_verbosity.remove(&process_id)
+                            {
                                 let old_verbosity = old_verbosity
                                     .get_verbosity()
                                     .map(|ov| ov.clone())
                                     .unwrap_or_default();
                                 if old_verbosity == 3 {
                                     debug_event_loop
-                                        .send(DebugCommand::ToggleEventLoopForProcess(process_id.clone()))
+                                        .send(DebugCommand::ToggleEventLoopForProcess(
+                                            process_id.clone(),
+                                        ))
                                         .await
-                                        .expect("failed to toggle process-level full event loop on");
+                                        .expect(
+                                            "failed to toggle process-level full event loop on",
+                                        );
                                 }
                             }
                             current_line.line.clear();

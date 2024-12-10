@@ -3,8 +3,8 @@ use clap::{arg, value_parser, Command};
 use lib::types::core::{
     CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
     KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
-    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, ProcessVerbosity, Request,
-    KERNEL_PROCESS_ID,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, ProcessVerbosity,
+    Request, KERNEL_PROCESS_ID,
 };
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
