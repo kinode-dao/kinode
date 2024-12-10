@@ -176,26 +176,30 @@ impl State {
     }
 
     fn set_name(&mut self, namehash: &str, name: &str) {
+        println!("set_name({namehash}, {name})");
         self.kv
             .set(&Self::name_key(namehash), &name.as_bytes().to_vec(), None)
             .unwrap();
     }
 
     fn get_node(&self, name: &str) -> Option<net::KnsUpdate> {
-        self.kv
+        let x = self.kv
             .get(&Self::node_key(name))
             .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+        println!("get_node({name}) -> {x:?}");
+        x
     }
 
     fn set_node(&mut self, name: &str, node: &net::KnsUpdate) {
-        self.kv
+        let x = self.kv
             .set(
                 &Self::node_key(name),
                 &serde_json::to_vec(&node).unwrap(),
                 None,
-            )
-            .unwrap();
+            );
+        println!("set_node({name}, {:?})", node);
+        x.unwrap();
     }
 
     fn get_chain_id(&self) -> u64 {
@@ -258,6 +262,8 @@ fn init(our: Address) {
     // state is loaded from kv, and updated with the current block number and version.
     let state = State::load(&our);
 
+    println!("got last block: {}", state.get_last_block());
+
     if let Err(e) = main(our, state) {
         println!("fatal error: {e}");
     }
@@ -308,7 +314,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     println!("subscribing to new logs...");
     eth_provider.subscribe_loop(1, mints_filter.clone());
     eth_provider.subscribe_loop(2, notes_filter.clone());
-
+    println!("done subscribing to new logs.");
     // if subscription results come back in the wrong order, we store them here
     // until the right block is reached.
 
@@ -626,7 +632,7 @@ fn fetch_and_process_logs(
     filter: eth::Filter,
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
 ) {
-    let filter = filter.from_block(KIMAP_FIRST_BLOCK);
+    let filter = filter.from_block(state.last_block);
     loop {
         match eth_provider.get_logs(&filter) {
             Ok(logs) => {
