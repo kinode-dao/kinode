@@ -1,6 +1,7 @@
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, homepage, http, kernel_types, net, println, Address,
-    LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError, SendErrorKind,
+    Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError,
+    SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -429,6 +430,10 @@ fn handle_settings_request(
                         .to_string()
                         .as_bytes(),
                 )
+                .capabilities(vec![Capability::new(
+                    Address::new(&state.our.node, ("homepage", "homepage", "sys")),
+                    "\"SetStylesheet\"".to_string(),
+                )])
                 .send()
                 .unwrap();
             state.stylesheet = Some(stylesheet);

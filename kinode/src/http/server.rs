@@ -302,7 +302,7 @@ async fn serve(
                 .and(warp::filters::host::optional())
                 .and(warp::query::<HashMap<String, String>>())
                 .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::body::json())
+                .and(warp::body::bytes())
                 .and(warp::any().map(move || cloned_our.clone()))
                 .and(warp::any().map(move || encoded_keyfile.clone()))
                 .and_then(login_handler)),
@@ -339,10 +339,18 @@ async fn serve(
 async fn login_handler(
     host: Option<warp::host::Authority>,
     query_params: HashMap<String, String>,
-    info: LoginInfo,
+    body: warp::hyper::body::Bytes,
     our: Arc<String>,
     encoded_keyfile: Arc<Vec<u8>>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    let Ok(info) = serde_json::from_slice::<LoginInfo>(&body) else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Failed to parse login info"),
+            StatusCode::BAD_REQUEST,
+        )
+        .into_response());
+    };
+
     #[cfg(feature = "simulation-mode")]
     let info = LoginInfo {
         password_hash: "secret".to_string(),
