@@ -357,6 +357,7 @@ pub async fn terminal(
 
     let printout_queue = VecDeque::new();
     let max_printout_queue_len = MAX_PRINTOUT_QUEUE_LEN_DEFAULT.clone();
+    let printout_queue_number_dropped_printouts = 0;
 
     let mut state = State {
         stdout,
@@ -381,6 +382,7 @@ pub async fn terminal(
         saved_line,
         printout_queue,
         max_printout_queue_len,
+        printout_queue_number_dropped_printouts,
     };
 
     // use to trigger cleanup if receive signal to kill process
