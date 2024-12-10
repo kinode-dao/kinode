@@ -1682,7 +1682,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.10.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=5d6e2af#5d6e2af88ef0716822cc1638be5b71a1ec9c4fb3"
+source = "git+https://github.com/kinode-dao/process_lib?rev=8a5b040#8a5b040dd699ae69d5bc1826fdd6e0bd5d84e766"
 dependencies = [
  "alloy",
  "alloy-primitives 0.7.7",
@@ -1762,7 +1762,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.10.0 (git+https://github.com/kinode-dao/process_lib?rev=5d6e2af)",
+ "kinode_process_lib 0.10.0 (git+https://github.com/kinode-dao/process_lib?rev=8a5b040)",
  "regex",
  "serde",
  "serde_json",

@@ -3,11 +3,12 @@ use clap::{arg, value_parser, Command};
 use lib::types::core::{
     CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
     KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
-    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
-    KERNEL_PROCESS_ID,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, ProcessVerbosity,
+    Request, KERNEL_PROCESS_ID,
 };
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -105,6 +106,14 @@ async fn main() {
 
     // detached determines whether terminal is interactive
     let detached = *matches.get_one::<bool>("detached").unwrap();
+
+    let process_verbosity = matches.get_one::<String>("process-verbosity").unwrap();
+    let process_verbosity: ProcessVerbosity = if process_verbosity.is_empty() {
+        HashMap::new()
+    } else {
+        serde_json::from_str(&process_verbosity)
+            .expect("failed to parse given --process-verbosity to HashMap<ProcessId, u8>")
+    };
 
     #[cfg(feature = "simulation-mode")]
     let (fake_node_name, fakechain_port) = (
@@ -477,6 +486,7 @@ async fn main() {
             is_logging,
             max_log_size.copied(),
             number_log_files.copied(),
+            process_verbosity,
         ) => {
             match quit {
                 Ok(()) => {
@@ -726,6 +736,10 @@ fn build_command() -> Command {
         .arg(
             arg!(--"soft-ulimit" <SOFT_ULIMIT> "Enforce a static maximum number of file descriptors (default fetched from system)")
                 .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"process-verbosity" <JSON_STRING> "ProcessId: verbosity JSON object")
+                .default_value("")
         );
 
     #[cfg(feature = "simulation-mode")]

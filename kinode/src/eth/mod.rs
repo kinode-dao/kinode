@@ -1138,10 +1138,11 @@ async fn check_for_root_cap(
 
 async fn verbose_print(print_tx: &PrintSender, content: &str) {
     let _ = print_tx
-        .send(Printout {
-            verbosity: 2,
-            content: content.to_string(),
-        })
+        .send(Printout::new(
+            2,
+            NET_PROCESS_ID.clone(),
+            content.to_string(),
+        ))
         .await;
 }
 

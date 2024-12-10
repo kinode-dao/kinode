@@ -217,10 +217,11 @@ async fn connect_websocket(
         Ok((ws_stream, _)) => ws_stream,
         Err(e) => {
             let _ = print_tx
-                .send(Printout {
-                    verbosity: 1,
-                    content: format!("http-client: underlying lib connection error {e:?}"),
-                })
+                .send(Printout::new(
+                    1,
+                    HTTP_CLIENT_PROCESS_ID.clone(),
+                    format!("http-client: underlying lib connection error {e:?}"),
+                ))
                 .await;
 
             return Err(HttpClientError::WsOpenFailed {
@@ -404,10 +405,11 @@ async fn handle_http_request(
     };
 
     let _ = print_tx
-        .send(Printout {
-            verbosity: 2,
-            content: format!("http-client: {req_method} request to {}", url),
-        })
+        .send(Printout::new(
+            2,
+            HTTP_CLIENT_PROCESS_ID.clone(),
+            format!("http-client: {req_method} request to {}", url),
+        ))
         .await;
 
     // Build the request
@@ -498,10 +500,11 @@ async fn handle_http_request(
         }
         Err(e) => {
             let _ = print_tx
-                .send(Printout {
-                    verbosity: 2,
-                    content: "http-client: executed request but got error".to_string(),
-                })
+                .send(Printout::new(
+                    2,
+                    HTTP_CLIENT_PROCESS_ID.clone(),
+                    "http-client: executed request but got error".to_string(),
+                ))
                 .await;
             // Forward the error to the target process
             http_error_message(

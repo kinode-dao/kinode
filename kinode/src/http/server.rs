@@ -254,9 +254,13 @@ async fn serve(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
-    Printout::new(0, format!("http-server: running on port {our_port}"))
-        .send(&print_tx)
-        .await;
+    Printout::new(
+        0,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: running on port {our_port}"),
+    )
+    .send(&print_tx)
+    .await;
 
     // filter to receive websockets
     let cloned_our = our.clone();
@@ -450,13 +454,18 @@ async fn ws_handler(
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
-    Printout::new(2, format!("http-server: ws request for {original_path}"))
-        .send(&print_tx)
-        .await;
+    Printout::new(
+        2,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: ws request for {original_path}"),
+    )
+    .send(&print_tx)
+    .await;
 
     if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS as usize {
         Printout::new(
             0,
+            HTTP_SERVER_PROCESS_ID.clone(),
             format!(
                 "http-server: too many open websockets ({})! rejecting incoming",
                 ws_senders.len()
@@ -559,9 +568,13 @@ async fn http_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
     let base_path = original_path.split('/').skip(1).next().unwrap_or("");
-    Printout::new(2, format!("http-server: request for {original_path}"))
-        .send(&print_tx)
-        .await;
+    Printout::new(
+        2,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: request for {original_path}"),
+    )
+    .send(&print_tx)
+    .await;
 
     let id: u64 = rand::random();
     let serialized_headers = utils::serialize_headers(&headers);
@@ -577,6 +590,7 @@ async fn http_handler(
     } else {
         Printout::new(
             2,
+            HTTP_SERVER_PROCESS_ID.clone(),
             format!("http-server: no route found for {original_path}"),
         )
         .send(&print_tx)
@@ -816,6 +830,7 @@ async fn handle_rpc_message(
 
     Printout::new(
         2,
+        HTTP_SERVER_PROCESS_ID.clone(),
         format!("http-server: passing on RPC message to {target_process}"),
     )
     .send(&print_tx)
@@ -988,6 +1003,7 @@ async fn maintain_websocket(
 
     Printout::new(
         2,
+        HTTP_SERVER_PROCESS_ID.clone(),
         format!("http-server: new websocket connection to {app} with id {channel_id}"),
     )
     .send(&print_tx)
@@ -1062,6 +1078,7 @@ async fn maintain_websocket(
     }
     Printout::new(
         2,
+        HTTP_SERVER_PROCESS_ID.clone(),
         format!("http-server: websocket connection {channel_id} closed"),
     )
     .send(&print_tx)
@@ -1197,6 +1214,7 @@ async fn handle_app_message(
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
                         2,
+                        HTTP_SERVER_PROCESS_ID.clone(),
                         format!(
                             "http: binding {path}, {}, {}, {}",
                             if authenticated {
@@ -1268,6 +1286,7 @@ async fn handle_app_message(
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
                         2,
+                        HTTP_SERVER_PROCESS_ID.clone(),
                         format!(
                             "http: binding subdomain {subdomain} with path {path}, {}",
                             if cache { "cached" } else { "dynamic" },
