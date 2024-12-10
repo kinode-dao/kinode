@@ -272,6 +272,7 @@ async fn make_component_v1(
             Err(e) => {
                 t::Printout::new(
                     0,
+                    t::KERNEL_PROCESS_ID.clone(),
                     format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
                 )
                 .send(&send_to_terminal)
@@ -432,9 +433,13 @@ pub async fn make_process_loop(
             // the process will run until it returns from init() or crashes
             match bindings.call_init(&mut store, &our.to_string()).await {
                 Ok(()) => {
-                    t::Printout::new(1, format!("process {our} returned without error"))
-                        .send(&send_to_terminal)
-                        .await;
+                    t::Printout::new(
+                        1,
+                        t::KERNEL_PROCESS_ID.clone(),
+                        format!("process {our} returned without error"),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
                 }
                 Err(e) => {
                     let stderr = wasi_stderr.contents().into();
@@ -446,6 +451,7 @@ pub async fn make_process_loop(
                     };
                     t::Printout::new(
                         0,
+                        t::KERNEL_PROCESS_ID.clone(),
                         format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{output}"),
                     )
                     .send(&send_to_terminal)

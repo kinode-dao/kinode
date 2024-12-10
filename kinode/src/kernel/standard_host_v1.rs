@@ -6,13 +6,18 @@ use lib::v1::wit::Host as StandardHost;
 use ring::signature::{self, KeyPair};
 
 async fn print_debug(proc: &process::ProcessState, content: &str) {
-    let _ = proc
-        .send_to_terminal
-        .send(t::Printout {
-            verbosity: 2,
-            content: format!("{}: {}", proc.metadata.our.process, content),
-        })
-        .await;
+    t::Printout::new(
+        2,
+        &proc.metadata.our.process,
+        format!(
+            "{}:{}: {}",
+            proc.metadata.our.process.package(),
+            proc.metadata.our.process.publisher(),
+            content
+        ),
+    )
+    .send(&proc.send_to_terminal)
+    .await;
 }
 
 impl process::ProcessState {
@@ -342,6 +347,7 @@ impl process::ProcessState {
         let Some(ref prompting_message) = self.prompting_message else {
             t::Printout::new(
                 0,
+                KERNEL_PROCESS_ID.clone(),
                 format!("kernel: need non-None prompting_message to handle Response {response:?}"),
             )
             .send(&self.send_to_terminal)
@@ -457,15 +463,16 @@ impl StandardHost for process::ProcessWasiV1 {
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
         self.process
             .send_to_terminal
-            .send(t::Printout {
+            .send(t::Printout::new(
                 verbosity,
-                content: format!(
+                &self.process.metadata.our.process,
+                format!(
                     "{}:{}: {}",
                     self.process.metadata.our.process.package(),
                     self.process.metadata.our.process.publisher(),
                     content
                 ),
-            })
+            ))
             .await
             .map_err(|e| anyhow::anyhow!("fatal: couldn't send to terminal: {e:?}"))
     }

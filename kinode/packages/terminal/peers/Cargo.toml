@@ -7,7 +7,7 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "6ed0cda" }
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "0666d2c" }
 rmp-serde = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }
 wit-bindgen = "0.24.0"
