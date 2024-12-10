@@ -387,6 +387,17 @@ pub async fn terminal(
             .expect("failed to toggle full event loop off");
     }
 
+    // in contrast, "full event loop" per-process is default off:
+    //  here, we toggle it ON if we have any given at that level
+    for (process, verbosity) in state.process_verbosity.iter() {
+        if *verbosity == 3 {
+            debug_event_loop
+                .send(DebugCommand::ToggleEventLoopForProcess(process.clone()))
+                .await
+                .expect("failed to toggle process-level full event loop on");
+        }
+    }
+
     // only create event stream if not in detached mode
     if !is_detached {
         let mut reader = EventStream::new();
@@ -979,7 +990,15 @@ async fn handle_key_event(
                         if let Some((process_id, verbosity)) =
                             State::parse_process_verbosity(&current_line.line)
                         {
-                            state.process_verbosity.insert(process_id, verbosity);
+                            let old_verbosity = state.process_verbosity
+                                .insert(process_id.clone(), verbosity.clone())
+                                .unwrap_or_default();
+                            if (old_verbosity == 3 && verbosity != 3) || (verbosity == 3 && old_verbosity != 3) {
+                                debug_event_loop
+                                    .send(DebugCommand::ToggleEventLoopForProcess(process_id.clone()))
+                                    .await
+                                    .expect("failed to toggle process-level full event loop on");
+                            }
                             current_line.line.clear();
                             current_line.line_col = 0;
                             current_line.cursor_col = 0;

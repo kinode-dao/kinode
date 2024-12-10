@@ -108,8 +108,12 @@ async fn main() {
     let detached = *matches.get_one::<bool>("detached").unwrap();
 
     let process_verbosity = matches.get_one::<String>("process-verbosity").unwrap();
-    let process_verbosity: HashMap<ProcessId, u8> = serde_json::from_str(&process_verbosity)
-        .expect("failed to parse given --process-verbosity to HashMap<ProcessId, u8>");
+    let process_verbosity: HashMap<ProcessId, u8> = if process_verbosity.is_empty() {
+        HashMap::new()
+    } else {
+        serde_json::from_str(&process_verbosity)
+            .expect("failed to parse given --process-verbosity to HashMap<ProcessId, u8>")
+    };
 
     #[cfg(feature = "simulation-mode")]
     let (fake_node_name, fakechain_port) = (

@@ -1365,6 +1365,7 @@ pub enum DebugCommand {
     ToggleStepthrough,
     Step,
     ToggleEventLoop,
+    ToggleEventLoopForProcess(ProcessId),
 }
 
 /// IPC format for requests sent to kernel runtime module

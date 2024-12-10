@@ -657,6 +657,8 @@ pub async fn kernel(
     // skip sending prints for every event.
     let mut print_full_event_loop: bool = true;
 
+    let mut print_full_event_loop_for_process: HashSet<t::ProcessId> = HashSet::new();
+
     // create a list of processes which are successfully rebooted,
     // keeping only them in the updated post-boot process map
     let mut non_rebooted_processes: HashSet<t::ProcessId> = HashSet::new();
@@ -814,6 +816,13 @@ pub async fn kernel(
                     t::DebugCommand::ToggleEventLoop => {
                         print_full_event_loop = !print_full_event_loop;
                     }
+                    t::DebugCommand::ToggleEventLoopForProcess(ref process) => {
+                        if print_full_event_loop_for_process.contains(process) {
+                            print_full_event_loop_for_process.remove(process);
+                        } else {
+                            print_full_event_loop_for_process.insert(process.clone());
+                        }
+                    }
                 }
             },
             // network error message receiver: handle `timeout` and `offline` errors
@@ -823,6 +832,10 @@ pub async fn kernel(
                 // display every single event when verbose
                 if print_full_event_loop {
                     t::Printout::new(3, KERNEL_PROCESS_ID.clone(), format!("{wrapped_network_error:?}")).send(&send_to_terminal).await;
+                } else if print_full_event_loop_for_process.contains(&wrapped_network_error.source.process) && wrapped_network_error.source.node == our.name {
+                    t::Printout::new(3, wrapped_network_error.source.process.clone(), format!("{wrapped_network_error:?}")).send(&send_to_terminal).await;
+                } else if print_full_event_loop_for_process.contains(&wrapped_network_error.error.target.process) && wrapped_network_error.error.target.node == our.name {
+                    t::Printout::new(3, wrapped_network_error.error.target.process.clone(), format!("{wrapped_network_error:?}")).send(&send_to_terminal).await;
                 }
                 // forward the error to the relevant process
                 match senders.get(&wrapped_network_error.source.process) {
@@ -978,11 +991,22 @@ pub async fn kernel(
                         t::DebugCommand::ToggleStepthrough => in_stepthrough_mode = !in_stepthrough_mode,
                         t::DebugCommand::Step => break,
                         t::DebugCommand::ToggleEventLoop => print_full_event_loop = !print_full_event_loop,
+                        t::DebugCommand::ToggleEventLoopForProcess(ref process) => {
+                            if print_full_event_loop_for_process.contains(process) {
+                                print_full_event_loop_for_process.remove(process);
+                            } else {
+                                print_full_event_loop_for_process.insert(process.clone());
+                            }
+                        }
                     }
                 }
                 // display every single event when verbose
                 if print_full_event_loop {
                     t::Printout::new(3, KERNEL_PROCESS_ID.clone(), format!("{kernel_message}")).send(&send_to_terminal).await;
+                } else if print_full_event_loop_for_process.contains(&kernel_message.source.process) && kernel_message.source.node == our.name {
+                    t::Printout::new(3, kernel_message.source.process.clone(), format!("{kernel_message}")).send(&send_to_terminal).await;
+                } else if print_full_event_loop_for_process.contains(&kernel_message.target.process) && kernel_message.target.node == our.name {
+                    t::Printout::new(3, kernel_message.target.process.clone(), format!("{kernel_message}")).send(&send_to_terminal).await;
                 }
 
                 if our.name != kernel_message.target.node {
@@ -1044,6 +1068,18 @@ pub async fn kernel(
             Some(cap_message) = caps_oracle_receiver.recv() => {
                 if print_full_event_loop {
                     t::Printout::new(3, KERNEL_PROCESS_ID.clone(), format!("{cap_message}")).send(&send_to_terminal).await;
+                } else {
+                    let on = match cap_message {
+                        t::CapMessage::Add { ref on, .. } => on,
+                        t::CapMessage::Drop { ref on, .. } => on,
+                        t::CapMessage::Has { ref on, .. } => on,
+                        t::CapMessage::GetAll { ref on, .. } => on,
+                        t::CapMessage::RevokeAll { ref on, .. } => on,
+                        t::CapMessage::FilterCaps { ref on, .. } => on,
+                    };
+                    if print_full_event_loop_for_process.contains(on) {
+                        t::Printout::new(3, on.clone(), format!("{cap_message}")).send(&send_to_terminal).await;
+                    }
                 }
                 match cap_message {
                     t::CapMessage::Add { on, caps, responder } => {
