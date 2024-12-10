@@ -13,6 +13,23 @@
         "grant_capabilities": [
             "eth:distro:sys",
             "http-server:distro:sys",
+            "terminal:terminal:sys",
+            {
+                "process": "terminal:terminal:sys",
+                "params": "ReadNameOnly"
+            },
+            {
+                "process": "terminal:terminal:sys",
+                "params": "Read"
+            },
+            {
+                "process": "terminal:terminal:sys",
+                "params": "Add"
+            },
+            {
+                "process": "terminal:terminal:sys",
+                "params": "Remove"
+            },
             "vfs:distro:sys"
         ],
         "public": false
