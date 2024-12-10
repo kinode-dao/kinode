@@ -4,7 +4,7 @@ use regex::Regex;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 const USAGE: &str = "\x1b[1mUsage:\x1b[0m m <target> <body> [-a <await_time>]";

@@ -317,5 +317,5 @@ world app-store-sys-v1 {
     import main;
     import downloads;
     import chain;
-    include process-v0;
+    include process-v1;
 }
