@@ -83,10 +83,10 @@ impl SqliteState {
 
         fs::create_dir_all(&db_path).await?;
 
-        let db_file_path = format!("{}.db", db);
+        let db_file_path = db_path.join(format!("{}.db", db));
 
         let db_conn = Connection::open(db_file_path)?;
-        let _ = db_conn.execute("PRAGMA journal_mode=WAL", []);
+        let _: String = db_conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
 
         self.open_dbs.insert(key, Mutex::new(db_conn));
 
