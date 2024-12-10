@@ -990,12 +990,17 @@ async fn handle_key_event(
                         if let Some((process_id, verbosity)) =
                             State::parse_process_verbosity(&current_line.line)
                         {
-                            let old_verbosity = state.process_verbosity
+                            let old_verbosity = state
+                                .process_verbosity
                                 .insert(process_id.clone(), verbosity.clone())
                                 .unwrap_or_default();
-                            if (old_verbosity == 3 && verbosity != 3) || (verbosity == 3 && old_verbosity != 3) {
+                            if (old_verbosity == 3 && verbosity != 3)
+                                || (verbosity == 3 && old_verbosity != 3)
+                            {
                                 debug_event_loop
-                                    .send(DebugCommand::ToggleEventLoopForProcess(process_id.clone()))
+                                    .send(DebugCommand::ToggleEventLoopForProcess(
+                                        process_id.clone(),
+                                    ))
                                     .await
                                     .expect("failed to toggle process-level full event loop on");
                             }
