@@ -112,7 +112,7 @@ async fn main() {
         HashMap::new()
     } else {
         serde_json::from_str(&process_verbosity)
-            .expect("failed to parse given --process-verbosity to HashMap<ProcessId, u8>")
+            .expect("failed to parse given --process-verbosity. Must be JSON Object with keys `ProcessId`s and values either `{\"U8\": <verbosity>}` or `\"Muted\"`")
     };
 
     #[cfg(feature = "simulation-mode")]
