@@ -646,6 +646,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             // go from low to high, then reset to 0
             match verbose_mode {
                 0 => *verbose_mode = 1,
@@ -692,6 +695,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             let _ = debug_event_loop.send(DebugCommand::ToggleStepthrough).await;
             *in_step_through = !*in_step_through;
             Printout::new(
@@ -717,6 +723,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             let _ = debug_event_loop.send(DebugCommand::Step).await;
             return Ok(Some(false));
         }
@@ -728,6 +737,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             *logging_mode = !*logging_mode;
             Printout::new(
                 0,
@@ -749,7 +761,7 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
-            if state.search_mode {
+            if state.search_mode || state.process_verbosity_mode {
                 return Ok(Some(false));
             }
             // go up one command in history
@@ -781,7 +793,7 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
-            if state.search_mode {
+            if state.search_mode || state.process_verbosity_mode {
                 return Ok(Some(false));
             }
             // go down one command in history
@@ -841,6 +853,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             if state.search_mode {
                 *search_depth += 1;
             }
@@ -866,6 +881,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.search_mode {
+                return Ok(Some(false));
+            }
             if state.process_verbosity_mode {
                 // Exit process verbosity mode
                 state.process_verbosity_mode = false;
