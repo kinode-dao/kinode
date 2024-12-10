@@ -12,7 +12,7 @@ use lib::types::core::{
     PrintSender, Printout, ProcessId, ProcessVerbosity, ProcessVerbosityVal, Request, TERMINAL_PROCESS_ID,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs::{read_to_string, OpenOptions},
     io::BufWriter,
     path::PathBuf,
@@ -22,6 +22,9 @@ use tokio::signal::unix::{signal, SignalKind};
 use unicode_segmentation::UnicodeSegmentation;
 
 pub mod utils;
+
+// TODO: add a flag & `terminal::terminal()` arg so can be set at run time
+const MAX_PRINTOUT_QUEUE_LEN_DEFAULT: usize = 256;
 
 struct State {
     pub stdout: std::io::Stdout,
@@ -51,6 +54,10 @@ struct State {
     pub process_verbosity_mode: bool,
     /// line to be restored when exiting process_verbosity_mode
     pub saved_line: Option<String>,
+    /// if in alternate screen, queue up max_printout_queue_len printouts
+    pub printout_queue: VecDeque<Printout>,
+    pub max_printout_queue_len: usize,
+    pub printout_queue_number_dropped_printouts: u64,
 }
 
 impl State {
@@ -132,9 +139,27 @@ impl State {
         Ok(())
     }
 
-    fn exit_process_verbosity_mode(&mut self) -> Result<(), std::io::Error> {
+    fn exit_process_verbosity_mode(&mut self) -> anyhow::Result<()> {
         // Leave alternate screen and restore cursor
         execute!(self.stdout, cursor::Show, terminal::LeaveAlternateScreen)?;
+
+        // Print queued messages to main screen
+        if self.printout_queue_number_dropped_printouts != 0 {
+            let number_dropped_printout = Printout::new(
+                0,
+                TERMINAL_PROCESS_ID.clone(),
+                format!(
+                    "Dropped {} prints while on alternate screen",
+                    self.printout_queue_number_dropped_printouts,
+                ),
+            );
+            handle_printout(number_dropped_printout, self)?;
+            self.printout_queue_number_dropped_printouts = 0;
+        }
+        while let Some(printout) = self.printout_queue.pop_front() {
+            handle_printout(printout, self)?;
+        }
+
         Ok(())
     }
 
@@ -329,6 +354,9 @@ pub async fn terminal(
     let process_verbosity_mode = false;
     let saved_line = None;
 
+    let printout_queue = VecDeque::new();
+    let max_printout_queue_len = MAX_PRINTOUT_QUEUE_LEN_DEFAULT.clone();
+
     let mut state = State {
         stdout,
         logger,
@@ -350,6 +378,8 @@ pub async fn terminal(
         process_verbosity,
         process_verbosity_mode,
         saved_line,
+        printout_queue,
+        max_printout_queue_len,
     };
 
     // use to trigger cleanup if receive signal to kill process
@@ -458,6 +488,15 @@ pub async fn terminal(
 }
 
 fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> {
+    if state.process_verbosity_mode {
+        if state.printout_queue.len() >= state.max_printout_queue_len {
+            // remove oldest if queue is overflowing
+            state.printout_queue.pop_front();
+            state.printout_queue_number_dropped_printouts += 1;
+        }
+        state.printout_queue.push_back(printout);
+        return Ok(());
+    }
     // lock here so that runtime can still use println! without freezing..
     // can lock before loop later if we want to reduce overhead
     let mut stdout = state.stdout.lock();
