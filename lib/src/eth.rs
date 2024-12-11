@@ -93,6 +93,7 @@ pub struct EthSubError {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum EthResponse {
     Ok,
+    /// Value will be a JSON-RPC standard item
     Response(serde_json::Value),
     Err(EthError),
 }
@@ -174,9 +175,12 @@ pub enum EthConfigResponse {
 /// Settings for our ETH provider
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AccessSettings {
-    pub public: bool,           // whether or not other nodes can access through us
-    pub allow: HashSet<String>, // whitelist for access (only used if public == false)
-    pub deny: HashSet<String>,  // blacklist for access (always used)
+    /// whether or not other nodes can access through us
+    pub public: bool,
+    /// whitelist for access (only used if public == false)
+    pub allow: HashSet<String>,
+    /// blacklist for access (always used)
+    pub deny: HashSet<String>,
 }
 
 pub type SavedConfigs = HashSet<ProviderConfig>;
