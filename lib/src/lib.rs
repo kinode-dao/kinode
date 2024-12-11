@@ -1,6 +1,14 @@
 pub mod core;
 pub mod eth;
+mod fd_manager;
 mod http;
+mod kernel;
+mod kv;
+mod net;
+mod sqlite;
+mod state;
+mod timer;
+mod vfs;
 
 pub mod types {
     pub use crate::core;
