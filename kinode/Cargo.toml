@@ -1,6 +1,6 @@
 [package]
 name = "kinode"
-authors = ["KinodeDAO"]
+authors = ["Sybil Technologies AG"]
 version = "0.10.0"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
