@@ -70,7 +70,7 @@ pub async fn load_state(
     let processes = process_map.keys().cloned().collect::<Vec<_>>();
     for process in processes {
         if check_process_id_kimap_safe(&process).is_err() {
-            println!("bootstrap: removing non-Kimap-safe process {process}\n(all process IDs must contain only a-z A-Z 0-9 `-` and `.`s in the publisher)\r");
+            println!("bootstrap: removing non-Kimap-safe process {process}\n(all process IDs must contain only a-z, 0-9, `-`, and `.`s in the publisher)\r");
             process_map.remove(&process);
         }
     }
