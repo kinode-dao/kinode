@@ -41,6 +41,18 @@ export default function PublishPage() {
     }
   }, [packageName, publisherId, fetchDownloadsForApp]);
 
+  useEffect(() => {
+    if (isConfirmed) {
+      // Fetch our apps again after successful publish
+      fetchOurApps();
+      // Reset form fields
+      setPackageName("");
+      setPublisherId(window.our?.node || "");
+      setMetadataUrl("");
+      setMetadataHash("");
+    }
+  }, [isConfirmed, fetchOurApps]);
+
   const validatePackageName = useCallback((name: string) => {
     // Allow lowercase letters, numbers, hyphens, and dots
     const validNameRegex = /^[a-z0-9.-]+$/;
@@ -172,12 +184,6 @@ export default function PublishPage() {
           ],
           gas: BigInt(1000000),
         });
-
-        // Reset form fields
-        setPackageName("");
-        setPublisherId(window.our?.node || "");
-        setMetadataUrl("");
-        setMetadataHash("");
 
       } catch (error) {
         console.error(error);
