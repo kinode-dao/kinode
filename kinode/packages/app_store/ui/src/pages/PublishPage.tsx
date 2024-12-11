@@ -12,7 +12,7 @@ const NAME_INVALID = "Package name must contain only valid characters (a-z, 0-9,
 
 export default function PublishPage() {
   const { openConnectModal } = useConnectModal();
-  const { ourApps, fetchOurApps, downloads } = useAppsStore();
+  const { ourApps, fetchOurApps, downloads, fetchDownloadsForApp } = useAppsStore();
   const publicClient = usePublicClient();
 
   const { address, isConnected, isConnecting } = useAccount();
@@ -33,6 +33,13 @@ export default function PublishPage() {
   useEffect(() => {
     fetchOurApps();
   }, [fetchOurApps]);
+
+  useEffect(() => {
+    if (packageName && publisherId) {
+      const id = `${packageName}:${publisherId}`;
+      fetchDownloadsForApp(id);
+    }
+  }, [packageName, publisherId, fetchDownloadsForApp]);
 
   const validatePackageName = useCallback((name: string) => {
     // Allow lowercase letters, numbers, hyphens, and dots
@@ -69,9 +76,12 @@ export default function PublishPage() {
       // Check if code_hashes exist in metadata and is an object
       if (metadata.properties && metadata.properties.code_hashes && typeof metadata.properties.code_hashes === 'object') {
         const codeHashes = metadata.properties.code_hashes;
-        const missingHashes = Object.entries(codeHashes).filter(([version, hash]) =>
-          !downloads[`${packageName}:${publisherId}`]?.some(d => d.File?.name === `${hash}.zip`)
-        );
+        console.log('Available downloads:', downloads[`${packageName}:${publisherId}`]);
+
+        const missingHashes = Object.entries(codeHashes).filter(([version, hash]) => {
+          const hasDownload = downloads[`${packageName}:${publisherId}`]?.some(d => d.File?.name === `${hash}.zip`);
+          return !hasDownload;
+        });
 
         if (missingHashes.length > 0) {
           setMetadataError(`Missing local downloads for mirroring versions: ${missingHashes.map(([version]) => version).join(', ')}`);
