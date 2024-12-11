@@ -2,7 +2,6 @@ import React, { useState, useEffect, FormEvent, useCallback } from "react";
 import Loader from "../components/Loader";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
-import { sha256, toBytes } from "viem";
 import { useSignTypedData, useAccount, useChainId } from 'wagmi'
 import { KIMAP } from "../abis";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
@@ -51,63 +50,68 @@ function SetPassword({
 
       setTimeout(async () => {
         setLoading(true);
-        let hashed_password = sha256(toBytes(pw));
-        let owner = address;
-        let timestamp = Date.now();
+        argon2.hash({ pass: pw, salt: knsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
+          const hashed_password_hex = `0x${h.hashHex}` as `0x${string}`;
+          let owner = address;
+          let timestamp = Date.now();
 
-        const signature = await signTypedDataAsync({
-          domain: {
-            name: "Kimap",
-            version: "1",
-            chainId: chainId,
-            verifyingContract: KIMAP,
-          },
-          types: {
-            Boot: [
-              { name: 'username', type: 'string' },
-              { name: 'password_hash', type: 'bytes32' },
-              { name: 'timestamp', type: 'uint256' },
-              { name: 'direct', type: 'bool' },
-              { name: 'reset', type: 'bool' },
-              { name: 'chain_id', type: 'uint256' },
-            ],
-          },
-          primaryType: 'Boot',
-          message: {
-            username: knsName,
-            password_hash: hashed_password,
-            timestamp: BigInt(timestamp),
-            direct,
-            reset,
-            chain_id: BigInt(chainId),
-          },
-        })
-
-        try {
-          const result = await fetch("/boot", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-              password_hash: hashed_password,
-              reset,
+          const signature = await signTypedDataAsync({
+            domain: {
+              name: "Kimap",
+              version: "1",
+              chainId: chainId,
+              verifyingContract: KIMAP,
+            },
+            types: {
+              Boot: [
+                { name: 'username', type: 'string' },
+                { name: 'password_hash', type: 'bytes32' },
+                { name: 'timestamp', type: 'uint256' },
+                { name: 'direct', type: 'bool' },
+                { name: 'reset', type: 'bool' },
+                { name: 'chain_id', type: 'uint256' },
+              ],
+            },
+            primaryType: 'Boot',
+            message: {
               username: knsName,
+              password_hash: hashed_password_hex,
+              timestamp: BigInt(timestamp),
               direct,
-              owner,
-              timestamp,
-              signature,
-              chain_id: chainId,
-            }),
+              reset,
+              chain_id: BigInt(chainId),
+            },
           });
-          const base64String = await result.json();
 
-          downloadKeyfile(knsName, base64String);
-          redirectToHomepage();
+          try {
+            const result = await fetch("/boot", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({
+                password_hash: hashed_password_hex,
+                reset,
+                username: knsName,
+                direct,
+                owner,
+                timestamp,
+                signature,
+                chain_id: chainId,
+              }),
+            });
+            const base64String = await result.json();
 
-        } catch {
-          alert("There was an error setting your password, please try again.");
+            downloadKeyfile(knsName, base64String);
+            redirectToHomepage();
+
+          } catch {
+            alert("There was an error setting your password, please try again.");
+            setLoading(false);
+          }
+        }).catch(err => {
+          alert(String(err));
           setLoading(false);
-        }
+        });
       }, 500);
     },
     [direct, pw, pw2, reset, knsName]

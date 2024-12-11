@@ -171,7 +171,7 @@ impl SettingsState {
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 call_init!(initialize);
@@ -237,7 +237,7 @@ fn handle_request(
     http_server: &mut http::server::HttpServer,
 ) -> SettingsResponse {
     // source node is ALWAYS ourselves since networking is disabled
-    if source.process == "http_server:distro:sys" {
+    if source.process == "http-server:distro:sys" {
         // receive HTTP requests and websocket connection messages from our server
         let server_request = http_server
             .parse_request(body)

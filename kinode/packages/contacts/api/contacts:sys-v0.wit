@@ -32,5 +32,5 @@ interface contacts {
 
 world contacts-sys-v0 {
     import contacts;
-    include process-v0;
+    include process-v1;
 }

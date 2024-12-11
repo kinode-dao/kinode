@@ -1,8 +1,14 @@
-//#![feature(let_chains)]
-
 pub mod core;
 pub mod eth;
+mod fd_manager;
 mod http;
+mod kernel;
+mod kv;
+mod net;
+mod sqlite;
+mod state;
+mod timer;
+mod vfs;
 
 pub mod types {
     pub use crate::core;
@@ -14,11 +20,15 @@ pub mod types {
 pub use kinode::process;
 pub use kinode::process::standard as wit;
 
+// can remove in 1.0!
+
 wasmtime::component::bindgen!({
     path: "wit-v0.7.0",
     world: "process",
     async: true,
 });
+
+// can remove in 1.0!
 
 pub mod v0 {
     pub use kinode::process;
@@ -26,6 +36,16 @@ pub mod v0 {
     wasmtime::component::bindgen!({
         path: "wit-v0.8.0",
         world: "process-v0",
+        async: true,
+    });
+}
+
+pub mod v1 {
+    pub use kinode::process;
+    pub use kinode::process::standard as wit;
+    wasmtime::component::bindgen!({
+        path: "wit-v1.0.0",
+        world: "process-v1",
         async: true,
     });
 }

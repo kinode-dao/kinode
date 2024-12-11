@@ -33,5 +33,5 @@ interface homepage {
 
 world homepage-sys-v1 {
     import homepage;
-    include process-v0;
+    include process-v1;
 }

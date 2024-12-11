@@ -3,11 +3,12 @@ use clap::{arg, value_parser, Command};
 use lib::types::core::{
     CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
     KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
-    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
-    KERNEL_PROCESS_ID,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, ProcessVerbosity,
+    Request, KERNEL_PROCESS_ID,
 };
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -105,6 +106,14 @@ async fn main() {
 
     // detached determines whether terminal is interactive
     let detached = *matches.get_one::<bool>("detached").unwrap();
+
+    let process_verbosity = matches.get_one::<String>("process-verbosity").unwrap();
+    let process_verbosity: ProcessVerbosity = if process_verbosity.is_empty() {
+        HashMap::new()
+    } else {
+        serde_json::from_str(&process_verbosity)
+            .expect("failed to parse given --process-verbosity. Must be JSON Object with keys `ProcessId`s and values either `{\"U8\": <verbosity>}` or `\"Muted\"`")
+    };
 
     #[cfg(feature = "simulation-mode")]
     let (fake_node_name, fakechain_port) = (
@@ -259,13 +268,13 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http_server"), "distro", "sys"),
+            ProcessId::new(Some("http-server"), "distro", "sys"),
             http_server_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("http_client"), "distro", "sys"),
+            ProcessId::new(Some("http-client"), "distro", "sys"),
             http_client_sender,
             None,
             false,
@@ -307,7 +316,7 @@ async fn main() {
             false,
         ),
         (
-            ProcessId::new(Some("fd_manager"), "distro", "sys"),
+            ProcessId::new(Some("fd-manager"), "distro", "sys"),
             fd_manager_sender,
             None,
             false,
@@ -477,6 +486,7 @@ async fn main() {
             is_logging,
             max_log_size.copied(),
             number_log_files.copied(),
+            process_verbosity,
         ) => {
             match quit {
                 Ok(()) => {
@@ -726,6 +736,10 @@ fn build_command() -> Command {
         .arg(
             arg!(--"soft-ulimit" <SOFT_ULIMIT> "Enforce a static maximum number of file descriptors (default fetched from system)")
                 .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"process-verbosity" <JSON_STRING> "ProcessId: verbosity JSON object")
+                .default_value("")
         );
 
     #[cfg(feature = "simulation-mode")]
@@ -830,20 +844,37 @@ async fn login_with_password(
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {
-        ring::signature::KeyPair,
-        sha2::{Digest, Sha256},
-    };
+    use argon2::Argon2;
+    use ring::signature::KeyPair;
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(home_directory_path.join(".keys"))
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
+    let (username, _, _, _, _, _) =
+        serde_json::from_slice::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+            &disk_keyfile,
+        )
+        .or_else(|_| {
+            bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+                &disk_keyfile,
+            )
+        })
+        .unwrap();
 
-    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
+    let mut output_key_material = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(
+            password.as_bytes(),
+            username.as_bytes(),
+            &mut output_key_material,
+        )
+        .expect("password hashing failed");
+    let password_hash = hex::encode(output_key_material);
 
-    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash)
+    let password_hash_hex = format!("0x{}", password_hash);
+
+    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
         .expect("could not decode keyfile, password incorrect");
 
     let mut our = Identity {
@@ -861,6 +892,8 @@ async fn login_with_password(
             NodeRouting::Routers(k.routers.clone())
         },
     };
+
+    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
 
     register::assign_routing(
         &mut our,

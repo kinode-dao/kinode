@@ -102,18 +102,13 @@ pub enum HttpServerAction {
     WebSocketBind {
         path: String,
         authenticated: bool,
-        encrypted: bool,
         extension: bool,
     },
     /// SecureBind is the same as Bind, except that it forces new connections to be made
     /// from the unique subdomain of the process that bound the path. These are *always*
     /// authenticated. Since the subdomain is unique, it will require the user to be
     /// logged in separately to the general domain authentication.
-    WebSocketSecureBind {
-        path: String,
-        encrypted: bool,
-        extension: bool,
-    },
+    WebSocketSecureBind { path: String, extension: bool },
     /// Unbind a previously-bound WebSocket path
     WebSocketUnbind { path: String },
     /// Processes will RECEIVE this kind of request when a client connects to them.
@@ -184,21 +179,17 @@ pub enum HttpServerError {
 }
 
 /// Structure sent from client websocket to this server upon opening a new connection.
-/// After this is sent, depending on the `encrypted` flag, the channel will either be
-/// open to send and receive plaintext messages or messages encrypted with a symmetric
-/// key derived from the JWT.
+/// After this is sent the channel will be open to send and receive plaintext messages.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegister {
     pub auth_token: String,
     pub target_process: String,
-    pub encrypted: bool, // TODO symmetric key exchange here if true
 }
 
 /// Structure sent from this server to client websocket upon opening a new connection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegisterResponse {
     pub channel_id: u32,
-    // TODO symmetric key exchange here
 }
 
 #[derive(Debug, Serialize, Deserialize)]
