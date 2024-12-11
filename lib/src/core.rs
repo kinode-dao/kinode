@@ -33,25 +33,25 @@ pub type Context = Vec<u8>;
 pub type NodeId = String; // KNS domain name
 
 /// Determine if the given `input` string is Kimap-safe or not.
-/// A Kimap-safe string contains only alphanumeric characters, `-`, and `.`.
+/// A Kimap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
 /// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
 /// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
 /// `is_kimap_safe()` allows `.`s.
 /// Use `is_kimap_safe_no_dots()` to disallow `.`s.
 pub fn is_kimap_safe(input: &str) -> bool {
-    let expression = r"^[a-zA-Z0-9\-.]+$";
+    let expression = r"^[a-z0-9\-.]+$";
     let re = regex::Regex::new(expression).unwrap();
     re.is_match(input)
 }
 
 /// Determine if the given `input` string is Kimap-safe or not.
-/// A Kimap-safe string contains only alphanumeric characters, `-`, and `.`.
+/// A Kimap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
 /// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
 /// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
 /// `is_kimap_safe_no_dots()` disallows `.`s.
 /// Use `is_kimap_safe()` to allow `.`s.
 pub fn is_kimap_safe_no_dots(input: &str) -> bool {
-    let expression = r"^[a-zA-Z0-9\-]+$";
+    let expression = r"^[a-z0-9\-]+$";
     let re = regex::Regex::new(expression).unwrap();
     re.is_match(input)
 }
@@ -495,13 +495,13 @@ pub enum AddressParseError {
     MissingNodeId,
     #[error("Missing field in ProcessId string")]
     MissingField,
-    #[error("Process name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    #[error("Process name ({0}) can only contain a-z, 0-9, `-`")]
     ProcessNameNotKimapSafe(String),
-    #[error("Package name ({0}) can only contain a-z, A-Z, 0-9, `-`")]
+    #[error("Package name ({0}) can only contain a-z, 0-9, `-`")]
     PackageNameNotKimapSafe(String),
-    #[error("Node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    #[error("Node ({0}) can only contain a-z, 0-9, `-`, `.`")]
     NodeNotKimapSafe(String),
-    #[error("Publisher node ({0}) can only contain a-z, A-Z, 0-9, `-`, `.`")]
+    #[error("Publisher node ({0}) can only contain a-z, 0-9, `-`, `.`")]
     PublisherNodeNotKimapSafe(String),
     #[error("Other: {0}")]
     Other(String),
