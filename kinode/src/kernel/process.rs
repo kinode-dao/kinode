@@ -138,7 +138,8 @@ async fn make_table_and_wasi(
     )
     .await
     {
-        if let Ok(wasi) = wasi.preopened_dir(tmp_path, tmp_path, DirPerms::all(), FilePerms::all()) {
+        if let Ok(wasi) = wasi.preopened_dir(tmp_path, tmp_path, DirPerms::all(), FilePerms::all())
+        {
             wasi.env("TEMP_DIR", tmp_path);
         }
     }
@@ -173,20 +174,19 @@ async fn make_component(
         },
     );
 
-    let bindings =
-        match Process::instantiate_async(&mut store, &component, &linker).await {
-            Ok(b) => b,
-            Err(e) => {
-                t::Printout::new(
-                    0,
-                    t::KERNEL_PROCESS_ID.clone(),
-                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
-                )
-                .send(&send_to_terminal)
-                .await;
-                return Err(e);
-            }
-        };
+    let bindings = match Process::instantiate_async(&mut store, &component, &linker).await {
+        Ok(b) => b,
+        Err(e) => {
+            t::Printout::new(
+                0,
+                t::KERNEL_PROCESS_ID.clone(),
+                format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+            )
+            .send(&send_to_terminal)
+            .await;
+            return Err(e);
+        }
+    };
 
     Ok((bindings, store, wasi_stderr))
 }
@@ -218,20 +218,19 @@ async fn make_component_v0(
         },
     );
 
-    let bindings =
-        match ProcessV0::instantiate_async(&mut store, &component, &linker).await {
-            Ok(b) => b,
-            Err(e) => {
-                t::Printout::new(
-                    0,
-                    t::KERNEL_PROCESS_ID.clone(),
-                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
-                )
-                .send(&send_to_terminal)
-                .await;
-                return Err(e);
-            }
-        };
+    let bindings = match ProcessV0::instantiate_async(&mut store, &component, &linker).await {
+        Ok(b) => b,
+        Err(e) => {
+            t::Printout::new(
+                0,
+                t::KERNEL_PROCESS_ID.clone(),
+                format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+            )
+            .send(&send_to_terminal)
+            .await;
+            return Err(e);
+        }
+    };
 
     Ok((bindings, store, wasi_stderr))
 }
@@ -262,20 +261,19 @@ async fn make_component_v1(
         },
     );
 
-    let bindings =
-        match ProcessV1::instantiate_async(&mut store, &component, &linker).await {
-            Ok(b) => b,
-            Err(e) => {
-                t::Printout::new(
-                    0,
-                    t::KERNEL_PROCESS_ID.clone(),
-                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
-                )
-                .send(&send_to_terminal)
-                .await;
-                return Err(e);
-            }
-        };
+    let bindings = match ProcessV1::instantiate_async(&mut store, &component, &linker).await {
+        Ok(b) => b,
+        Err(e) => {
+            t::Printout::new(
+                0,
+                t::KERNEL_PROCESS_ID.clone(),
+                format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+            )
+            .send(&send_to_terminal)
+            .await;
+            return Err(e);
+        }
+    };
 
     Ok((bindings, store, wasi_stderr))
 }
