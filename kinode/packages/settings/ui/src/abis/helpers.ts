@@ -1,40 +1,107 @@
-import { encodeFunctionData, encodePacked, stringToHex } from "viem";
-import { kimapAbi, KINO_ACCOUNT_IMPL } from "./";
+import { encodeFunctionData, encodePacked, stringToHex, bytesToHex } from "viem";
+import { kimapAbi } from "./";
+import sha3 from 'js-sha3';
+import { toUnicode } from 'idna-uts46-hx';
 
-// GETs to kinode app
-export async function fetchNode(hash: string) {
-    const response = await fetch(`/explorer:kimap-explorer:doria.kino/api/node/${hash}`);
-    return await response.json();
-}
+export function noteFunction(label: string, value: string) {
+    console.log(label, value);
 
-export async function fetchNodeInfo(hash: string) {
-    const response = await fetch(`/explorer:kimap-explorer:doria.kino/api/info/${hash}`);
-    return await response.json();
-}
+    if (label === "~ip") {
+        value = bytesToHex(ipToBytes(value));
+    } else if (label === "~ws-port" || label === "~tcp-port") {
+        value = bytesToHex(portToBytes(parseInt(value)));
+    } else if (label === "~routers") {
+        value = encodeRouters(value.split(','));
+    }
 
-
-// chain interaction encoding functions
-export function mintFunction(our_address: `0x${string}`, nodename: string) {
-    return encodeFunctionData({
-        abi: kimapAbi,
-        functionName: 'mint',
-        args: [
-            our_address,
-            encodePacked(["bytes"], [stringToHex(nodename)]),
-            "0x", // empty initial calldata
-            "0x", // empty erc721 details
-            KINO_ACCOUNT_IMPL,
-        ]
-    })
-}
-
-export function noteFunction(key: string, value: string) {
     return encodeFunctionData({
         abi: kimapAbi,
         functionName: 'note',
         args: [
-            encodePacked(["bytes"], [stringToHex(key)]),
-            encodePacked(["bytes"], [stringToHex(value)]),
+            encodePacked(["bytes"], [stringToHex(label)]),
+            encodePacked(["bytes"], [value.startsWith('0x') ? value as `0x${string}` : stringToHex(value)]),
         ]
     });
+}
+
+const encodeRouters = (routers: string[]): `0x${string}` => {
+    const hashedRouters = routers.map(router => kinohash(router).slice(2)); // Remove '0x' prefix
+    return `0x${hashedRouters.join('')}`;
+};
+
+export const kinohash = (inputName: string): `0x${string}` =>
+    ('0x' + normalize(inputName)
+        .split('.')
+        .reverse()
+        .reduce(reducer, '00'.repeat(32))) as `0x${string}`;
+
+const reducer = (node: string, label: string): string =>
+    sha3.keccak_256(Buffer.from(node + sha3.keccak_256(label), 'hex'));
+
+export const normalize = (name: string): string => {
+    const tilde = name.startsWith('~');
+    const clean = tilde ? name.slice(1) : name;
+    const normalized = clean ? unicode(clean) : clean;
+    return tilde ? '~' + normalized : normalized;
+};
+
+const unicode = (name: string): string =>
+    toUnicode(name, { useSTD3ASCIIRules: true })
+
+export function bytesToIp(bytes: Uint8Array): string {
+    if (bytes.length !== 16) {
+        throw new Error('Invalid byte length for IP address');
+    }
+
+    const view = new DataView(bytes.buffer);
+    const ipNum = view.getBigUint64(0) * BigInt(2 ** 64) + view.getBigUint64(8);
+
+    if (ipNum < BigInt(2 ** 32)) {
+        // IPv4
+        return new Uint8Array(bytes.slice(12)).join('.');
+    } else {
+        // IPv6
+        const parts: string[] = [];
+        for (let i = 0; i < 8; i++) {
+            parts.push(view.getUint16(i * 2).toString(16));
+        }
+        return parts.join(':');
+    }
+}
+
+export function ipToBytes(ip: string): Uint8Array {
+    if (ip.includes(':')) {
+        // IPv6: Create a 16-byte array
+        const bytes = new Uint8Array(16);
+        const view = new DataView(bytes.buffer);
+        const parts = ip.split(':');
+        for (let i = 0; i < 8; i++) {
+            view.setUint16(i * 2, parseInt(parts[i] || '0', 16));
+        }
+        return bytes;
+    } else {
+        // IPv4: Create a 4-byte array
+        const bytes = new Uint8Array(4);
+        const parts = ip.split('.');
+        for (let i = 0; i < 4; i++) {
+            bytes[i] = parseInt(parts[i], 10);
+        }
+        return bytes;
+    }
+}
+
+export function bytesToPort(bytes: Uint8Array): number {
+    if (bytes.length !== 2) {
+        throw new Error('Invalid byte length for port');
+    }
+    return new DataView(bytes.buffer).getUint16(0);
+}
+
+export function portToBytes(port: number): Uint8Array {
+    if (port < 0 || port > 65535) {
+        throw new Error('Invalid port number');
+    }
+    const bytes = new Uint8Array(2);
+    new DataView(bytes.buffer).setUint16(0, port);
+    return bytes;
 }

@@ -48,6 +48,7 @@
         "node-info pings pings"
         "eth-rpc-providers eth-rpc-providers eth-rpc-settings"
         "kernel kernel kernel"
+        "id-onchain id-onchain id-onchain"
         "kinode-css kinode-css kinode-css";
       padding: 20px;
       max-width: 960px;
@@ -62,6 +63,11 @@
     p#peer-pki-response,
     p#peer-ping-response {
       white-space: pre-wrap;
+    }
+
+    article#id-onchain {
+      grid-area: id-onchain;
+      word-wrap: break-word;
     }
 
     article#node-info {
@@ -152,12 +158,17 @@
       padding: 3px 6px;
       margin: 10px;
     }
+
+    button.add-note-button {
+      padding: 3px 6px;
+      font-size: 0.8em;
+      margin-left: 6px;
+    }
   </style>
 </head>
 
 <body>
   <div id="root"></div>
-  <script type="module" src="/src/logic.js"></script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

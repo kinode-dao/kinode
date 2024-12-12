@@ -1,6 +1,6 @@
 import { parseAbi } from "viem";
 
-export { fetchNode, fetchNodeInfo, mintFunction, noteFunction } from "./helpers";
+export { noteFunction } from "./helpers";
 
 export const KIMAP: `0x${string}` = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";

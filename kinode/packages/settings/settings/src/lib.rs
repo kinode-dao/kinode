@@ -1,11 +1,10 @@
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, homepage, http, kernel_types, net, println, Address,
-    Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError,
+    await_message, call_init, eth, get_blob, homepage, http, kernel_types, kimap, net, println,
+    Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError,
     SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-extern crate base64;
 
 const ICON: &str = include_str!("icon");
 
@@ -49,6 +48,13 @@ struct SettingsState {
     pub eth_rpc_access_settings: Option<eth::AccessSettings>,
     pub process_map: Option<kernel_types::ProcessMap>,
     pub stylesheet: Option<String>,
+    pub our_tba: eth::Address,
+    pub our_owner: eth::Address,
+    pub net_key: Option<eth::Bytes>,  // always
+    pub routers: Option<eth::Bytes>,  // if indirect
+    pub ip: Option<eth::Bytes>,       // if direct
+    pub ws_port: Option<eth::Bytes>,  // sometimes, if direct
+    pub tcp_port: Option<eth::Bytes>, // sometimes, if direct
 }
 
 impl SettingsState {
@@ -61,6 +67,13 @@ impl SettingsState {
             eth_rpc_access_settings: None,
             process_map: None,
             stylesheet: None,
+            our_tba: eth::Address::ZERO,
+            our_owner: eth::Address::ZERO,
+            net_key: None,
+            routers: None,
+            ip: None,
+            ws_port: None,
+            tcp_port: None,
         }
     }
 
@@ -164,6 +177,34 @@ impl SettingsState {
         {
             self.stylesheet = Some(String::from_utf8_lossy(&bytes).to_string());
         }
+
+        // kimap
+        let kimap = kimap::Kimap::default(5);
+        let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
+            return Err(anyhow::anyhow!("failed to get kimap node"));
+        };
+        self.our_tba = tba;
+        self.our_owner = owner;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~net-key.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get net-key"));
+        };
+        self.net_key = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~routers.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get routers"));
+        };
+        self.routers = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ip.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get ip"));
+        };
+        self.ip = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ws-port.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get ws-port"));
+        };
+        self.ws_port = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~tcp-port.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get tcp-port"));
+        };
+        self.tcp_port = bytes;
 
         Ok(())
     }
