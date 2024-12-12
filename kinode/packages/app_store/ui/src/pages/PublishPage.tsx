@@ -247,14 +247,20 @@ export default function PublishPage() {
       )}
 
       {isConfirming ? (
-        <div className="message info">Publishing package...</div>
+        <div className="message info">
+          <div className="loading-spinner"></div>
+          <span>Publishing package...</span>
+        </div>
       ) : !address || !isConnected ? (
-        <>
+        <div className="connect-wallet">
           <h4>Please connect your wallet to publish a package</h4>
           <ConnectButton />
-        </>
+        </div>
       ) : isConnecting ? (
-        <div className="message info">Approve connection in your wallet</div>
+        <div className="message info">
+          <div className="loading-spinner"></div>
+          <span>Approve connection in your wallet</span>
+        </div>
       ) : (
         <form className="publish-form" onSubmit={publishPackage}>
           <div className="form-group">
@@ -289,8 +295,15 @@ export default function PublishPage() {
               placeholder="Calculated automatically from metadata URL"
             />
           </div>
-          <button type="submit" disabled={isConfirming || nameValidity !== null}>
-            {isConfirming ? 'Publishing...' : 'Publish'}
+          <button type="submit" disabled={isConfirming || nameValidity !== null || Boolean(metadataError)}>
+            {isConfirming ? (
+              <>
+                <div className="loading-spinner small"></div>
+                <span>Publishing...</span>
+              </>
+            ) : (
+              'Publish'
+            )}
           </button>
         </form>
       )}
@@ -309,21 +322,24 @@ export default function PublishPage() {
       <div className="my-packages">
         <h2>Packages You Own</h2>
         {Object.keys(ourApps).length > 0 ? (
-          <ul>
+          <ul className="package-list">
             {Object.values(ourApps).map((app) => (
               <li key={`${app.package_id.package_name}:${app.package_id.publisher_node}`}>
                 <Link to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`} className="app-name">
-                  {app.metadata?.name || app.package_id.package_name}
+                  {app.metadata?.image && (
+                    <img src={app.metadata.image} alt="" className="package-icon" />
+                  )}
+                  <span>{app.metadata?.name || app.package_id.package_name}</span>
                 </Link>
 
-                <button onClick={() => unpublishPackage(app.package_id.package_name, app.package_id.publisher_node)}>
+                <button onClick={() => unpublishPackage(app.package_id.package_name, app.package_id.publisher_node)} className="danger">
                   Unpublish
                 </button>
               </li>
             ))}
           </ul>
         ) : (
-          <p>No packages published</p>
+          <p className="no-packages">No packages published</p>
         )}
       </div>
     </div>
