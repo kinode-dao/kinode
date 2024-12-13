@@ -131,7 +131,6 @@ The distro userspace packages are:
 - `chess:sys`
 - `contacts:sys`
 - `homepage:sys`
-- `kino-updates:sys`
 - `kns-indexer:sys`
 - `settings:sys`
 - `terminal:sys`
