@@ -6,7 +6,6 @@ use std::{
     sync::Arc,
 };
 use tokio::{fs, sync::Mutex, task::JoinHandle};
-use wasi_common::sync::Dir;
 use wasmtime::{
     component::{Component, Linker, ResourceTable as Table},
     Engine, Store,
@@ -139,11 +138,9 @@ async fn make_table_and_wasi(
     )
     .await
     {
-        if let Ok(wasi_tempdir) =
-            Dir::open_ambient_dir(tmp_path, wasi_common::sync::ambient_authority())
+        if let Ok(wasi) = wasi.preopened_dir(tmp_path, tmp_path, DirPerms::all(), FilePerms::all())
         {
-            wasi.preopened_dir(wasi_tempdir, DirPerms::all(), FilePerms::all(), tmp_path)
-                .env("TEMP_DIR", tmp_path);
+            wasi.env("TEMP_DIR", tmp_path);
         }
     }
 
@@ -163,7 +160,7 @@ async fn make_component(
     let mut linker = Linker::new(&engine);
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
     let (table, wasi, wasi_stderr) = make_table_and_wasi(home_directory_path, &process_state).await;
-    wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
+    wasmtime_wasi::add_to_linker_async(&mut linker).unwrap();
 
     let our_process_id = process_state.metadata.our.process.clone();
     let send_to_terminal = process_state.send_to_terminal.clone();
@@ -177,20 +174,19 @@ async fn make_component(
         },
     );
 
-    let (bindings, _bindings) =
-        match Process::instantiate_async(&mut store, &component, &linker).await {
-            Ok(b) => b,
-            Err(e) => {
-                t::Printout::new(
-                    0,
-                    t::KERNEL_PROCESS_ID.clone(),
-                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
-                )
-                .send(&send_to_terminal)
-                .await;
-                return Err(e);
-            }
-        };
+    let bindings = match Process::instantiate_async(&mut store, &component, &linker).await {
+        Ok(b) => b,
+        Err(e) => {
+            t::Printout::new(
+                0,
+                t::KERNEL_PROCESS_ID.clone(),
+                format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+            )
+            .send(&send_to_terminal)
+            .await;
+            return Err(e);
+        }
+    };
 
     Ok((bindings, store, wasi_stderr))
 }
@@ -208,7 +204,7 @@ async fn make_component_v0(
     let mut linker = Linker::new(&engine);
     ProcessV0::add_to_linker(&mut linker, |state: &mut ProcessWasiV0| state).unwrap();
     let (table, wasi, wasi_stderr) = make_table_and_wasi(home_directory_path, &process_state).await;
-    wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
+    wasmtime_wasi::add_to_linker_async(&mut linker).unwrap();
 
     let our_process_id = process_state.metadata.our.process.clone();
     let send_to_terminal = process_state.send_to_terminal.clone();
@@ -222,20 +218,19 @@ async fn make_component_v0(
         },
     );
 
-    let (bindings, _bindings) =
-        match ProcessV0::instantiate_async(&mut store, &component, &linker).await {
-            Ok(b) => b,
-            Err(e) => {
-                t::Printout::new(
-                    0,
-                    t::KERNEL_PROCESS_ID.clone(),
-                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
-                )
-                .send(&send_to_terminal)
-                .await;
-                return Err(e);
-            }
-        };
+    let bindings = match ProcessV0::instantiate_async(&mut store, &component, &linker).await {
+        Ok(b) => b,
+        Err(e) => {
+            t::Printout::new(
+                0,
+                t::KERNEL_PROCESS_ID.clone(),
+                format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+            )
+            .send(&send_to_terminal)
+            .await;
+            return Err(e);
+        }
+    };
 
     Ok((bindings, store, wasi_stderr))
 }
@@ -252,7 +247,7 @@ async fn make_component_v1(
     let mut linker = Linker::new(&engine);
     ProcessV1::add_to_linker(&mut linker, |state: &mut ProcessWasiV1| state).unwrap();
     let (table, wasi, wasi_stderr) = make_table_and_wasi(home_directory_path, &process_state).await;
-    wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
+    wasmtime_wasi::add_to_linker_async(&mut linker).unwrap();
 
     let our_process_id = process_state.metadata.our.process.clone();
     let send_to_terminal = process_state.send_to_terminal.clone();
@@ -266,20 +261,19 @@ async fn make_component_v1(
         },
     );
 
-    let (bindings, _bindings) =
-        match ProcessV1::instantiate_async(&mut store, &component, &linker).await {
-            Ok(b) => b,
-            Err(e) => {
-                t::Printout::new(
-                    0,
-                    t::KERNEL_PROCESS_ID.clone(),
-                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
-                )
-                .send(&send_to_terminal)
-                .await;
-                return Err(e);
-            }
-        };
+    let bindings = match ProcessV1::instantiate_async(&mut store, &component, &linker).await {
+        Ok(b) => b,
+        Err(e) => {
+            t::Printout::new(
+                0,
+                t::KERNEL_PROCESS_ID.clone(),
+                format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+            )
+            .send(&send_to_terminal)
+            .await;
+            return Err(e);
+        }
+    };
 
     Ok((bindings, store, wasi_stderr))
 }
@@ -375,13 +369,14 @@ pub async fn make_process_loop(
                     } else {
                         format!("{}", e.root_cause())
                     };
-                    t::Printout::new(
-                        0,
-                        t::KERNEL_PROCESS_ID.clone(),
-                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{output}"),
-                    )
-                    .send(&send_to_terminal)
-                    .await;
+                    let error_text = if output.is_empty() {
+                        format!("\x1b[38;5;196mprocess {our} ended with error\x1b[0m")
+                    } else {
+                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{output}")
+                    };
+                    t::Printout::new(0, t::KERNEL_PROCESS_ID.clone(), error_text)
+                        .send(&send_to_terminal)
+                        .await;
                 }
             };
 
