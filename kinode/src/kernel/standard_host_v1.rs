@@ -754,10 +754,7 @@ impl StandardHost for process::ProcessWasiV1 {
                 .send(t::CapMessage::Add {
                     on: t::ProcessId::de_wit_v1(process_id),
                     caps: vec![t::Capability::new(
-                        (
-                            self.process.metadata.our.node.clone(),
-                            &new_process_id,
-                        ),
+                        (self.process.metadata.our.node.clone(), &new_process_id),
                         params,
                     )],
                     responder: Some(tx),

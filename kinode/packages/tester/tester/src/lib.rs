@@ -147,7 +147,10 @@ fn handle_request(
                         .iter()
                         .map(|cap| {
                             serde_json::from_str::<(ProcessId, String)>(cap).unwrap_or_else(|_| {
-                                (cap.parse::<ProcessId>().unwrap(), "\"messaging\"".to_string())
+                                (
+                                    cap.parse::<ProcessId>().unwrap(),
+                                    "\"messaging\"".to_string(),
+                                )
                             })
                         })
                         .collect(),
