@@ -236,6 +236,9 @@ interface downloads {
         blob-not-found,
         vfs-error,
         handling-error(string),
+        timeout,
+        invalid-manifest,
+        offline,
     }
 
     /// Notification that a download is complete
