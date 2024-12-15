@@ -243,17 +243,11 @@ fn initialize(our: Address) {
         .unwrap();
 
     // populate state
+    // this will add ourselves to the homepage
     if let Err(e) = state.fetch() {
         println!("failed to fetch settings: {e}");
+        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
     }
-
-    // add ourselves to the homepage
-    homepage::add_to_homepage(
-        "Settings",
-        Some(ICON),
-        Some("/"),
-        Some(&make_widget(&state)),
-    );
 
     main_loop(&mut state, &mut http_server);
 }
@@ -518,7 +512,7 @@ fn make_widget(state: &SettingsState) -> String {
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="stylesheet" href="/kinode.css">
     </head>
-    <body style="margin: 0; padding: 8px; width: 100%; height: 100%;">
+    <body style="margin: 0; padding: 8px; width: 100%; height: 100%; padding-bottom: 30px;">
         <article id="onchain-id">
             <h3>{}</h3>
             <details style="word-wrap: break-word;">

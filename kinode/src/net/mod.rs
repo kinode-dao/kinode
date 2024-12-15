@@ -198,7 +198,11 @@ async fn handle_local_request(
                     None,
                 ),
                 NetAction::GetPeer(peer) => (
-                    NetResponse::Peer(data.pki.get(&peer).map(|p| p.clone())),
+                    if peer == ext.our.name {
+                        NetResponse::Peer(Some((*ext.our).clone()))
+                    } else {
+                        NetResponse::Peer(data.pki.get(&peer).map(|p| p.clone()))
+                    },
                     None,
                 ),
                 NetAction::GetDiagnostics => {
