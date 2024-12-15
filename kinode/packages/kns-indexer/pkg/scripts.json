@@ -9,7 +9,7 @@
         "grant_capabilities": [
             "eth:distro:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     },
     "state.wasm": {
         "root": false,
@@ -21,6 +21,6 @@
         "grant_capabilities": [
             "kns-indexer:kns-indexer:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     }
 }

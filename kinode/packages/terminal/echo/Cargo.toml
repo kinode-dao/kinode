@@ -7,7 +7,7 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "0666d2c" }
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "2a526c8" }
 wit-bindgen = "0.36.0"
 
 [lib]

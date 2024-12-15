@@ -3966,7 +3966,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.10.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=0666d2c#0666d2c1883583370122c118e1a9ddecba1dbbbe"
+source = "git+https://github.com/kinode-dao/process_lib?rev=2a526c8#2a526c8ab827db27e51b1475f46c2765afed77ef"
 dependencies = [
  "alloy 0.1.4",
  "alloy-primitives 0.7.7",
@@ -3982,7 +3982,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "url",
- "wit-bindgen 0.24.0",
+ "wit-bindgen 0.36.0",
 ]
 
 [[package]]
