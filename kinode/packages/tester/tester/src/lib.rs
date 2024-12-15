@@ -147,13 +147,17 @@ fn handle_request(
                         .iter()
                         .map(|cap| {
                             serde_json::from_str::<(ProcessId, String)>(cap).unwrap_or_else(|_| {
-                                (cap.parse::<ProcessId>().unwrap(), "messaging".to_string())
+                                (
+                                    cap.parse::<ProcessId>().unwrap(),
+                                    "\"messaging\"".to_string(),
+                                )
                             })
                         })
                         .collect(),
                 ))
             })
             .unwrap_or((vec![], vec![]));
+        println!("tester: request_caps: {request_caps:?}\ntester: grant_caps: {grant_caps:?}");
         request_caps.extend(our_capabilities());
         let child_process_id = match spawn(
             None,

@@ -7,7 +7,7 @@
             "terminal:terminal:sys"
         ],
         "grant_capabilities": [],
-        "wit_version": 0
+        "wit_version": 1
     },
     "cat.wasm": {
         "root": false,
@@ -23,7 +23,7 @@
             }
         ],
         "grant_capabilities": [],
-        "wit_version": 0
+        "wit_version": 1
     },
     "echo.wasm": {
         "root": false,
@@ -31,7 +31,7 @@
         "request_networking": false,
         "request_capabilities": [],
         "grant_capabilities": [],
-        "wit_version": 0
+        "wit_version": 1
     },
     "help.wasm": {
         "root": false,
@@ -39,7 +39,7 @@
         "request_networking": false,
         "request_capabilities": [],
         "grant_capabilities": [],
-        "wit_version": 0
+        "wit_version": 1
     },
     "hi.wasm": {
         "root": false,
@@ -51,7 +51,7 @@
         "grant_capabilities": [
             "net:distro:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     },
     "kfetch.wasm": {
         "root": true,
@@ -62,19 +62,19 @@
             "kernel:distro:sys",
             "net:distro:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     },
     "kill.wasm": {
         "root": true,
         "public": false,
         "request_networking": false,
-        "wit_version": 0
+        "wit_version": 1
     },
     "m.wasm": {
         "root": true,
         "public": true,
         "request_networking": true,
-        "wit_version": 0
+        "wit_version": 1
     },
     "namehash-to-name.wasm": {
         "root": false,
@@ -86,7 +86,7 @@
         "grant_capabilities": [
             "net:distro:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     },
     "net-diagnostics.wasm": {
         "root": false,
@@ -98,7 +98,7 @@
         "grant_capabilities": [
             "net:distro:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     },
     "peer.wasm": {
         "root": false,
@@ -110,7 +110,7 @@
         "grant_capabilities": [
             "net:distro:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     },
     "peers.wasm": {
         "root": false,
@@ -122,12 +122,12 @@
         "grant_capabilities": [
             "net:distro:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     },
     "top.wasm": {
         "root": true,
         "public": false,
         "request_networking": false,
-        "wit_version": 0
+        "wit_version": 1
     }
 }
