@@ -206,6 +206,9 @@ impl SettingsState {
         };
         self.tcp_port = bytes;
 
+        // update homepage widget
+        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), Some(&make_widget(self)));
+
         Ok(())
     }
 }
@@ -217,9 +220,6 @@ wit_bindgen::generate!({
 
 call_init!(initialize);
 fn initialize(our: Address) {
-    // add ourselves to the homepage
-    homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
-
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
 
@@ -237,6 +237,23 @@ fn initialize(our: Address) {
         .unwrap();
     http_server.secure_bind_http_path("/ask").unwrap();
     http_server.secure_bind_ws_path("/").unwrap();
+    // insecure to allow widget to call refresh
+    http_server
+        .bind_http_path("/refresh", http::server::HttpBindingConfig::default())
+        .unwrap();
+
+    // populate state
+    if let Err(e) = state.fetch() {
+        println!("failed to fetch settings: {e}");
+    }
+
+    // add ourselves to the homepage
+    homepage::add_to_homepage(
+        "Settings",
+        Some(ICON),
+        Some("/"),
+        Some(&make_widget(&state)),
+    );
 
     main_loop(&mut state, &mut http_server);
 }
@@ -322,6 +339,12 @@ fn handle_http_request(
     state: &mut SettingsState,
     http_request: &http::server::IncomingHttpRequest,
 ) -> anyhow::Result<(http::server::HttpResponse, Option<LazyLoadBlob>)> {
+    if let Ok(path) = http_request.path() {
+        if &path == "/refresh" {
+            state.fetch()?;
+            return Ok((http::server::HttpResponse::new(http::StatusCode::OK), None));
+        }
+    }
     match http_request.method()?.as_str() {
         "GET" => {
             state.fetch()?;
@@ -484,4 +507,135 @@ fn handle_settings_request(
 
     state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
     SettingsResponse::Ok(None)
+}
+
+fn make_widget(state: &SettingsState) -> String {
+    let owner_string = state.our_owner.to_string();
+    let tba_string = state.our_tba.to_string();
+    return format!(
+        r#"<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/kinode.css">
+    </head>
+    <body style="margin: 0; padding: 8px; width: 100%; height: 100%;">
+        <article id="onchain-id">
+            <h3>{}</h3>
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{} processes running</p></summary>
+                <ul style="margin: 8px; list-style-type: none;">
+                    {}
+                </ul>
+            </details>
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{} RPC providers</p></summary>
+                <ul style="margin: 8px; list-style-type: none;">
+                    {}
+                </ul>
+            </details>
+        </article>
+
+        <br />
+
+        <article id="addrs">
+            <p>owner: <a href="https://etherscan.io/address/{}#multichain-portfolio" target="_blank">{}</a></p>
+            <p>token-bound account: <a href="https://etherscan.io/address/{}#multichain-portfolio" target="_blank">{}</a></p>
+        </article>
+
+        <br />
+
+        <article id="net">
+            <p style="white-space: pre;">{}</p>
+        </article>
+
+        <br />
+
+        <button id="refresh" onclick="fetch('/settings:settings:sys/refresh').then(() => setTimeout(() => window.location.reload(), 1000))" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 24px;">⟳</button>
+
+        <br />
+
+        <a href="/settings:settings:sys/" target="_blank">Adjust Settings</a>
+    </body>
+    </html>"#,
+        state.our.node(),
+        state.process_map.as_ref().map(|m| m.len()).unwrap_or(0),
+        state
+            .process_map
+            .as_ref()
+            .map(|m| {
+                let mut v = m
+                    .keys()
+                    .map(|pid| format!("<li>{}</li>", pid))
+                    .collect::<Vec<_>>();
+                v.sort();
+                v.join("\n")
+            })
+            .unwrap_or_default(),
+        state
+            .eth_rpc_providers
+            .as_ref()
+            .map(|m| m.len())
+            .unwrap_or(0),
+        state
+            .eth_rpc_providers
+            .as_ref()
+            .map(|m| {
+                let mut v = m
+                    .iter()
+                    .map(|config| {
+                        format!(
+                            "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
+                            match &config.provider {
+                                eth::NodeOrRpcUrl::Node {
+                                    kns_update,
+                                    use_as_provider,
+                                } => {
+                                    format!(
+                                        "{} {}",
+                                        if *use_as_provider { "✅" } else { "❌" },
+                                        kns_update.name,
+                                    )
+                                }
+                                eth::NodeOrRpcUrl::RpcUrl(url) => url.to_owned(),
+                            },
+                            config.chain_id
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                v.sort();
+                v.join("\n")
+            })
+            .unwrap_or_default(),
+        owner_string,
+        format!(
+            "{}..{}",
+            &owner_string[..4],
+            &owner_string[owner_string.len() - 4..]
+        ),
+        tba_string,
+        format!(
+            "{}..{}",
+            &tba_string[..4],
+            &tba_string[tba_string.len() - 4..]
+        ),
+        match &state.identity.as_ref().expect("identity not set!!").routing {
+            net::NodeRouting::Direct { ports, .. } => {
+                format!(
+                    "direct node:\n{}",
+                    ports
+                        .iter()
+                        .map(|p| format!("{}: {}", p.0, p.1))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            }
+            net::NodeRouting::Routers(routers) => {
+                format!(
+                    "indirect node with {} routers:\n{}",
+                    routers.len(),
+                    routers.join("\n")
+                )
+            }
+        },
+    );
 }
