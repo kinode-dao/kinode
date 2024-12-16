@@ -22,25 +22,41 @@ interface main {
 
     /// Local requests that can be made to the App Store
     variant local-request {
-        /// Request to add a new package to app-store. Includes zip and an optional onchain-metadata.
-        /// This is used by kit start
+        /// Request to add a new package to app-store.
+        ///
+        /// Used by kit start-package.
+        ///
+        /// lazy-load-blob: required; the zipped package to be added.
         new-package(new-package-request),
-        /// Request to install a package
+        /// Request to install a package.
+        ///
+        /// lazy-load-blob: none.
         install(install-package-request),
-        /// Request to uninstall a package
+        /// Request to uninstall a package.
+        ///
+        /// lazy-load-blob: none.
         uninstall(package-id),
         /// Request to list all available APIs
+        ///
+        /// lazy-load-blob: none.
         apis,
         /// Request to get a specific API
+        ///
+        /// lazy-load-blob: none.
         get-api(package-id),
     }
 
     /// Local responses from the App Store
     variant local-response {
+        /// lazy-load-blob: none.
         new-package-response(new-package-response),
+        /// lazy-load-blob: none.
         install-response(install-response),
+        /// lazy-load-blob: none.
         uninstall-response(uninstall-response),
+        /// lazy-load-blob: none.
         apis-response(apis-response),
+        /// lazy-load-blob: on success; the WIT API that was requested.
         get-api-response(get-api-response),
     }
 
@@ -99,24 +115,40 @@ interface chain {
     /// Requests that can be made to the chain component
     variant chain-requests {
         /// Get information about a specific app
+        ///
+        /// lazy-load-blob: none.
         get-app(package-id),
         /// Get information about all apps
+        ///
+        /// lazy-load-blob: none.
         get-apps,
         /// Get information about apps published by the current node
+        ///
+        /// lazy-load-blob: none.
         get-our-apps,
         /// Start auto-updating an app
+        ///
+        /// lazy-load-blob: none.
         start-auto-update(package-id),
         /// Stop auto-updating an app
+        ///
+        /// lazy-load-blob: none.
         stop-auto-update(package-id),
     }
 
     /// Responses from the chain component
     variant chain-responses {
+        /// lazy-load-blob: none.
         get-app(option<onchain-app>),
+        /// lazy-load-blob: none.
         get-apps(list<onchain-app>),
+        /// lazy-load-blob: none.
         get-our-apps(list<onchain-app>),
+        /// lazy-load-blob: none.
         auto-update-started,
+        /// lazy-load-blob: none.
         auto-update-stopped,
+        /// lazy-load-blob: none.
         err(chain-error),
     }
 
@@ -171,37 +203,66 @@ interface downloads {
     /// Requests that can be made to the downloads component
     variant download-requests {
         /// Request a remote download
+        ///
+        /// lazy-load-blob: none.
         remote-download(remote-download-request),
         /// Request a chunk of a file
+        ///
+        /// lazy-load-blob: none.
         chunk(chunk-request),
         /// Update download progress
+        ///
+        /// lazy-load-blob: none.
         progress(progress-update),
         /// Update file size information
+        ///
+        /// lazy-load-blob: none.
         size(size-update),
         /// Request a local download
+        ///
+        /// lazy-load-blob: none.
         local-download(local-download-request),
         /// Request an auto-update
+        ///
+        /// lazy-load-blob: none.
         auto-update(auto-update-request),
         /// Notify that a download is complete
+        ///
+        /// lazy-load-blob: none.
         download-complete(download-complete-request),
         /// Auto-update-download complete
+        ///
+        /// lazy-load-blob: none.
         auto-download-complete(auto-download-complete-request),
         /// Get files for a package
+        ///
+        /// lazy-load-blob: none.
         get-files(option<package-id>),
         /// Remove a file
+        ///
+        /// lazy-load-blob: none.
         remove-file(remove-file-request),
         /// Add a download
+        ///
+        /// lazy-load-blob: none.
         add-download(add-download-request),
         /// Start mirroring a package
+        ///
+        /// lazy-load-blob: none.
         start-mirroring(package-id),
         /// Stop mirroring a package
+        ///
+        /// lazy-load-blob: none.
         stop-mirroring(package-id),
     }
 
     /// Responses from the downloads component
     variant download-responses {
+        /// lazy-load-blob: none.
         success,
+        /// lazy-load-blob: none.
         err(download-error),
+        /// lazy-load-blob: none.
         get-files(list<entry>),
     }
 
