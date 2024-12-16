@@ -539,12 +539,15 @@ fn make_widget(state: &SettingsState) -> String {
         <br />
 
         <article id="net">
-            <p style="white-space: pre;">{}</p>
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{}</p></summary>
+                <p style="white-space: pre; margin: 8px;">{}</p>
+            </details>
         </article>
 
         <br />
 
-        <button id="refresh" onclick="fetch('/settings:settings:sys/refresh').then(() => setTimeout(() => window.location.reload(), 1000))" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 24px;">⟳</button>
+        <button id="refresh" onclick="this.innerHTML='⌛'; fetch('/settings:settings:sys/refresh').then(() => setTimeout(() => window.location.reload(), 1000))" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 24px;">⟳</button>
 
         <br />
 
@@ -576,24 +579,28 @@ fn make_widget(state: &SettingsState) -> String {
             .map(|m| {
                 let mut v = m
                     .iter()
-                    .map(|config| {
-                        format!(
-                            "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
-                            match &config.provider {
-                                eth::NodeOrRpcUrl::Node {
-                                    kns_update,
-                                    use_as_provider,
-                                } => {
-                                    format!(
-                                        "{} {}",
-                                        if *use_as_provider { "✅" } else { "❌" },
+                    .filter_map(|config| {
+                        match &config.provider {
+                            eth::NodeOrRpcUrl::Node {
+                                kns_update,
+                                use_as_provider,
+                            } => {
+                                if *use_as_provider {
+                                    Some(format!(
+                                        "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
                                         kns_update.name,
-                                    )
+                                        config.chain_id
+                                    ))
+                                } else {
+                                    None
                                 }
-                                eth::NodeOrRpcUrl::RpcUrl(url) => url.to_owned(),
-                            },
-                            config.chain_id
-                        )
+                            }
+                            eth::NodeOrRpcUrl::RpcUrl(url) => Some(format!(
+                                "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
+                                url,
+                                config.chain_id
+                            )),
+                        }
                     })
                     .collect::<Vec<_>>();
                 v.sort();
@@ -613,23 +620,19 @@ fn make_widget(state: &SettingsState) -> String {
             &tba_string[tba_string.len() - 4..]
         ),
         match &state.identity.as_ref().expect("identity not set!!").routing {
-            net::NodeRouting::Direct { ports, .. } => {
-                format!(
-                    "direct node:\n{}",
-                    ports
-                        .iter()
-                        .map(|p| format!("{}: {}", p.0, p.1))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                )
+            net::NodeRouting::Direct { .. } => "direct node".to_string(),
+            net::NodeRouting::Routers(routers) => format!("indirect node with {} routers", routers.len()),
+        },
+        match &state.identity.as_ref().expect("identity not set!!").routing {
+            net::NodeRouting::Direct { ip, ports } => {
+                let mut v = ports
+                    .iter()
+                    .map(|p| format!("{}: {}", p.0, p.1))
+                    .collect::<Vec<_>>();
+                v.push(format!("ip: {}", ip));
+                v.join("\n")
             }
-            net::NodeRouting::Routers(routers) => {
-                format!(
-                    "indirect node with {} routers:\n{}",
-                    routers.len(),
-                    routers.join("\n")
-                )
-            }
+            net::NodeRouting::Routers(routers) => routers.join("\n"),
         },
     );
 }
