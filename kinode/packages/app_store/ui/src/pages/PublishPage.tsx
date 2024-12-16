@@ -23,6 +23,7 @@ export default function PublishPage() {
     });
 
   const [packageName, setPackageName] = useState<string>("");
+  // @ts-ignore
   const [publisherId, setPublisherId] = useState<string>(window.our?.node || "");
   const [metadataUrl, setMetadataUrl] = useState<string>("");
   const [metadataHash, setMetadataHash] = useState<string>("");
@@ -47,6 +48,7 @@ export default function PublishPage() {
       fetchOurApps();
       // Reset form fields
       setPackageName("");
+      // @ts-ignore
       setPublisherId(window.our?.node || "");
       setMetadataUrl("");
       setMetadataHash("");

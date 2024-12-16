@@ -753,13 +753,11 @@ fn handle_download_error(
         }
     } else {
         Request::to(("our", "main", "app_store", "sys"))
-            .body(DownloadRequests::DownloadComplete(
-                DownloadCompleteRequest {
-                    package_id: download_request.package_id.clone(),
-                    version_hash: download_request.desired_version_hash.clone(),
-                    err: Some(error),
-                },
-            ))
+            .body(DownloadCompleteRequest {
+                package_id: download_request.package_id.clone(),
+                version_hash: download_request.desired_version_hash.clone(),
+                err: Some(error),
+            })
             .send()?;
     }
     Ok(())

@@ -5,11 +5,12 @@ import { Link } from "react-router-dom";
 import { FaSearch } from "react-icons/fa";
 
 export default function StorePage() {
-  const { listings, fetchListings } = useAppsStore();
+  const { listings, fetchListings, fetchUpdates } = useAppsStore();
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   useEffect(() => {
     fetchListings();
+    fetchUpdates();
   }, [fetchListings]);
 
   // extensive temp null handling due to weird prod bug
