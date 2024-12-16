@@ -617,7 +617,7 @@ td {
 }
 
 .process-header:hover {
-    background: light-dark(var(--surface-light), var(--surface-dark));
+    background-color: light-dark(var(--surface-light), var(--surface-dark));
 }
 
 .process-name {
@@ -1209,4 +1209,82 @@ td {
     padding: 1rem;
     margin-bottom: 1rem;
     border-radius: var(--border-radius);
+}
+
+.tooltip-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tooltip-icon {
+  cursor: help;
+  color: #666;
+  font-size: 14px;
+  position: relative;
+}
+
+.tooltip-content {
+  position: absolute;
+  left: 24px;
+  top: -4px;
+  background: #333;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  white-space: nowrap;
+  z-index: 1000;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  min-width: max-content;
+}
+
+/* Create an invisible bridge between icon and content */
+.tooltip-content::after {
+  content: '';
+  position: absolute;
+  left: -20px; /* Cover the gap between icon and content */
+  top: 0;
+  width: 20px;
+  height: 100%;
+  background: transparent;
+}
+
+.tooltip-container:hover .tooltip-content {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0.2s;
+}
+
+.tooltip-content:hover {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.tooltip-content::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 8px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-right: 4px solid #333;
+}
+
+.tooltip-content a {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.tooltip-content a:hover {
+  text-decoration: none;
+}
+
+.wallet-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }

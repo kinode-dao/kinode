@@ -7,6 +7,7 @@ import { mechAbi, KIMAP, encodeIntoMintCall, encodeMulticalls, kimapAbi, MULTICA
 import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
 import { PackageSelector } from "../components";
+import { Tooltip } from '../components/Tooltip';
 
 const NAME_INVALID = "Package name must contain only valid characters (a-z, 0-9, -, and .)";
 
@@ -241,13 +242,16 @@ export default function PublishPage() {
   return (
     <div className="publish-page">
       <h1>Publish Package</h1>
-      {Boolean(address) && (
-        <div className="publisher-info">
-          <span>Publishing as:</span>
-          <span className="address">{address?.slice(0, 4)}...{address?.slice(-4)}</span>
+      {!address ? (
+        <div className="wallet-status">
+          <button onClick={() => openConnectModal?.()}>Connect Wallet</button>
+        </div>
+      ) : (
+        <div className="wallet-status">
+          Connected: {address.slice(0, 6)}...{address.slice(-4)}
+          <Tooltip content="Make sure the wallet you're connecting to publish is the same as the owner for the publisher!" />
         </div>
       )}
-
       {isConfirming ? (
         <div className="message info">
           <div className="loading-spinner"></div>
@@ -272,26 +276,22 @@ export default function PublishPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="metadata-url">Metadata URL</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <label>Metadata URL</label>
+              <Tooltip content={<>add a link to metadata.json here (<a href="https://raw.githubusercontent.com/kinode-dao/kit/47cdf82f70b36f2a102ddfaaeed5efa10d7ef5b9/src/new/templates/rust/ui/chat/metadata.json" target="_blank" rel="noopener noreferrer">example link</a>)</>} />
+            </div>
             <input
-              id="metadata-url"
               type="text"
-              required
               value={metadataUrl}
               onChange={(e) => setMetadataUrl(e.target.value)}
               onBlur={calculateMetadataHash}
-              placeholder="https://github/my-org/my-repo/metadata.json"
             />
-            <p className="help-text">
-              Metadata is a JSON file that describes your package.
-            </p>
             {metadataError && <p className="error-message">{metadataError}</p>}
           </div>
           <div className="form-group">
-            <label htmlFor="metadata-hash">Metadata Hash</label>
+            <label>Metadata Hash</label>
             <input
               readOnly
-              id="metadata-hash"
               type="text"
               value={metadataHash}
               placeholder="Calculated automatically from metadata URL"
