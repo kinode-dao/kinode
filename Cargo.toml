@@ -19,7 +19,6 @@ members = [
     "kinode/packages/chess/chess",
     "kinode/packages/contacts/contacts",
     "kinode/packages/homepage/homepage",
-    "kinode/packages/kino-updates/blog", "kinode/packages/kino-updates/globe",
     "kinode/packages/kns-indexer/kns-indexer", "kinode/packages/kns-indexer/get-block", "kinode/packages/kns-indexer/state",
     "kinode/packages/settings/settings",
     "kinode/packages/terminal/terminal",

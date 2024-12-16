@@ -1,11 +1,10 @@
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, homepage, http, kernel_types, net, println, Address,
-    Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError,
+    await_message, call_init, eth, get_blob, homepage, http, kernel_types, kimap, net, println,
+    Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError,
     SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-extern crate base64;
 
 const ICON: &str = include_str!("icon");
 
@@ -49,6 +48,13 @@ struct SettingsState {
     pub eth_rpc_access_settings: Option<eth::AccessSettings>,
     pub process_map: Option<kernel_types::ProcessMap>,
     pub stylesheet: Option<String>,
+    pub our_tba: eth::Address,
+    pub our_owner: eth::Address,
+    pub net_key: Option<eth::Bytes>,  // always
+    pub routers: Option<eth::Bytes>,  // if indirect
+    pub ip: Option<eth::Bytes>,       // if direct
+    pub ws_port: Option<eth::Bytes>,  // sometimes, if direct
+    pub tcp_port: Option<eth::Bytes>, // sometimes, if direct
 }
 
 impl SettingsState {
@@ -61,6 +67,13 @@ impl SettingsState {
             eth_rpc_access_settings: None,
             process_map: None,
             stylesheet: None,
+            our_tba: eth::Address::ZERO,
+            our_owner: eth::Address::ZERO,
+            net_key: None,
+            routers: None,
+            ip: None,
+            ws_port: None,
+            tcp_port: None,
         }
     }
 
@@ -165,6 +178,37 @@ impl SettingsState {
             self.stylesheet = Some(String::from_utf8_lossy(&bytes).to_string());
         }
 
+        // kimap
+        let kimap = kimap::Kimap::default(5);
+        let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
+            return Err(anyhow::anyhow!("failed to get kimap node"));
+        };
+        self.our_tba = tba;
+        self.our_owner = owner;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~net-key.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get net-key"));
+        };
+        self.net_key = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~routers.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get routers"));
+        };
+        self.routers = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ip.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get ip"));
+        };
+        self.ip = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ws-port.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get ws-port"));
+        };
+        self.ws_port = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~tcp-port.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get tcp-port"));
+        };
+        self.tcp_port = bytes;
+
+        // update homepage widget
+        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), Some(&make_widget(self)));
+
         Ok(())
     }
 }
@@ -176,9 +220,6 @@ wit_bindgen::generate!({
 
 call_init!(initialize);
 fn initialize(our: Address) {
-    // add ourselves to the homepage
-    homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
-
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
 
@@ -196,6 +237,17 @@ fn initialize(our: Address) {
         .unwrap();
     http_server.secure_bind_http_path("/ask").unwrap();
     http_server.secure_bind_ws_path("/").unwrap();
+    // insecure to allow widget to call refresh
+    http_server
+        .bind_http_path("/refresh", http::server::HttpBindingConfig::default())
+        .unwrap();
+
+    // populate state
+    // this will add ourselves to the homepage
+    if let Err(e) = state.fetch() {
+        println!("failed to fetch settings: {e}");
+        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
+    }
 
     main_loop(&mut state, &mut http_server);
 }
@@ -281,6 +333,12 @@ fn handle_http_request(
     state: &mut SettingsState,
     http_request: &http::server::IncomingHttpRequest,
 ) -> anyhow::Result<(http::server::HttpResponse, Option<LazyLoadBlob>)> {
+    if let Ok(path) = http_request.path() {
+        if &path == "/refresh" {
+            state.fetch()?;
+            return Ok((http::server::HttpResponse::new(http::StatusCode::OK), None));
+        }
+    }
     match http_request.method()?.as_str() {
         "GET" => {
             state.fetch()?;
@@ -443,4 +501,138 @@ fn handle_settings_request(
 
     state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
     SettingsResponse::Ok(None)
+}
+
+fn make_widget(state: &SettingsState) -> String {
+    let owner_string = state.our_owner.to_string();
+    let tba_string = state.our_tba.to_string();
+    return format!(
+        r#"<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/kinode.css">
+    </head>
+    <body style="margin: 0; padding: 8px; width: 100%; height: 100%; padding-bottom: 30px;">
+        <article id="onchain-id">
+            <h3>{}</h3>
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{} processes running</p></summary>
+                <ul style="margin: 8px; list-style-type: none;">
+                    {}
+                </ul>
+            </details>
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{} RPC providers</p></summary>
+                <ul style="margin: 8px; list-style-type: none;">
+                    {}
+                </ul>
+            </details>
+        </article>
+
+        <br />
+
+        <article id="addrs">
+            <p>owner: <a href="https://etherscan.io/address/{}#multichain-portfolio" target="_blank">{}</a></p>
+            <p>token-bound account: <a href="https://etherscan.io/address/{}#multichain-portfolio" target="_blank">{}</a></p>
+        </article>
+
+        <br />
+
+        <article id="net">
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{}</p></summary>
+                <p style="white-space: pre; margin: 8px;">{}</p>
+            </details>
+        </article>
+
+        <br />
+
+        <button id="refresh" onclick="this.innerHTML='⌛'; fetch('/settings:settings:sys/refresh').then(() => setTimeout(() => window.location.reload(), 1000))" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 24px;">⟳</button>
+
+        <br />
+
+        <a href="/settings:settings:sys/" target="_blank">Adjust Settings</a>
+    </body>
+    </html>"#,
+        state.our.node(),
+        state.process_map.as_ref().map(|m| m.len()).unwrap_or(0),
+        state
+            .process_map
+            .as_ref()
+            .map(|m| {
+                let mut v = m
+                    .keys()
+                    .map(|pid| format!("<li>{}</li>", pid))
+                    .collect::<Vec<_>>();
+                v.sort();
+                v.join("\n")
+            })
+            .unwrap_or_default(),
+        state
+            .eth_rpc_providers
+            .as_ref()
+            .map(|m| m.len())
+            .unwrap_or(0),
+        state
+            .eth_rpc_providers
+            .as_ref()
+            .map(|m| {
+                let mut v = m
+                    .iter()
+                    .filter_map(|config| {
+                        match &config.provider {
+                            eth::NodeOrRpcUrl::Node {
+                                kns_update,
+                                use_as_provider,
+                            } => {
+                                if *use_as_provider {
+                                    Some(format!(
+                                        "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
+                                        kns_update.name,
+                                        config.chain_id
+                                    ))
+                                } else {
+                                    None
+                                }
+                            }
+                            eth::NodeOrRpcUrl::RpcUrl(url) => Some(format!(
+                                "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
+                                url,
+                                config.chain_id
+                            )),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                v.sort();
+                v.join("\n")
+            })
+            .unwrap_or_default(),
+        owner_string,
+        format!(
+            "{}..{}",
+            &owner_string[..4],
+            &owner_string[owner_string.len() - 4..]
+        ),
+        tba_string,
+        format!(
+            "{}..{}",
+            &tba_string[..4],
+            &tba_string[tba_string.len() - 4..]
+        ),
+        match &state.identity.as_ref().expect("identity not set!!").routing {
+            net::NodeRouting::Direct { .. } => "direct node".to_string(),
+            net::NodeRouting::Routers(routers) => format!("indirect node with {} routers", routers.len()),
+        },
+        match &state.identity.as_ref().expect("identity not set!!").routing {
+            net::NodeRouting::Direct { ip, ports } => {
+                let mut v = ports
+                    .iter()
+                    .map(|p| format!("{}: {}", p.0, p.1))
+                    .collect::<Vec<_>>();
+                v.push(format!("ip: {}", ip));
+                v.join("\n")
+            }
+            net::NodeRouting::Routers(routers) => routers.join("\n"),
+        },
+    );
 }
