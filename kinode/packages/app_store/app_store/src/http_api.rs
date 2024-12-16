@@ -3,11 +3,13 @@
 //! and sends back http_responses.
 //!
 use crate::{
-    kinode::process::chain::{ChainRequests, ChainResponses},
-    kinode::process::downloads::{
-        DownloadRequests, DownloadResponses, Entry, LocalDownloadRequest, RemoveFileRequest,
+    kinode::process::{
+        chain::{ChainRequests, ChainResponses},
+        downloads::{
+            DownloadRequests, DownloadResponses, Entry, LocalDownloadRequest, RemoveFileRequest,
+        },
     },
-    state::{MirrorCheck, PackageState, State},
+    state::{MirrorCheck, PackageState, State, Updates},
 };
 use kinode_process_lib::{
     http::{self, server, Method, StatusCode},
@@ -28,6 +30,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/downloads",     // all downloads
         "/installed",     // all installed apps
         "/ourapps",       // all apps we've published
+        "/updates",       // all auto_updates
         "/apps/:id",      // detail about an on-chain app
         "/downloads/:id", // local downloads for an app
         "/installed/:id", // detail about an installed app
@@ -38,6 +41,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/downloads/:id/mirror", // start mirroring a version of a downloaded app
         "/downloads/:id/remove", // remove a downloaded app
         "/apps/:id/auto-update", // set auto-updating a version of a downloaded app
+        "/updates/:id/clear",    // clear update info for an app.
         "/mirrorcheck/:node",    // check if a node/mirror is online/offline
     ] {
         http_server
@@ -207,9 +211,10 @@ fn make_widget() -> String {
 pub fn handle_http_request(
     our: &Address,
     state: &mut State,
+    updates: &mut Updates,
     req: &server::IncomingHttpRequest,
 ) -> (server::HttpResponse, Option<LazyLoadBlob>) {
-    match serve_paths(our, state, req) {
+    match serve_paths(our, state, updates, req) {
         Ok((status_code, _headers, body)) => (
             server::HttpResponse::new(status_code).header("Content-Type", "application/json"),
             Some(LazyLoadBlob {
@@ -248,13 +253,13 @@ fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
         "our_version_hash": state.our_version_hash,
         "verified": state.verified,
         "caps_approved": state.caps_approved,
-        "pending_update_hash": state.pending_update_hash,
     })
 }
 
 fn serve_paths(
     our: &Address,
     state: &mut State,
+    updates: &mut Updates,
     req: &server::IncomingHttpRequest,
 ) -> anyhow::Result<(http::StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
     let method = req.method()?;
@@ -533,7 +538,6 @@ fn serve_paths(
                 .ok_or(anyhow::anyhow!("missing blob"))?
                 .bytes;
             let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-
             let version_hash = body_json
                 .get("version_hash")
                 .and_then(|v| v.as_str())
@@ -696,6 +700,31 @@ fn serve_paths(
                     format!("Invalid response from chain: {:?}", msg).into_bytes(),
                 )),
             }
+        }
+        // GET all failed/pending auto_updates
+        "/updates" => {
+            let serialized = serde_json::to_vec(&updates).unwrap_or_default();
+            return Ok((StatusCode::OK, None, serialized));
+        }
+        // POST clear all failed/pending auto_updates for a package_id
+        "/updates/:id/clear" => {
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing package_id").into_bytes(),
+                ));
+            };
+            if method != Method::POST {
+                return Ok((
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
+                ));
+            }
+            let _ = updates.package_updates.remove(&package_id);
+            updates.save();
+            Ok((StatusCode::OK, None, vec![]))
         }
         // GET online/offline mirrors for a listed app
         "/mirrorcheck/:node" => {

@@ -248,10 +248,24 @@ interface downloads {
         err: option<download-error>,
     }
 
-    /// Request for an auto-download complete
-    record auto-download-complete-request {
-        download-info: download-complete-request,
+    /// Variant for an auto-download complete
+    variant auto-download-complete-request {
+        success(auto-download-success),
+        err(auto-download-error),
+    }
+
+    /// Auto-download success
+    record auto-download-success {
+        package-id: package-id,
+        version-hash: string,
         manifest-hash: string,
+    }
+
+    /// Auto-download error
+    record auto-download-error {
+        package-id: package-id,
+        version-hash: string,
+        tries: list<tuple<string, download-error>>, // (mirror, error)
     }
 
     /// Represents a hash mismatch error

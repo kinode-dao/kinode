@@ -109,6 +109,8 @@ fn init(our: Address) {
                 Err(e) => {
                     print_to_terminal(1, &format!("ft_worker: receive error: {}", e));
                     // bubble up to parent.
+                    // TODO: doublecheck this.
+                    // if this fires on a basic timeout, that's bad.
                     Request::new()
                         .body(DownloadRequests::DownloadComplete(
                             DownloadCompleteRequest {
