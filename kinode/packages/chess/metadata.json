@@ -1,16 +1,16 @@
 {
     "name": "Chess by Kinode",
-    "description": "A peer-to-peer chess game",
+    "description": "A peer-to-peer chess game.",
     "image": "",
     "properties": {
         "package_name": "chess",
-        "current_version": "0.2.1",
+        "current_version": "1.0.0",
         "publisher": "sys",
         "mirrors": [],
         "code_hashes": {
-            "0.2.1": ""
+            "1.0.0": ""
         },
-        "wit_version": 0,
+        "wit_version": 1,
         "dependencies": []
     },
     "external_url": "https://kinode.org",

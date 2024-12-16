@@ -28,5 +28,5 @@ interface chess {
 
 world chess-sys-v0 {
     import chess;
-    include process-v0;
+    include process-v1;
 }

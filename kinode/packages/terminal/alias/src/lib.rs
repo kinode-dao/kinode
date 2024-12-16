@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 #[derive(Debug, Serialize, Deserialize)]

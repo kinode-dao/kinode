@@ -11,7 +11,7 @@ const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
 
 const DEFAULT_FAVES: &[&str] = &[
     "chess:chess:sys",
-    "main:app_store:sys",
+    "main:app-store:sys",
     "settings:settings:sys",
 ];
 
@@ -40,6 +40,8 @@ wit_bindgen::generate!({
 
 call_init!(init);
 fn init(our: Address) {
+    println!("begin");
+
     let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 
     let mut http_server = server::HttpServer::new(5);
@@ -174,7 +176,7 @@ fn init(our: Address) {
             // we never send requests, so this will never happen
             continue;
         };
-        if message.source().process == "http_server:distro:sys" {
+        if message.source().process == "http-server:distro:sys" {
             if message.is_request() {
                 let Ok(request) = http_server.parse_request(message.body()) else {
                     continue;
