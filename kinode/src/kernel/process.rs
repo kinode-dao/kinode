@@ -45,6 +45,7 @@ pub struct ProcessState {
     /// received from the event loop.
     /// the prompting_message won't have a blob, rather it is stored in last_blob.
     pub prompting_message: Option<t::KernelMessage>,
+    pub last_message_blobbed: bool,
     pub last_blob: Option<t::LazyLoadBlob>,
     /// store the contexts and timeout task of all outstanding requests
     pub contexts: HashMap<u64, (ProcessContext, JoinHandle<()>)>,
@@ -337,6 +338,7 @@ pub async fn make_process_loop(
         send_to_loop: send_to_loop.clone(),
         send_to_terminal: send_to_terminal.clone(),
         prompting_message: None,
+        last_message_blobbed: false,
         last_blob: None,
         contexts: HashMap::new(),
         message_queue: VecDeque::new(),

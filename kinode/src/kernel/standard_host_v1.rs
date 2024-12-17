@@ -111,6 +111,9 @@ impl process::ProcessState {
                     if km.lazy_load_blob.is_some() {
                         self.last_blob = km.lazy_load_blob;
                         km.lazy_load_blob = None;
+                        self.last_message_blobbed = true;
+                    } else {
+                        self.last_message_blobbed = false;
                     }
                     if expects_response.is_some() || km.rsvp.is_some() {
                         // update prompting_message iff there is someone to reply to
@@ -123,6 +126,9 @@ impl process::ProcessState {
                         if km.lazy_load_blob.is_some() {
                             self.last_blob = km.lazy_load_blob;
                             km.lazy_load_blob = None;
+                            self.last_message_blobbed = true;
+                        } else {
+                            self.last_message_blobbed = false;
                         }
                         self.prompting_message = context.prompting_message;
                         (km, context.context)
@@ -131,19 +137,25 @@ impl process::ProcessState {
                         if km.lazy_load_blob.is_some() {
                             self.last_blob = km.lazy_load_blob;
                             km.lazy_load_blob = None;
+                            self.last_message_blobbed = true;
+                        } else {
+                            self.last_message_blobbed = false;
                         }
                         self.prompting_message = Some(km.clone());
                         (km, None)
                     }
                 },
             },
-            Err(e) => match self.contexts.remove(&e.id) {
-                None => return Err((t::en_wit_send_error_v1(e.error), None)),
-                Some((context, _timeout_handle)) => {
-                    self.prompting_message = context.prompting_message;
-                    return Err((t::en_wit_send_error_v1(e.error), context.context));
+            Err(e) => {
+                self.last_message_blobbed = false;
+                match self.contexts.remove(&e.id) {
+                    None => return Err((t::en_wit_send_error_v1(e.error), None)),
+                    Some((context, _timeout_handle)) => {
+                        self.prompting_message = context.prompting_message;
+                        return Err((t::en_wit_send_error_v1(e.error), context.context));
+                    }
                 }
-            },
+            }
         };
 
         let pk = signature::UnparsedPublicKey::new(
@@ -899,10 +911,24 @@ impl StandardHost for process::ProcessWasiV1 {
         Ok(self.process.get_next_message_for_process_v1().await)
     }
 
-    /// from a process: grab the blob part of the current prompting message.
-    /// if the prompting message did not have a blob, will return None.
-    /// will also return None if there is no prompting message.
+    /// from a process: check if the last message received had a blob.
+    async fn has_blob(&mut self) -> Result<bool> {
+        Ok(self.process.last_message_blobbed)
+    }
+
+    /// from a process: grab the blob part of the last message received.
+    /// if the last message did not have a blob, will return None.
     async fn get_blob(&mut self) -> Result<Option<wit::LazyLoadBlob>> {
+        Ok(if self.process.last_message_blobbed {
+            t::en_wit_blob_v1(self.process.last_blob.clone())
+        } else {
+            None
+        })
+    }
+
+    /// from a process: grab the **most recent** blob that has ever been received.
+    /// if no blobs have ever been received, will return None.
+    async fn last_blob(&mut self) -> Result<Option<wit::LazyLoadBlob>> {
         Ok(t::en_wit_blob_v1(self.process.last_blob.clone()))
     }
 
