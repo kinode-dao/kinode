@@ -1,6 +1,4 @@
-use crate::kinode::process::kns_indexer::{
-    GetStateRequest, IndexerRequest, IndexerResponse,
-};
+use crate::kinode::process::kns_indexer::{GetStateRequest, IndexerRequest, IndexerResponse};
 use kinode_process_lib::{eth, script, Address, Message, Request};
 
 wit_bindgen::generate!({
@@ -51,9 +49,16 @@ fn init(_our: Address, _args: String) -> String {
         return "failed to deserialize state".to_string();
     };
     // can change later, but for now, just print every known node name
-    let mut names = state.names.iter().map(|(_k, v)| v.clone()).collect::<Vec<_>>();
+    let mut names = state
+        .names
+        .iter()
+        .map(|(_k, v)| v.clone())
+        .collect::<Vec<_>>();
     names.sort();
-    let contract_address: [u8; 20] = state.contract_address.try_into().expect("invalid contract addess: doesn't have 20 bytes");
+    let contract_address: [u8; 20] = state
+        .contract_address
+        .try_into()
+        .expect("invalid contract addess: doesn't have 20 bytes");
     let contract_address: eth::Address = contract_address.into();
     format!(
         "\nrunning on chain id {}\nCA: {}\n{} known nodes as of block {}\n     {}",

@@ -1,5 +1,6 @@
 use crate::kinode::process::kns_indexer::{
-    GetStateRequest, IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest, WitKnsUpdate, WitState,
+    GetStateRequest, IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest,
+    WitKnsUpdate, WitState,
 };
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
@@ -58,8 +59,16 @@ impl From<State> for WitState {
         WitState {
             chain_id: s.chain_id.clone(),
             contract_address: contract_address.to_vec(),
-            names: s.names.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>(),
-            nodes: s.nodes.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect::<Vec<_>>(),
+            names: s
+                .names
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>(),
+            nodes: s
+                .nodes
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone().into()))
+                .collect::<Vec<_>>(),
             last_block: s.last_block.clone(),
         }
     }
@@ -67,7 +76,10 @@ impl From<State> for WitState {
 
 impl From<WitState> for State {
     fn from(s: WitState) -> Self {
-        let contract_address: [u8; 20] = s.contract_address.try_into().expect("invalid contract addess: doesn't have 20 bytes");
+        let contract_address: [u8; 20] = s
+            .contract_address
+            .try_into()
+            .expect("invalid contract addess: doesn't have 20 bytes");
         State {
             chain_id: s.chain_id.clone(),
             contract_address: contract_address.into(),
@@ -84,7 +96,11 @@ impl From<net::KnsUpdate> for WitKnsUpdate {
             name: k.name.clone(),
             public_key: k.public_key.clone(),
             ips: k.ips.clone(),
-            ports: k.ports.iter().map(|(k, v)| (k.clone(), v.clone())).collect::<Vec<_>>(),
+            ports: k
+                .ports
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>(),
             routers: k.routers.clone(),
         }
     }
@@ -246,9 +262,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     // TODO: make sure we've seen the whole block, while actually
                     // sending a response to the proper place.
                     Response::new()
-                        .body(IndexerResponse::Name(
-                            state.names.get(hash).cloned(),
-                        ))
+                        .body(IndexerResponse::Name(state.names.get(hash).cloned()))
                         .send()?;
                 }
 
@@ -261,7 +275,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
                 IndexerRequest::GetState(GetStateRequest { .. }) => {
                     //Response::new().body(serde_json::to_vec(&state)?).send()?;
-                    Response::new().body(IndexerResponse::GetState(state.clone().into())).send()?;
+                    Response::new()
+                        .body(IndexerResponse::GetState(state.clone().into()))
+                        .send()?;
                 }
             }
         }
