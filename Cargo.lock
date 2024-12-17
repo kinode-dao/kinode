@@ -4008,6 +4008,7 @@ dependencies = [
  "anyhow",
  "hex",
  "kinode_process_lib 0.10.0",
+ "process_macros",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -6069,6 +6070,7 @@ name = "state"
 version = "0.1.0"
 dependencies = [
  "kinode_process_lib 0.10.0",
+ "process_macros",
  "serde",
  "serde_json",
  "wit-bindgen 0.36.0",

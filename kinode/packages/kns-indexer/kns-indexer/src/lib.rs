@@ -1,5 +1,6 @@
 use crate::kinode::process::kns_indexer::{
-    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
+    GetStateRequest, IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest,
+    WitKnsUpdate, WitState,
 };
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
@@ -17,7 +18,7 @@ wit_bindgen::generate!({
     path: "target/wit",
     world: "kns-indexer-sys-v0",
     generate_unused_types: true,
-    additional_derives: [serde::Deserialize, serde::Serialize],
+    additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
 #[cfg(not(feature = "simulation-mode"))]
@@ -52,12 +53,69 @@ struct State {
     last_block: u64,
 }
 
-// note: not defined in wit api right now like IndexerRequests.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-enum IndexerResponses {
-    Name(Option<String>),
-    NodeInfo(Option<net::KnsUpdate>),
-    GetState(State),
+impl From<State> for WitState {
+    fn from(s: State) -> Self {
+        let contract_address: [u8; 20] = s.contract_address.into();
+        WitState {
+            chain_id: s.chain_id.clone(),
+            contract_address: contract_address.to_vec(),
+            names: s
+                .names
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>(),
+            nodes: s
+                .nodes
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone().into()))
+                .collect::<Vec<_>>(),
+            last_block: s.last_block.clone(),
+        }
+    }
+}
+
+impl From<WitState> for State {
+    fn from(s: WitState) -> Self {
+        let contract_address: [u8; 20] = s
+            .contract_address
+            .try_into()
+            .expect("invalid contract addess: doesn't have 20 bytes");
+        State {
+            chain_id: s.chain_id.clone(),
+            contract_address: contract_address.into(),
+            names: HashMap::from_iter(s.names),
+            nodes: HashMap::from_iter(s.nodes.iter().map(|(k, v)| (k.clone(), v.clone().into()))),
+            last_block: s.last_block.clone(),
+        }
+    }
+}
+
+impl From<net::KnsUpdate> for WitKnsUpdate {
+    fn from(k: net::KnsUpdate) -> Self {
+        WitKnsUpdate {
+            name: k.name.clone(),
+            public_key: k.public_key.clone(),
+            ips: k.ips.clone(),
+            ports: k
+                .ports
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>(),
+            routers: k.routers.clone(),
+        }
+    }
+}
+
+impl From<WitKnsUpdate> for net::KnsUpdate {
+    fn from(k: WitKnsUpdate) -> Self {
+        net::KnsUpdate {
+            name: k.name.clone(),
+            public_key: k.public_key.clone(),
+            ips: k.ips.clone(),
+            ports: BTreeMap::from_iter(k.ports),
+            routers: k.routers.clone(),
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -136,7 +194,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // pending_requests temporarily on timeout.
     // very naughty.
-    // let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
+    // let mut pending_requests: BTreeMap<u64, Vec<IndexerRequest>> = BTreeMap::new();
     let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
 
     // if block in state is < current_block, get logs from that part.
@@ -192,25 +250,25 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             let request = serde_json::from_slice(&body)?;
 
             match request {
-                IndexerRequests::NamehashToName(NamehashToNameRequest { ref hash, .. }) => {
+                IndexerRequest::NamehashToName(NamehashToNameRequest { ref hash, .. }) => {
                     // TODO: make sure we've seen the whole block, while actually
                     // sending a response to the proper place.
                     Response::new()
-                        .body(serde_json::to_vec(&IndexerResponses::Name(
-                            state.names.get(hash).cloned(),
-                        ))?)
+                        .body(IndexerResponse::Name(state.names.get(hash).cloned()))
                         .send()?;
                 }
 
-                IndexerRequests::NodeInfo(NodeInfoRequest { ref name, .. }) => {
+                IndexerRequest::NodeInfo(NodeInfoRequest { ref name, .. }) => {
                     Response::new()
-                        .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
-                            state.nodes.get(name).cloned(),
-                        ))?)
+                        .body(IndexerResponse::NodeInfo(
+                            state.nodes.get(name).map(|n| n.clone().into()),
+                        ))
                         .send()?;
                 }
-                IndexerRequests::GetState(GetStateRequest { .. }) => {
-                    Response::new().body(serde_json::to_vec(&state)?).send()?;
+                IndexerRequest::GetState(GetStateRequest { .. }) => {
+                    Response::new()
+                        .body(IndexerResponse::GetState(state.clone().into()))
+                        .send()?;
                 }
             }
         }
