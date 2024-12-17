@@ -266,7 +266,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         .send()?;
                 }
                 IndexerRequest::GetState(GetStateRequest { .. }) => {
-                    //Response::new().body(serde_json::to_vec(&state)?).send()?;
                     Response::new()
                         .body(IndexerResponse::GetState(state.clone().into()))
                         .send()?;
