@@ -8,6 +8,7 @@ simulation-mode = []
 
 [dependencies]
 kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "9c441fe" }
+process_macros = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 wit-bindgen = "0.36.0"

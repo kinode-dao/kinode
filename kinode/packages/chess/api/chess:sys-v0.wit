@@ -3,15 +3,22 @@ interface chess {
     /// to a byte vector and send them over IPC.
 
     variant request {
+        /// lazy-load-blob: none.
         new-game(new-game-request),
+        /// lazy-load-blob: none.
         move(move-request),
+        /// lazy-load-blob: none.
         resign(string),
     }
 
     variant response {
+        /// lazy-load-blob: none.
         new-game-accepted,
+        /// lazy-load-blob: none.
         new-game-rejected,
+        /// lazy-load-blob: none.
         move-accepted,
+        /// lazy-load-blob: none.
         move-rejected,
     }
 

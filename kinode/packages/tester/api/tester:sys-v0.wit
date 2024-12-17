@@ -1,9 +1,11 @@
 interface tester {
     variant request {
+        /// lazy-load-blob: none.
         run(run-request),
     }
 
     variant response {
+        /// lazy-load-blob: none.
         run(result<_, fail-response>)
     }
 

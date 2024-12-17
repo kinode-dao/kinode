@@ -611,21 +611,6 @@ fn handle_eth_log(
     if !startup {
         state.last_saved_block = block_number;
         state.db.set_last_saved_block(block_number)?;
-        // if auto_update is enabled, send a message to downloads to kick off the update.
-        if let Some(listing) = state.listings.get(&package_id) {
-            if listing.auto_update {
-                print_to_terminal(0, &format!("kicking off auto-update for: {}", package_id));
-                Request::to(("our", "downloads", "app-store", "sys"))
-                    .body(&DownloadRequests::AutoUpdate(AutoUpdateRequest {
-                        package_id: crate::kinode::process::main::PackageId::from_process_lib(
-                            package_id,
-                        ),
-                        metadata: metadata.unwrap().into(),
-                    }))
-                    .send()
-                    .unwrap();
-            }
-        }
     }
 
     Ok(())

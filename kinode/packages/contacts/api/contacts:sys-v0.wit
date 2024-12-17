@@ -7,26 +7,45 @@ interface contacts {
     }
 
     variant request {
+        /// lazy-load-blob: none.
         get-names,                                // requires read-names-only
+        /// lazy-load-blob: none.
         get-all-contacts,                         // requires read
+        /// lazy-load-blob: none.
         get-contact(string),                      // requires read
+        /// lazy-load-blob: none.
         add-contact(string),                      // requires add
-        // tuple<node, field, value>
+        /// tuple<node, field, value>
+        ///
+        /// lazy-load-blob: none.
         add-field(tuple<string, string, string>), // requires add
+        /// lazy-load-blob: none.
         remove-contact(string),                   // requires remove
-        // tuple<node, field>
+        /// tuple<node, field>
+        ///
+        /// lazy-load-blob: none.
         remove-field(tuple<string, string>),      // requires remove
     }
 
     variant response {
+        /// lazy-load-blob: none.
         get-names(list<string>),
-        get-all-contacts, // JSON all-contacts dict in blob
-        get-contact,      // JSON contact dict in blob
+        /// lazy-load-blob: required; JSON all-contacts dict in blob.
+        get-all-contacts,
+        /// lazy-load-blob: required; JSON contact dict in blob.
+        get-contact,
+        /// lazy-load-blob: none.
         add-contact,
+        /// lazy-load-blob: none.
         add-field,
+        /// lazy-load-blob: none.
         remove-contact,
+        /// lazy-load-blob: none.
         remove-field,
-        err(string),      // any failed request will receive this response
+        /// any failed request will receive this response
+        ///
+        /// lazy-load-blob: none.
+        err(string),
     }
 }
 
