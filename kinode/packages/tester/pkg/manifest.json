@@ -6,8 +6,8 @@
         "request_networking": true,
         "request_capabilities": [
             "eth:distro:sys",
-            "http_client:distro:sys",
-            "http_server:distro:sys",
+            "http-client:distro:sys",
+            "http-server:distro:sys",
             "kernel:distro:sys",
             "kv:distro:sys",
             "sqlite:distro:sys",

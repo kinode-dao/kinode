@@ -6,9 +6,18 @@ use lib::wit::Host as StandardHost;
 use ring::signature::{self, KeyPair};
 
 async fn print_debug(proc: &process::ProcessState, content: &str) {
-    t::Printout::new(2, format!("{}: {}", proc.metadata.our.process, content))
-        .send(&proc.send_to_terminal)
-        .await;
+    t::Printout::new(
+        2,
+        &proc.metadata.our.process,
+        format!(
+            "{}:{}: {}",
+            proc.metadata.our.process.package(),
+            proc.metadata.our.process.publisher(),
+            content
+        ),
+    )
+    .send(&proc.send_to_terminal)
+    .await;
 }
 
 impl process::ProcessState {
@@ -99,7 +108,10 @@ impl process::ProcessState {
                     ref expects_response,
                     ..
                 }) => {
-                    self.last_blob = km.lazy_load_blob;
+                    if km.lazy_load_blob.is_some() {
+                        self.last_blob = km.lazy_load_blob;
+                        km.lazy_load_blob = None;
+                    }
                     km.lazy_load_blob = None;
                     if expects_response.is_some() || km.rsvp.is_some() {
                         // update prompting_message iff there is someone to reply to
@@ -109,13 +121,19 @@ impl process::ProcessState {
                 }
                 t::Message::Response(_) => match self.contexts.remove(&km.id) {
                     Some((context, _timeout_handle)) => {
-                        self.last_blob = km.lazy_load_blob;
+                        if km.lazy_load_blob.is_some() {
+                            self.last_blob = km.lazy_load_blob;
+                            km.lazy_load_blob = None;
+                        }
                         km.lazy_load_blob = None;
                         self.prompting_message = context.prompting_message;
                         (km, context.context)
                     }
                     None => {
-                        self.last_blob = km.lazy_load_blob;
+                        if km.lazy_load_blob.is_some() {
+                            self.last_blob = km.lazy_load_blob;
+                            km.lazy_load_blob = None;
+                        }
                         km.lazy_load_blob = None;
                         self.prompting_message = Some(km.clone());
                         (km, None)
@@ -330,6 +348,7 @@ impl process::ProcessState {
         let Some(ref prompting_message) = self.prompting_message else {
             t::Printout::new(
                 0,
+                KERNEL_PROCESS_ID.clone(),
                 format!("kernel: need non-None prompting_message to handle Response {response:?}"),
             )
             .send(&self.send_to_terminal)
@@ -440,15 +459,16 @@ impl StandardHost for process::ProcessWasi {
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
         self.process
             .send_to_terminal
-            .send(t::Printout {
+            .send(t::Printout::new(
                 verbosity,
-                content: format!(
+                &self.process.metadata.our.process,
+                format!(
                     "{}:{}: {}",
                     self.process.metadata.our.process.package(),
                     self.process.metadata.our.process.publisher(),
                     content
                 ),
-            })
+            ))
             .await
             .map_err(|e| anyhow::anyhow!("fatal: couldn't send to terminal: {e:?}"))
     }
@@ -658,7 +678,8 @@ impl StandardHost for process::ProcessWasi {
             Some(&name),
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
-        );
+        )
+        .check()?;
 
         let request_capabilities_filtered = {
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -725,8 +746,8 @@ impl StandardHost for process::ProcessWasi {
                 .send(t::CapMessage::Add {
                     on: t::ProcessId::de_wit(process),
                     caps: vec![t::Capability::messaging((
-                        self.process.metadata.our.node.clone(),
-                        new_process_id.clone(),
+                        &self.process.metadata.our.node,
+                        &new_process_id,
                     ))],
                     responder: Some(tx),
                 })
@@ -789,8 +810,8 @@ impl StandardHost for process::ProcessWasi {
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
                 caps: vec![t::Capability::messaging((
-                    self.process.metadata.our.node.clone(),
-                    new_process_id.clone(),
+                    &self.process.metadata.our.node,
+                    &new_process_id,
                 ))],
                 responder: Some(tx),
             })

@@ -9,9 +9,11 @@ use crossterm::{
 use futures::{future::FutureExt, StreamExt};
 use lib::types::core::{
     DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender, PrintReceiver,
-    PrintSender, Printout, Request, TERMINAL_PROCESS_ID,
+    PrintSender, Printout, ProcessId, ProcessVerbosity, ProcessVerbosityVal, Request,
+    TERMINAL_PROCESS_ID,
 };
 use std::{
+    collections::{HashMap, VecDeque},
     fs::{read_to_string, OpenOptions},
     io::BufWriter,
     path::PathBuf,
@@ -21,6 +23,9 @@ use tokio::signal::unix::{signal, SignalKind};
 use unicode_segmentation::UnicodeSegmentation;
 
 pub mod utils;
+
+// TODO: add a flag & `terminal::terminal()` arg so can be set at run time
+const MAX_PRINTOUT_QUEUE_LEN_DEFAULT: usize = 256;
 
 struct State {
     pub stdout: std::io::Stdout,
@@ -44,6 +49,16 @@ struct State {
     pub logging_mode: bool,
     /// verbosity mode (increased by CTRL+V)
     pub verbose_mode: u8,
+    /// process-level verbosities: override verbose_mode when populated
+    pub process_verbosity: HashMap<ProcessId, ProcessVerbosityVal>,
+    /// flag representing whether we are in process verbosity mode (activated by CTRL+W, exited by CTRL+W)
+    pub process_verbosity_mode: bool,
+    /// line to be restored when exiting process_verbosity_mode
+    pub saved_line: Option<String>,
+    /// if in alternate screen, queue up max_printout_queue_len printouts
+    pub printout_queue: VecDeque<Printout>,
+    pub max_printout_queue_len: usize,
+    pub printout_queue_number_dropped_printouts: u64,
 }
 
 impl State {
@@ -111,6 +126,122 @@ impl State {
                 ),
             )
         }
+    }
+
+    fn enter_process_verbosity_mode(&mut self) -> Result<(), std::io::Error> {
+        // Save current line and switch to alternate screen
+        execute!(
+            self.stdout,
+            terminal::EnterAlternateScreen,
+            cursor::Hide, // Hide cursor while in alternate screen
+        )?;
+
+        self.display_process_verbosity()?;
+        Ok(())
+    }
+
+    fn exit_process_verbosity_mode(&mut self) -> anyhow::Result<()> {
+        // Leave alternate screen and restore cursor
+        execute!(self.stdout, cursor::Show, terminal::LeaveAlternateScreen)?;
+
+        // Print queued messages to main screen
+        if self.printout_queue_number_dropped_printouts != 0 {
+            let number_dropped_printout = Printout::new(
+                0,
+                TERMINAL_PROCESS_ID.clone(),
+                format!(
+                    "Dropped {} prints while on alternate screen",
+                    self.printout_queue_number_dropped_printouts,
+                ),
+            );
+            handle_printout(number_dropped_printout, self)?;
+            self.printout_queue_number_dropped_printouts = 0;
+        }
+        while let Some(printout) = self.printout_queue.pop_front() {
+            handle_printout(printout, self)?;
+        }
+
+        Ok(())
+    }
+
+    fn display_process_verbosity(&mut self) -> Result<(), std::io::Error> {
+        // Clear the entire screen from the input line up
+        execute!(
+            self.stdout,
+            cursor::MoveTo(0, 0),
+            terminal::Clear(ClearType::FromCursorDown),
+        )?;
+
+        // Display the header with overall verbosity
+        execute!(
+            self.stdout,
+            cursor::MoveTo(0, 0),
+            style::SetForegroundColor(style::Color::Green),
+            Print("=== Process Verbosity Mode ===\n\r"),
+            style::SetForegroundColor(style::Color::Reset),
+            Print(format!(
+                "Overall verbosity: {}\n\r",
+                match self.verbose_mode {
+                    0 => "off",
+                    1 => "debug",
+                    2 => "super-debug",
+                    3 => "full event loop",
+                    _ => "unknown",
+                }
+            )),
+            Print("\n\rProcess-specific verbosity levels:\n\r"),
+        )?;
+
+        // Display current process verbosities
+        let mut row = 4;
+        if self.process_verbosity.is_empty() {
+            execute!(self.stdout, cursor::MoveTo(0, row), Print("(none set)\n\r"),)?;
+            row += 1;
+        } else {
+            for (process_id, verbosity) in &self.process_verbosity {
+                execute!(
+                    self.stdout,
+                    cursor::MoveTo(0, row),
+                    Print(format!("{}: {}\n\r", process_id, verbosity)),
+                )?;
+                row += 1;
+            }
+        }
+
+        // Display instructions
+        execute!(
+            self.stdout,
+            cursor::MoveTo(0, row + 1),
+            Print("To set process verbosity, input '<ProcessId> <verbosity (u8)>' and then press <Enter>\n\r  e.g.\n\r  chat:chat:template.os 3\n\rTo mute a process, input '<ProcessId> m' or 'mute' or 'muted' and then press <Enter>.\n\rTo remove a previously set process verbosity, input '<ProcessId>' and then press <Enter>.\n\r"),
+            Print("Press CTRL+W to exit\n\r"),
+        )?;
+
+        // Display input line at the bottom
+        execute!(
+            self.stdout,
+            cursor::MoveTo(0, self.win_rows),
+            terminal::Clear(ClearType::CurrentLine),
+            Print("> "),
+            Print(&self.current_line.line),
+            cursor::MoveTo(
+                self.current_line.cursor_col + 2, // +2 for the "> " prompt
+                self.win_rows
+            ),
+        )?;
+
+        Ok(())
+    }
+
+    fn parse_process_verbosity(input: &str) -> Option<(ProcessId, ProcessVerbosityVal)> {
+        let parts: Vec<&str> = input.trim().split_whitespace().collect();
+        if parts.len() != 2 {
+            return None;
+        }
+
+        let process_id: ProcessId = parts[0].parse().ok()?;
+        let verbosity = parts[1].parse::<ProcessVerbosityVal>().ok()?;
+
+        Some((process_id, verbosity))
     }
 }
 
@@ -186,6 +317,7 @@ pub async fn terminal(
     is_logging: bool,
     max_log_size: Option<u64>,
     number_log_files: Option<u64>,
+    process_verbosity: ProcessVerbosity,
 ) -> anyhow::Result<()> {
     let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
 
@@ -220,6 +352,13 @@ pub async fn terminal(
     let log_dir_path = home_directory_path.join(".terminal_logs");
     let logger = utils::Logger::new(log_dir_path, max_log_size, number_log_files);
 
+    let process_verbosity_mode = false;
+    let saved_line = None;
+
+    let printout_queue = VecDeque::new();
+    let max_printout_queue_len = MAX_PRINTOUT_QUEUE_LEN_DEFAULT.clone();
+    let printout_queue_number_dropped_printouts = 0;
+
     let mut state = State {
         stdout,
         logger,
@@ -238,6 +377,12 @@ pub async fn terminal(
         search_depth,
         logging_mode,
         verbose_mode,
+        process_verbosity,
+        process_verbosity_mode,
+        saved_line,
+        printout_queue,
+        max_printout_queue_len,
+        printout_queue_number_dropped_printouts,
     };
 
     // use to trigger cleanup if receive signal to kill process
@@ -270,6 +415,19 @@ pub async fn terminal(
             .send(DebugCommand::ToggleEventLoop)
             .await
             .expect("failed to toggle full event loop off");
+    }
+
+    // in contrast, "full event loop" per-process is default off:
+    //  here, we toggle it ON if we have any given at that level
+    for (process, verbosity) in state.process_verbosity.iter() {
+        if let ProcessVerbosityVal::U8(verbosity) = verbosity {
+            if *verbosity == 3 {
+                debug_event_loop
+                    .send(DebugCommand::ToggleEventLoopForProcess(process.clone()))
+                    .await
+                    .expect("failed to toggle process-level full event loop on");
+            }
+        }
     }
 
     // only create event stream if not in detached mode
@@ -333,6 +491,15 @@ pub async fn terminal(
 }
 
 fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> {
+    if state.process_verbosity_mode {
+        if state.printout_queue.len() >= state.max_printout_queue_len {
+            // remove oldest if queue is overflowing
+            state.printout_queue.pop_front();
+            state.printout_queue_number_dropped_printouts += 1;
+        }
+        state.printout_queue.push_back(printout);
+        return Ok(());
+    }
     // lock here so that runtime can still use println! without freezing..
     // can lock before loop later if we want to reduce overhead
     let mut stdout = state.stdout.lock();
@@ -342,7 +509,14 @@ fn handle_printout(printout: Printout, state: &mut State) -> anyhow::Result<()> 
     }
     // skip writing print to terminal if it's of a greater
     // verbosity level than our current mode
-    if printout.verbosity > state.verbose_mode {
+    let current_verbosity = match state.process_verbosity.get(&printout.source) {
+        None => &state.verbose_mode,
+        Some(cv) => match cv.get_verbosity() {
+            Some(v) => v,
+            None => return Ok(()), // process is muted
+        },
+    };
+    if &printout.verbosity > current_verbosity {
         return Ok(());
     }
     let now = Local::now();
@@ -451,6 +625,8 @@ async fn handle_event(
     }
     if state.search_mode {
         state.search(&our.name)?;
+    } else if state.process_verbosity_mode {
+        state.display_process_verbosity()?;
     } else {
         state.display_current_input_line(false)?;
     }
@@ -514,6 +690,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             // go from low to high, then reset to 0
             match verbose_mode {
                 0 => *verbose_mode = 1,
@@ -536,6 +715,7 @@ async fn handle_key_event(
             }
             Printout::new(
                 0,
+                TERMINAL_PROCESS_ID.clone(),
                 format!(
                     "verbose mode: {}",
                     match verbose_mode {
@@ -559,10 +739,14 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             let _ = debug_event_loop.send(DebugCommand::ToggleStepthrough).await;
             *in_step_through = !*in_step_through;
             Printout::new(
                 0,
+                TERMINAL_PROCESS_ID.clone(),
                 format!(
                     "debug mode {}",
                     match in_step_through {
@@ -583,6 +767,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             let _ = debug_event_loop.send(DebugCommand::Step).await;
             return Ok(Some(false));
         }
@@ -594,9 +781,13 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             *logging_mode = !*logging_mode;
             Printout::new(
                 0,
+                TERMINAL_PROCESS_ID.clone(),
                 format!("logging mode: {}", if *logging_mode { "on" } else { "off" }),
             )
             .send(&print_tx)
@@ -614,7 +805,7 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
-            if state.search_mode {
+            if state.search_mode || state.process_verbosity_mode {
                 return Ok(Some(false));
             }
             // go up one command in history
@@ -646,7 +837,7 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
-            if state.search_mode {
+            if state.search_mode || state.process_verbosity_mode {
                 return Ok(Some(false));
             }
             // go down one command in history
@@ -706,6 +897,9 @@ async fn handle_key_event(
             modifiers: KeyModifiers::CONTROL,
             ..
         } => {
+            if state.process_verbosity_mode {
+                return Ok(Some(false));
+            }
             if state.search_mode {
                 *search_depth += 1;
             }
@@ -722,6 +916,46 @@ async fn handle_key_event(
             // just show true current line as usual
             state.search_mode = false;
             *search_depth = 0;
+        }
+        //
+        //  CTRL+W: enter/exit process_verbosity_mode
+        //
+        KeyEvent {
+            code: KeyCode::Char('w'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        } => {
+            if state.search_mode {
+                return Ok(Some(false));
+            }
+            if state.process_verbosity_mode {
+                // Exit process verbosity mode
+                state.process_verbosity_mode = false;
+
+                // Restore previous line if it exists
+                if let Some(saved_line) = state.saved_line.take() {
+                    current_line.line = saved_line;
+                    current_line.line_col = current_line.line.graphemes(true).count();
+                    current_line.cursor_col = std::cmp::min(
+                        utils::display_width(&current_line.line) as u16,
+                        *win_cols - current_line.prompt_len as u16,
+                    );
+                }
+
+                state.exit_process_verbosity_mode()?;
+            } else {
+                // Enter process verbosity mode
+                state.process_verbosity_mode = true;
+
+                // Save current line
+                state.saved_line = Some(current_line.line.clone());
+                current_line.line.clear();
+                current_line.line_col = 0;
+                current_line.cursor_col = 0;
+
+                state.enter_process_verbosity_mode()?;
+            }
+            return Ok(Some(false));
         }
         //
         //  KEY: handle keypress events
@@ -813,6 +1047,61 @@ async fn handle_key_event(
                 //  ENTER: send current input to terminal process, clearing input line
                 //
                 KeyCode::Enter => {
+                    // if we were in process verbosity mode, update state
+                    if state.process_verbosity_mode {
+                        if let Some((process_id, verbosity)) =
+                            State::parse_process_verbosity(&current_line.line)
+                        {
+                            // add ProcessId
+                            let old_verbosity = state
+                                .process_verbosity
+                                .insert(process_id.clone(), verbosity.clone())
+                                .and_then(|ov| ov.get_verbosity().map(|ov| ov.clone()))
+                                .unwrap_or_default();
+                            let verbosity = verbosity
+                                .get_verbosity()
+                                .map(|v| v.clone())
+                                .unwrap_or_default();
+                            if (old_verbosity == 3 && verbosity != 3)
+                                || (verbosity == 3 && old_verbosity != 3)
+                            {
+                                debug_event_loop
+                                    .send(DebugCommand::ToggleEventLoopForProcess(
+                                        process_id.clone(),
+                                    ))
+                                    .await
+                                    .expect("failed to toggle process-level full event loop on");
+                            }
+                            current_line.line.clear();
+                            current_line.line_col = 0;
+                            current_line.cursor_col = 0;
+                            state.display_process_verbosity()?;
+                        } else if let Ok(process_id) = &current_line.line.parse() {
+                            // remove ProcessId
+                            if let Some(old_verbosity) = state.process_verbosity.remove(&process_id)
+                            {
+                                let old_verbosity = old_verbosity
+                                    .get_verbosity()
+                                    .map(|ov| ov.clone())
+                                    .unwrap_or_default();
+                                if old_verbosity == 3 {
+                                    debug_event_loop
+                                        .send(DebugCommand::ToggleEventLoopForProcess(
+                                            process_id.clone(),
+                                        ))
+                                        .await
+                                        .expect(
+                                            "failed to toggle process-level full event loop on",
+                                        );
+                                }
+                            }
+                            current_line.line.clear();
+                            current_line.line_col = 0;
+                            current_line.cursor_col = 0;
+                            state.display_process_verbosity()?;
+                        }
+                        return Ok(Some(false));
+                    }
                     // if we were in search mode, pull command from that
                     let command = if !state.search_mode {
                         current_line.line.clone()

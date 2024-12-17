@@ -1,235 +1,176 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <link rel="stylesheet" href="/kinode.css">
-    <link
-      href="https://api.fontshare.com/v2/css?f[]=clash-display@400,700,500,600,300&display=swap"
-      rel="stylesheet"
-    />
-    <script src="/our.js"></script>
-    <script>
-        document.title = window.our.node + " - settings";
-    </script>
-    <style>
-        h1,
-        h2,
-        h3,
-        h4,
-        h5,
-        h6,
-        p,
-        a,
-        li {
-            font-family: 'Kode Mono', monospace;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <link rel="stylesheet" href="/kinode.css">
+  <title>system settings</title>
+  <style>
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    p,
+    a,
+    li {
+      font-family: 'Kode Mono', monospace;
+    }
 
-        h1 {
-            padding: 20px;
-            max-width: 960px;
-            min-width: 300px;
-            margin: 0 auto;
-        }
+    h1 {
+      padding: 20px;
+      max-width: 960px;
+      min-width: 300px;
+      margin: 0 auto;
+    }
 
-        main {
-            margin: 0 auto;
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 20px 20px;
-            grid-auto-flow: row;
-            grid-template-areas:
-                "diagnostics diagnostics diagnostics"
-                "node-info pings pings"
-                "eth-rpc-providers eth-rpc-providers eth-rpc-settings"
-                "kernel kernel kernel"
-                "kinode-css kinode-css kinode-css";
-            padding: 20px;
-            max-width: 960px;
-            min-width: 300px;
-        }
+    #header {
+      display: flex;
+      justify-content: right;
+      align-items: center;
+      padding: 20px;
+      max-width: 960px;
+      min-width: 300px;
+      margin: 0 auto;
+    }
 
-        article#net-diagnostics {
-            grid-area: diagnostics;
-        }
+    main {
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px 20px;
+      grid-auto-flow: row;
+      grid-template-areas:
+        "diagnostics diagnostics diagnostics"
+        "node-info pings pings"
+        "eth-rpc-providers eth-rpc-providers eth-rpc-settings"
+        "kernel kernel kernel"
+        "id-onchain id-onchain id-onchain"
+        "kinode-css kinode-css kinode-css";
+      padding: 20px;
+      max-width: 960px;
+      min-width: 300px;
+    }
 
-        p#diagnostics,
-        p#peer-pki-response,
-        p#peer-ping-response {
-            white-space: pre-wrap;
-        }
+    article#net-diagnostics {
+      grid-area: diagnostics;
+    }
 
-        article#node-info {
-            grid-area: node-info;
-            word-wrap: break-word;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-around;
-        }
+    p#diagnostics,
+    p#peer-pki-response,
+    p#peer-ping-response {
+      white-space: pre-wrap;
+    }
 
-        #shutdown {
-            background-color: var(--ansi-red)
-        }
+    article#id-onchain {
+      grid-area: id-onchain;
+      word-wrap: break-word;
+    }
 
-        #shutdown:hover {
-            background-color: var(--maroon);
-        }
+    article#node-info {
+      grid-area: node-info;
+      word-wrap: break-word;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+    }
 
-        article#pings {
-            grid-area: pings;
-        }
+    #shutdown {
+      background-color: var(--ansi-red)
+    }
 
-        article#eth-rpc-providers {
-            grid-area: eth-rpc-providers;
-        }
+    #shutdown:hover {
+      background-color: var(--maroon);
+    }
 
-        article#eth-rpc-settings {
-            grid-area: eth-rpc-settings;
-        }
+    article#pings {
+      grid-area: pings;
+    }
 
-        article#kernel {
-            grid-area: kernel;
-        }
+    article#eth-rpc-providers {
+      grid-area: eth-rpc-providers;
+    }
 
-        article#kinode-css {
-            grid-area: kinode-css;
-        }
+    article#eth-rpc-settings {
+      grid-area: eth-rpc-settings;
+    }
 
-        textarea#stylesheet-editor {
-            width: 100%;
-            min-width: 300px;
-            min-height: 400px;
-        }
+    article#kernel {
+      grid-area: kernel;
+    }
 
-        div#provider-edits {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px 20px;
-            grid-auto-flow: row;
-        }
+    article#kinode-css {
+      grid-area: kinode-css;
+    }
 
-        article {
-            border: 1px solid #444;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            max-height: 600px;
-            overflow-y: auto;
-        }
+    textarea#stylesheet-editor {
+      width: 100%;
+      min-width: 300px;
+      min-height: 400px;
+    }
 
-        ul {
-            list-style-type: none;
-            padding: 0;
-        }
+    article#provider-edits {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px 20px;
+      grid-auto-flow: row;
+    }
 
-        li {
-            padding: 8px;
-            margin-bottom: 6px;
-            border-radius: 4px;
-            word-wrap: break-word;
-            white-space: pre-wrap;
-        }
+    article {
+      border: 1px solid #444;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      max-height: 600px;
+      overflow-y: auto;
+    }
 
-        #process-map li p:first-child {
-            font-weight: bold;
-        }
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
 
-        #process-map li ul {
-            padding-left: 20px;
-        }
+    li {
+      padding: 8px;
+      margin-bottom: 6px;
+      border-radius: 4px;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+    }
 
-        #process-map li ul li {
-            margin-bottom: 1px;
-            padding: 0;
-        }
+    #process-map li p:first-child {
+      font-weight: bold;
+    }
 
-        button.kill-process {
-            padding: 3px 6px;
-            margin: 10px;
-        }
-    </style>
+    #process-map li ul {
+      padding-left: 20px;
+    }
+
+    #process-map li ul li {
+      margin-bottom: 1px;
+      padding: 0;
+    }
+
+    button.kill-process {
+      padding: 3px 6px;
+      margin: 10px;
+    }
+
+    button.add-note-button {
+      padding: 3px 6px;
+      font-size: 0.8em;
+      margin-left: 6px;
+    }
+  </style>
+  <script type="module" crossorigin src="/settings:settings:sys/assets/index-BVR8Atdy.js"></script>
+  <link rel="stylesheet" crossorigin href="/settings:settings:sys/assets/index-iGirBDd0.css">
 </head>
 
 <body>
-    <h1>system diagnostics & settings</h1>
-    <main>
-        <article id="net-diagnostics">
-            <h2>networking diagnostics</h2>
-            <p id="diagnostics"></p>
-        </article>
-
-        <article id="node-info">
-            <h2>node info</h2>
-            <p id="node-name"></p>
-            <p id="net-key"></p>
-            <p id="ip-ports"></p>
-            <p id="routers"></p>
-            <button id="shutdown">shut down node(!)</button>
-        </article>
-
-        <article id="pings">
-            <h2>fetch PKI data</h2>
-            <form id="get-peer-pki">
-                <input type="text" name="peer" placeholder="peer-name.os">
-                <button type="submit">get peer info</button>
-            </form>
-            <p id="peer-pki-response"></p>
-            <h2>ping a node</h2>
-            <form id="ping-peer">
-                <input type="text" name="peer" placeholder="peer-name.os">
-                <input type="text" name="content" placeholder="message">
-                <input type="number" name="timeout" placeholder="timeout (seconds)">
-                <button type="submit">ping</button>
-            </form>
-            <p id="peer-ping-response"></p>
-        </article>
-
-        <article id="eth-rpc-providers">
-            <h2>ETH RPC providers</h2>
-            <div id="provider-edits">
-                <form id="add-eth-provider">
-                    <input type="number" name="chain-id" placeholder="1">
-                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
-                    <button type="submit">add provider</button>
-                </form>
-                <form id="remove-eth-provider">
-                    <input type="number" name="chain-id" placeholder="1">
-                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
-                    <button type="submit">remove provider</button>
-                </form>
-            </div>
-            <ul id="providers"></ul>
-        </article>
-
-        <article id="eth-rpc-settings">
-            <h2>ETH RPC settings</h2>
-            <p id="public"></p>
-            <div>
-                <p>nodes allowed to connect:</p>
-                <ul id="allowed-nodes"></ul>
-            </div>
-            <div>
-                <p>nodes banned from connecting:</p>
-                <ul id="denied-nodes"></ul>
-            </div>
-        </article>
-
-        <article id="kernel">
-            <h2>running processes</h2>
-            <ul id="process-map"></ul>
-        </article>
-
-        <article id="kinode-css">
-            <h2>stylesheet editor</h2>
-            <textarea id="stylesheet-editor"></textarea>
-            <button id="save-stylesheet">update kinode.css</button>
-        </article>
-
-
-        <script src="/settings:settings:sys/script.js"></script>
-    </main>
+  <div id="root"></div>
 </body>
 
 </html>
