@@ -17,7 +17,7 @@ sha2 = "0.10.8"
 tokio = { version = "1.28", features = ["rt-multi-thread"] }
 
 [dependencies]
-alloy = { git = "https://github.com/kinode-dao/alloy.git", rev = "e672f3e", features = [
+alloy = { version = "0.8.1", features = [
     "json-rpc",
     "rpc-types",
     "rpc-types-eth",

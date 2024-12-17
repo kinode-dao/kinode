@@ -21,7 +21,7 @@ simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.3"
-alloy = { git = "https://github.com/kinode-dao/alloy.git", rev = "e672f3e", features = [
+alloy = { version = "0.8.1", features = [
     "consensus",
     "contract",
     "json-rpc",
@@ -37,9 +37,9 @@ alloy = { git = "https://github.com/kinode-dao/alloy.git", rev = "e672f3e", feat
     "signers",
     "signer-local",
 ] }
-alloy-primitives = "0.7.6"
-alloy-sol-macro = "0.7.6"
-alloy-sol-types = "0.7.6"
+alloy-primitives = "0.8.15"
+alloy-sol-macro = "0.8.15"
+alloy-sol-types = "0.8.15"
 anyhow = "1.0.71"
 argon2 = "0.5.3"
 async-trait = "0.1.71"
@@ -73,13 +73,11 @@ rusqlite = { version = "0.31.0", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.8"
-sha3 = "0.10.8"
 # snow = { version = "0.9.5", features = ["ring-resolver"] }
 # unfortunately need to use forked version for async use and in-place encryption
 snow = { git = "https://github.com/dr-frmr/snow", branch = "dr/extract_cipherstates", features = ["ring-resolver"] }
 socket2 = "0.5.7"
 static_dir = "0.2.0"
-thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.21.0", features = ["native-tls"] }
 unicode-segmentation = "1.11"

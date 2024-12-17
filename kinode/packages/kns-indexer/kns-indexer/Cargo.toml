@@ -8,8 +8,8 @@ simulation-mode = []
 
 [dependencies]
 anyhow = "1.0"
-alloy-primitives = "0.7.0"
-alloy-sol-types = "0.7.0"
+alloy-primitives = "0.8.15"
+alloy-sol-types = "0.8.15"
 hex = "0.4.3"
 kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "0209da1" }
 process_macros = "0.1"
