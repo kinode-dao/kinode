@@ -8,12 +8,14 @@
             "eth:distro:sys",
             "http-server:distro:sys",
             "net:distro:sys",
-            "timer:distro:sys"
+            "timer:distro:sys",
+            "kv:distro:sys"
         ],
         "grant_capabilities": [
             "eth:distro:sys",
             "http-server:distro:sys",
-            "timer:distro:sys"
+            "timer:distro:sys",
+            "kv:distro:sys"
         ],
         "public": false
     }
