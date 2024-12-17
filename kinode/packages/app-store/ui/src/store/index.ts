@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { PackageState, AppListing, MirrorCheckFile, DownloadItem, HomepageApp, ManifestResponse, Notification } from '../types/Apps'
+import { PackageState, AppListing, MirrorCheckFile, DownloadItem, HomepageApp, ManifestResponse, Notification, UpdateInfo } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http'
 import KinodeClientApi from "@kinode/client-api"
 import { WEBSOCKET_URL } from '../utils/ws'
@@ -16,6 +16,7 @@ interface AppsStore {
   notifications: Notification[]
   homepageApps: HomepageApp[]
   activeDownloads: Record<string, { downloaded: number, total: number }>
+  updates: Record<string, UpdateInfo>
 
   fetchData: (id: string) => Promise<void>
   fetchListings: () => Promise<void>
@@ -48,6 +49,8 @@ interface AppsStore {
   clearActiveDownload: (appId: string) => void
   clearAllActiveDownloads: () => void;
 
+  fetchUpdates: () => Promise<void>
+  clearUpdates: (packageId: string) => Promise<void>
 }
 
 const useAppsStore = create<AppsStore>()((set, get) => ({
@@ -58,7 +61,7 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
   activeDownloads: {},
   homepageApps: [],
   notifications: [],
-
+  updates: {},
 
   fetchData: async (id: string) => {
     if (!id) return;
@@ -380,6 +383,33 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
     });
   },
 
+  fetchUpdates: async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/updates`);
+      if (res.status === HTTP_STATUS.OK) {
+        const updates = await res.json();
+        set({ updates });
+      }
+    } catch (error) {
+      console.error("Error fetching updates:", error);
+    }
+  },
+
+  clearUpdates: async (packageId: string) => {
+    try {
+      await fetch(`${BASE_URL}/updates/${packageId}/clear`, {
+        method: 'POST',
+      });
+      set((state) => {
+        const newUpdates = { ...state.updates };
+        delete newUpdates[packageId];
+        return { updates: newUpdates };
+      });
+    } catch (error) {
+      console.error("Error clearing updates:", error);
+    }
+  },
+
   ws: new KinodeClientApi({
     uri: WEBSOCKET_URL,
     nodeId: (window as any).our?.node,
@@ -419,10 +449,26 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
           get().removeNotification(`download-${appId}`);
 
           if (error) {
+            const formatDownloadError = (error: any): string => {
+              if (typeof error === 'object' && error !== null) {
+                if ('HashMismatch' in error) {
+                  const { actual, desired } = error.HashMismatch;
+                  return `Hash mismatch: expected ${desired.slice(0, 8)}..., got ${actual.slice(0, 8)}...`;
+                }
+                // Try to serialize the error object if it's not a HashMismatch
+                try {
+                  return JSON.stringify(error);
+                } catch {
+                  return String(error);
+                }
+              }
+              return String(error);
+            };
+
             get().addNotification({
               id: `error-${appId}`,
               type: 'error',
-              message: `Download failed for ${package_id.package_name}: ${error}`,
+              message: `Download failed for ${package_id.package_name}: ${formatDownloadError(error)}`,
               timestamp: Date.now(),
             });
           } else {

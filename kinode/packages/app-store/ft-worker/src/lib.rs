@@ -29,6 +29,7 @@
 //!
 //! - Hash mismatches between the received file and the expected hash are detected and reported.
 //! - Various I/O errors are caught and propagated.
+//! - A 120 second killswitch is implemented to clean up dangling transfers.
 //!
 //! ## Integration with App Store:
 //!
@@ -61,6 +62,7 @@ wit_bindgen::generate!({
 });
 
 const CHUNK_SIZE: u64 = 262144; // 256KB
+const KILL_SWITCH_MS: u64 = 120000; // 2 minutes
 
 call_init!(init);
 fn init(our: Address) {
@@ -78,8 +80,7 @@ fn init(our: Address) {
     }
 
     // killswitch timer, 2 minutes. sender or receiver gets killed/cleaned up.
-    // TODO: killswitch update bubbles up to downloads process?
-    timer::set_timer(120000, None);
+    timer::set_timer(KILL_SWITCH_MS, None);
 
     let start = std::time::Instant::now();
 
@@ -105,7 +106,23 @@ fn init(our: Address) {
                         start.elapsed().as_millis()
                     ),
                 ),
-                Err(e) => print_to_terminal(1, &format!("ft_worker: receive error: {}", e)),
+                Err(e) => {
+                    print_to_terminal(1, &format!("ft_worker: receive error: {}", e));
+                    // bubble up to parent.
+                    // TODO: doublecheck this.
+                    // if this fires on a basic timeout, that's bad.
+                    Request::new()
+                        .body(DownloadRequests::DownloadComplete(
+                            DownloadCompleteRequest {
+                                package_id: package_id.clone().into(),
+                                version_hash: desired_version_hash.to_string(),
+                                err: Some(DownloadError::HandlingError(e.to_string())),
+                            },
+                        ))
+                        .target(parent_process)
+                        .send()
+                        .unwrap();
+                }
             }
         }
         DownloadRequests::RemoteDownload(remote_request) => {
@@ -187,6 +204,17 @@ fn handle_receiver(
     loop {
         let message = await_message()?;
         if *message.source() == timer_address {
+            // send error message to downloads process
+            Request::new()
+                .body(DownloadRequests::DownloadComplete(
+                    DownloadCompleteRequest {
+                        package_id: package_id.clone().into(),
+                        version_hash: version_hash.to_string(),
+                        err: Some(DownloadError::Timeout),
+                    },
+                ))
+                .target(parent_process.clone())
+                .send()?;
             return Ok(());
         }
         if !message.is_request() {

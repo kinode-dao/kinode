@@ -148,6 +148,12 @@ export default function AppPage() {
           {latestVersion && (
             <li><span>Latest Version:</span> <span>{latestVersion}</span></li>
           )}
+          {installedApp?.pending_update_hash && (
+            <li className="warning">
+              <span>Failed Auto-Update:</span>
+              <span>Update to version with hash {installedApp.pending_update_hash.slice(0, 8)}... failed, approve newly requested capabilities and install it here:</span>
+            </li>
+          )}
           <li><span>Publisher:</span> <span>{app.package_id.publisher_node}</span></li>
           <li><span>License:</span> <span>{app.metadata?.properties?.license || "Not specified"}</span></li>
           <li>
