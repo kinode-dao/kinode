@@ -100,11 +100,17 @@ impl State {
         state.last_block = state.get_last_block();
 
         println!(
-            "kns_indexer: loaded state: version: {}, last_block: {}, chain_id: {}, kimap_address: {}",
+            "\n     🐦‍⬛  KNS Indexer State\n\
+             ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔\n\
+                Version    {:>6}\n\
+                Last Block {:>6}\n\
+                Chain ID   {:>6}\n\
+                KIMAP      {}\n\
+             ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁\n",
             state.version,
             state.last_block,
             state.get_chain_id(),
-            state.get_contract_address()
+            state.get_contract_address().to_string()
         );
 
         state
@@ -177,7 +183,6 @@ impl State {
     }
 
     fn set_name(&mut self, namehash: &str, name: &str) {
-        println!("set_name({namehash}, {name})");
         self.kv
             .set(&Self::name_key(namehash), &name.as_bytes().to_vec(), None)
             .unwrap();
@@ -189,7 +194,6 @@ impl State {
             .get(&Self::node_key(name))
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok());
-        println!("get_node({name}) -> {x:?}");
         x
     }
 
@@ -199,7 +203,6 @@ impl State {
             &serde_json::to_vec(&node).unwrap(),
             None,
         );
-        println!("set_node({name}, {:?})", node);
         x.unwrap();
     }
 
@@ -299,12 +302,8 @@ enum KnsError {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("indexing on contract address {KIMAP_ADDRESS}");
-
     // state is loaded from kv, and updated with the current block number and version.
     let state = State::load(&our);
-
-    println!("got last block: {}", state.get_last_block());
 
     if let Err(e) = main(our, state) {
         println!("fatal error: {e}");
@@ -315,10 +314,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     #[cfg(feature = "simulation-mode")]
     add_temp_hardcoded_tlzs(&mut state);
 
+    let chain_id = state.get_chain_id();
+    let kimap_address = state.get_contract_address();
+    let last_block = state.get_last_block();
+
     // sub_id: 1
     let mints_filter = eth::Filter::new()
-        .address(state.get_contract_address())
-        .from_block(state.get_last_block())
+        .address(kimap_address)
+        .from_block(last_block)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
@@ -332,28 +335,17 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // sub_id: 2
     let notes_filter = eth::Filter::new()
-        .address(state.get_contract_address())
-        .from_block(state.get_last_block())
+        .address(kimap_address)
+        .from_block(last_block)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
         .topic3(notes);
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
-    let eth_provider: eth::Provider =
-        eth::Provider::new(state.get_chain_id(), SUBSCRIPTION_TIMEOUT);
-
-    print_to_terminal(
-        1,
-        &format!(
-            "subscribing, state.block: {}, chain_id: {}",
-            state.get_last_block() - 1,
-            state.get_chain_id()
-        ),
-    );
+    let eth_provider: eth::Provider = eth::Provider::new(chain_id, SUBSCRIPTION_TIMEOUT);
 
     // subscribe to logs first, so no logs are missed
-    println!("subscribing to new logs...");
     eth_provider.subscribe_loop(1, mints_filter.clone());
     eth_provider.subscribe_loop(2, notes_filter.clone());
     println!("done subscribing to new logs.");

@@ -37,8 +37,8 @@
             "vfs:distro:sys",
             "kns-indexer:kns-indexer:sys",
             "eth:distro:sys",
-            "http_server:distro:sys",
-            "http_client:distro:sys",
+            "http-server:distro:sys",
+            "http-client:distro:sys",
             "sqlite:distro:sys",
             {
                 "process": "vfs:distro:sys",

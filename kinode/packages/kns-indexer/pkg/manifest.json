@@ -13,7 +13,7 @@
         ],
         "grant_capabilities": [
             "eth:distro:sys",
-            "http_server:distro:sys",
+            "http-server:distro:sys",
             "timer:distro:sys",
             "kv:distro:sys"
         ],

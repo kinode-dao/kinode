@@ -360,10 +360,6 @@ fn init(our: Address) {
         kimap::Kimap::new(eth_provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap());
     let last_saved_block = db.get_last_saved_block().unwrap_or(0);
 
-    println!(
-        "chain started, indexing on kimap address {} at block {}",
-        KIMAP_ADDRESS, last_saved_block
-    );
     let mut state = State {
         kimap: kimap_helper,
         last_saved_block,
@@ -520,7 +516,7 @@ fn handle_eth_log(
 
     let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
     let is_our_package = package_id.publisher() == our.node();
-    println!("we got a log: {block_number} {package_id} {metadata_uri}");
+
     let (tba, metadata_hash) = if !startup {
         // generate ~metadata-hash full-path
         let hash_note = format!("~metadata-hash.{}", note.parent_path);
@@ -751,7 +747,7 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
     // get past logs, subscribe to new ones.
     // subscribe first so we don't miss any logs
     state.kimap.provider.subscribe_loop(1, filter.clone());
-    println!("fetching old logs from block {last_saved_block}");
+    // println!("fetching old logs from block {last_saved_block}");
     for log in fetch_logs(&state.kimap.provider, &filter.from_block(last_saved_block)) {
         if let Err(e) = handle_eth_log(our, state, log, true) {
             print_to_terminal(1, &format!("error ingesting log: {e}"));
@@ -764,7 +760,7 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
         state.last_saved_block = block_number;
         state.db.set_last_saved_block(block_number).unwrap();
     }
-    println!("up to date to block {}", state.last_saved_block);
+    // println!("up to date to block {}", state.last_saved_block);
 }
 
 /// fetch logs from the chain with a given filter

@@ -78,8 +78,6 @@ pub enum Resp {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("started");
-
     let mut http_server = http::server::HttpServer::new(5);
     http_api::init_frontend(&our, &mut http_server);
 
