@@ -286,7 +286,7 @@ fn handle_eth_message(
 ) -> anyhow::Result<()> {
     match serde_json::from_slice::<eth::EthSubResult>(body) {
         Ok(Ok(eth::EthSub { result, .. })) => {
-            if let Ok(eth::SubscriptionResult::Log(log)) = serde_json::from_value(result) {
+            if let Ok(eth::SubscriptionResult::Log(log)) = serde_json::from_value::<eth::SubscriptionResult>(result) {
                 if let Err(e) = handle_log(state, pending_notes, &log) {
                     print_to_terminal(1, &format!("log-handling error! {e:?}"));
                 }

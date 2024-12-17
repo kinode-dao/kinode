@@ -8,10 +8,10 @@ simulation-mode = []
 
 [dependencies]
 anyhow = "1.0"
-alloy-primitives = "0.7.0"
-alloy-sol-types = "0.7.0"
+alloy-primitives = "0.8.15"
+alloy-sol-types = "0.8.15"
 hex = "0.4.3"
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "9c441fe" }
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "0443ece" }
 process_macros = "0.1"
 rmp-serde = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }
