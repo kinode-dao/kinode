@@ -118,14 +118,6 @@ impl From<WitKnsUpdate> for net::KnsUpdate {
     }
 }
 
-//// note: not defined in wit api right now like IndexerRequest.
-//#[derive(Clone, Debug, Serialize, Deserialize)]
-//enum IndexerResponse {
-//    Name(Option<String>),
-//    NodeInfo(Option<net::KnsUpdate>),
-//    GetState(State),
-//}
-
 #[derive(Debug, thiserror::Error)]
 enum KnsError {
     #[error("Parent node for note not found")]
