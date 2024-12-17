@@ -1508,7 +1508,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.10.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=9c441fe#9c441fe19d534d640980b0495ef8dc00fcbabc03"
+source = "git+https://github.com/kinode-dao/process_lib?rev=0209da1#0209da15340d9a2b92152916a8349d8f248775e5"
 dependencies = [
  "alloy",
  "alloy-primitives 0.7.7",
@@ -2456,17 +2456,6 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "state"
-version = "0.1.0"
-dependencies = [
- "kinode_process_lib",
- "process_macros",
- "serde",
- "serde_json",
- "wit-bindgen",
 ]
 
 [[package]]

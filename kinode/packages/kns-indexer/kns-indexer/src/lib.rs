@@ -1,6 +1,5 @@
 use crate::kinode::process::kns_indexer::{
-    GetStateRequest, IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest,
-    WitKnsUpdate, WitState,
+    IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest, WitKnsUpdate,
 };
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
@@ -38,6 +37,8 @@ const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1; // local
 
+const CURRENT_VERSION: u32 = 1;
+
 const MAX_PENDING_ATTEMPTS: u8 = 3;
 const SUBSCRIPTION_TIMEOUT: u64 = 60;
 const DELAY_MS: u64 = 1_000; // 1s
@@ -52,7 +53,7 @@ struct State {
     // includes keys and values for:
     // "meta:chain_id", "meta:version", "meta:last_block", "meta:contract_address",
     // "names:{namehash}" -> "{name}", "nodes:{name}" -> "{node_info}"
-    kv: Kv<String, Vec<u8>>, // todo: maybe serialize directly into known enum of possible types?
+    kv: Kv<String, Vec<u8>>,
 }
 
 impl State {
@@ -68,109 +69,91 @@ impl State {
             last_block: 0,
         };
 
-        // load or initialize chain_id
-        let chain_id = state.get_chain_id();
-        if chain_id == 0 {
-            state.set_chain_id(CHAIN_ID);
-        }
-
-        // load or initialize contract_address
-        let contract_address = state.get_contract_address();
-        if contract_address
-            == eth::Address::from_str(KIMAP_ADDRESS)
-                .expect("Failed to parse KIMAP_ADDRESS constant")
-        {
-            state.set_contract_address(contract_address);
-        }
-
-        // load or initialize last_block
-        let last_block = state.get_last_block();
-        if last_block == 0 {
-            state.set_last_block(KIMAP_FIRST_BLOCK);
-        }
-
-        // load or initialize version
         let version = state.get_version();
-        if version == 0 {
-            state.set_version(1); // Start at version 1
+        let chain_id = state.get_chain_id();
+        let contract_address = state.get_contract_address();
+        let last_block = state.get_last_block();
+
+        if version != CURRENT_VERSION
+            || chain_id != CHAIN_ID
+            || contract_address != eth::Address::from_str(KIMAP_ADDRESS).unwrap()
+        {
+            // if version/contract/chain_id are new, run migrations here.
         }
+
+        state.set_chain_id(chain_id);
+        state.set_contract_address(contract_address);
+        state.set_version(CURRENT_VERSION);
 
         // update state struct with final values
-        state.version = state.get_version();
-        state.last_block = state.get_last_block();
+        state.version = version;
+        state.last_block = last_block;
 
         println!(
             "\n     🐦‍⬛  KNS Indexer State\n\
              ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔\n\
-                Version    {:>6}\n\
-                Last Block {:>6}\n\
-                Chain ID   {:>6}\n\
-                KIMAP      {}\n\
+                Version         {}\n\
+                Last Block      {}\n\
+                Chain ID        {}\n\
+                KIMAP           {}\n\
              ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁\n",
             state.version,
             state.last_block,
-            state.get_chain_id(),
-            state.get_contract_address().to_string()
+            chain_id,
+            contract_address.to_string(),
         );
 
         state
     }
 
-    fn meta_version_key() -> &'static str {
-        "meta:version"
+    fn meta_version_key() -> String {
+        "meta:version".to_string()
     }
-    fn meta_last_block_key() -> &'static str {
-        "meta:last_block"
+
+    fn meta_last_block_key() -> String {
+        "meta:last_block".to_string()
     }
-    fn meta_chain_id_key() -> &'static str {
-        "meta:chain_id"
+
+    fn meta_chain_id_key() -> String {
+        "meta:chain_id".to_string()
     }
-    fn meta_contract_address_key() -> &'static str {
-        "meta:contract_address"
+
+    fn meta_contract_address_key() -> String {
+        "meta:contract_address".to_string()
     }
 
     fn name_key(namehash: &str) -> String {
-        format!("names:{namehash}")
+        format!("name:{}", namehash)
     }
 
     fn node_key(name: &str) -> String {
-        format!("nodes:{name}")
+        format!("node:{}", name)
     }
 
     fn get_last_block(&self) -> u64 {
         self.kv
-            .get(&Self::meta_last_block_key().to_string())
+            .get_as::<u64>(&Self::meta_last_block_key())
             .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or(0)
+            .unwrap_or(KIMAP_FIRST_BLOCK)
     }
 
     fn set_last_block(&mut self, block: u64) {
         self.kv
-            .set(
-                &Self::meta_last_block_key().to_string(),
-                &serde_json::to_vec(&block).unwrap(),
-                None,
-            )
+            .set_as::<u64>(&Self::meta_last_block_key(), &block, None)
             .unwrap();
         self.last_block = block;
     }
 
     fn get_version(&self) -> u32 {
         self.kv
-            .get(&Self::meta_version_key().to_string())
+            .get_as::<u32>(&Self::meta_version_key())
             .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or(0)
+            .unwrap_or(CURRENT_VERSION)
     }
 
     fn set_version(&mut self, version: u32) {
         self.kv
-            .set(
-                &Self::meta_version_key().to_string(),
-                &serde_json::to_vec(&version).unwrap(),
-                None,
-            )
+            .set_as::<u32>(&Self::meta_version_key(), &version, None)
             .unwrap();
         self.version = version;
     }
@@ -189,82 +172,45 @@ impl State {
     }
 
     fn get_node(&self, name: &str) -> Option<net::KnsUpdate> {
-        let x = self
-            .kv
-            .get(&Self::node_key(name))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok());
-        x
+        self.kv.get_as::<net::KnsUpdate>(&Self::node_key(name)).ok()
     }
 
     fn set_node(&mut self, name: &str, node: &net::KnsUpdate) {
-        let x = self.kv.set(
-            &Self::node_key(name),
-            &serde_json::to_vec(&node).unwrap(),
-            None,
-        );
-        x.unwrap();
+        self.kv
+            .set_as::<net::KnsUpdate>(&Self::node_key(name), &node, None)
+            .unwrap();
     }
 
     fn get_chain_id(&self) -> u64 {
         self.kv
-            .get(&Self::meta_chain_id_key().to_string())
+            .get_as::<u64>(&Self::meta_chain_id_key())
             .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or(CHAIN_ID)
     }
 
     fn set_chain_id(&mut self, chain_id: u64) {
         self.kv
-            .set(
-                &Self::meta_chain_id_key().to_string(),
-                &serde_json::to_vec(&chain_id).unwrap(),
-                None,
-            )
+            .set_as::<u64>(&Self::meta_chain_id_key(), &chain_id, None)
             .unwrap();
     }
 
     fn get_contract_address(&self) -> eth::Address {
-        match self.kv.get(&Self::meta_contract_address_key().to_string()) {
-            Ok(bytes) => match serde_json::from_slice(&bytes) {
-                Ok(addr) => addr,
-                Err(_) => eth::Address::from_str(KIMAP_ADDRESS)
-                    .expect("Failed to parse KIMAP_ADDRESS constant"),
-            },
+        match self
+            .kv
+            .get_as::<eth::Address>(&Self::meta_contract_address_key())
+        {
+            Ok(addr) => addr,
             Err(_) => eth::Address::from_str(KIMAP_ADDRESS)
                 .expect("Failed to parse KIMAP_ADDRESS constant"),
         }
     }
 
     fn set_contract_address(&mut self, contract_address: eth::Address) {
-        if let Ok(bytes) = serde_json::to_vec(&contract_address) {
-            self.kv
-                .set(&Self::meta_contract_address_key().to_string(), &bytes, None)
-                .expect("Failed to set contract address");
-        }
+        self.kv
+            .set_as::<eth::Address>(&Self::meta_contract_address_key(), &contract_address, None)
+            .expect("Failed to set contract address");
     }
 }
-
-// impl From<State> for WitState {
-//     fn from(s: State) -> Self {
-//         let contract_address: [u8; 20] = s.contract_address.into();
-//         WitState {
-//             chain_id: s.chain_id.clone(),
-//             contract_address: contract_address.to_vec(),
-//             names: s
-//                 .names
-//                 .iter()
-//                 .map(|(k, v)| (k.clone(), v.clone()))
-//                 .collect::<Vec<_>>(),
-//             nodes: s
-//                 .nodes
-//                 .iter()
-//                 .map(|(k, v)| (k.clone(), v.clone().into()))
-//                 .collect::<Vec<_>>(),
-//             last_block: s.last_block.clone(),
-//         }
-//     }
-// }
 
 impl From<net::KnsUpdate> for WitKnsUpdate {
     fn from(k: net::KnsUpdate) -> Self {
@@ -344,6 +290,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
     let eth_provider: eth::Provider = eth::Provider::new(chain_id, SUBSCRIPTION_TIMEOUT);
+    let _kimap_helper = kimap::Kimap::new(eth_provider.clone(), kimap_address);
 
     // subscribe to logs first, so no logs are missed
     eth_provider.subscribe_loop(1, mints_filter.clone());
@@ -426,11 +373,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                                 .map(|update| WitKnsUpdate::from(update)),
                         ))
                         .send()?;
-                }
-                // note no longer relevant.
-                // TODO: redo with iterator once available.
-                IndexerRequest::GetState(GetStateRequest { .. }) => {
-                    Response::new().body(serde_json::to_vec(&state)?).send()?;
                 }
             }
         }
