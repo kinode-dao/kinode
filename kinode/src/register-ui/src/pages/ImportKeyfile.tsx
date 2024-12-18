@@ -73,8 +73,7 @@ function ImportKeyfile({
             if (result.status > 399) {
 
               // REMOVE IN 1.0.0
-              let salted = [knsName, pw].join("");
-              let hashed_password = sha256(toBytes(salted));
+              let hashed_password = sha256(toBytes(pw));
               const result = await fetch("/import-keyfile", {
                 method: "POST",
                 credentials: 'include',
@@ -87,10 +86,13 @@ function ImportKeyfile({
 
               if (result.status > 399) {
                 throw new Error("Incorrect password");
+              } else {
+                redirectToHomepage();
               }
               // END REMOVE IN 1.0.0
 
-              throw new Error(await result.text());
+              // BRING BACK IN 1.0.0
+              // throw new Error(await result.text());
             }
             redirectToHomepage();
           }).catch(err => {

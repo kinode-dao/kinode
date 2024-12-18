@@ -883,9 +883,7 @@ async fn login_with_password(
         Ok(k) => k,
         Err(_) => {
             use sha2::{Digest, Sha256};
-
-            let salted = [username.as_bytes(), password.as_bytes()].concat();
-            let password_hash = format!("0x{}", hex::encode(Sha256::digest(salted)));
+            let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
             keygen::decode_keyfile(&disk_keyfile, &password_hash)
                 .expect("could not decode keyfile, password incorrect")
         }

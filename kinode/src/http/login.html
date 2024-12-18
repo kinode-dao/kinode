@@ -212,10 +212,7 @@
         } else {
 
           // REMOVE IN 1.0.0
-          // sha256 hash password using crypto-js
-          const salted = ['${node}', password].join("");
-          const hashHex = '0x' + CryptoJS.SHA256(salted).toString(CryptoJS.enc.Hex);
-
+          const hashHex = '0x' + CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex);
           const result = await fetch("/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -224,7 +221,6 @@
               subdomain: isSecureSubdomain ? firstPathItem : '',
             }),
           });
-
           if (result.status == 200) {
             window.location.reload();
           } else {
