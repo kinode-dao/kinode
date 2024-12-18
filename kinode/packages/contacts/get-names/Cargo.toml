@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "0443ece" }
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "d97e012" }
 process_macros = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
