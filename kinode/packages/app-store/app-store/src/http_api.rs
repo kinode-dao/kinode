@@ -40,6 +40,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/apps/:id/install",     // install a downloaded app
         "/downloads/:id/mirror", // start mirroring a version of a downloaded app
         "/downloads/:id/remove", // remove a downloaded app
+        "/reset",                // reset chain state, re-index
         "/apps/:id/auto-update", // set auto-updating a version of a downloaded app
         "/updates/:id/clear",    // clear update info for an app.
         "/mirrorcheck/:node",    // check if a node/mirror is online/offline
@@ -725,6 +726,28 @@ fn serve_paths(
             let _ = updates.package_updates.remove(&package_id);
             updates.save();
             Ok((StatusCode::OK, None, vec![]))
+        }
+        // POST reset chain state, re-index
+        "/reset" => {
+            if method != Method::POST {
+                return Ok((
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
+                ));
+            }
+            let chain = Address::from_str("our@chain:app-store:sys")?;
+
+            let resp = Request::new()
+                .target(chain)
+                .body(&ChainRequests::Reset)
+                .send_and_await_response(5)??;
+            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+            if let ChainResponses::ResetOk = msg {
+                Ok((StatusCode::OK, None, vec![]))
+            } else {
+                Ok((StatusCode::INTERNAL_SERVER_ERROR, None, vec![]))
+            }
         }
         // GET online/offline mirrors for a listed app
         "/mirrorcheck/:node" => {

@@ -106,6 +106,14 @@ impl State {
         state
     }
 
+    /// Reset by removing the database and reloading fresh state
+    fn reset(&self, our: &Address) {
+        // Remove the entire database
+        if let Err(e) = kv::remove_db(our.package_id(), "kns_indexer", None) {
+            println!("Warning: error removing kns_indexer database: {e:?}");
+        }
+    }
+
     fn meta_version_key() -> String {
         "meta:version".to_string()
     }
@@ -364,7 +372,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         .body(IndexerResponse::Name(state.get_name(hash)))
                         .send()?;
                 }
-
                 IndexerRequest::NodeInfo(NodeInfoRequest { ref name, .. }) => {
                     Response::new()
                         .body(&IndexerResponse::NodeInfo(
@@ -373,6 +380,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                                 .map(|update| WitKnsUpdate::from(update)),
                         ))
                         .send()?;
+                }
+                IndexerRequest::Reset => {
+                    // Reload state fresh - this will create new db
+                    state.reset(&our);
+                    Response::new().body(IndexerResponse::ResetOk).send()?;
+                    panic!("resetting state, restarting!");
                 }
             }
         }

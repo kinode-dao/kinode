@@ -14,11 +14,15 @@ interface kns-indexer {
         /// returns an Option<KnsUpdate>
         /// set block to 0 if you just want to get the current state of the indexer
         node-info(node-info-request),
+        /// resets and re-indexes the chain
+        /// returns a reset-ok
+        reset,
     }
 
     variant indexer-response {
         name(option<string>),
         node-info(option<wit-kns-update>),
+        reset-ok,
      }
 
     record namehash-to-name-request {

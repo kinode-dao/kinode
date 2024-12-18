@@ -134,6 +134,10 @@ interface chain {
         ///
         /// lazy-load-blob: none.
         stop-auto-update(package-id),
+        /// Reset app-store db
+        /// 
+        /// lazy-load-blob: none.
+        reset,
     }
 
     /// Responses from the chain component
@@ -149,6 +153,8 @@ interface chain {
         /// lazy-load-blob: none.
         auto-update-stopped,
         /// lazy-load-blob: none.
+        /// successful reset
+        reset-ok,
         err(chain-error),
     }
 

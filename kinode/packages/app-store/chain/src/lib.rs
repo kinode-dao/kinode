@@ -107,6 +107,12 @@ impl DB {
         Ok(Self { inner })
     }
 
+    pub fn reset(&self, our: &Address) {
+        if let Err(e) = sqlite::remove_db(our.package_id(), "app_store_chain.sqlite", None) {
+            println!("failed to reset app_store DB: {e}");
+        }
+    }
+
     pub fn get_last_saved_block(&self) -> anyhow::Result<u64> {
         let query = "SELECT value FROM meta WHERE key = 'last_saved_block'";
         let rows = self.inner.read(query.into(), vec![])?;
@@ -419,7 +425,7 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                 }
             }
             Req::Request(chains) => {
-                handle_local_request(state, chains)?;
+                handle_local_request(our, state, chains)?;
             }
         }
     }
@@ -427,7 +433,11 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
     Ok(())
 }
 
-fn handle_local_request(state: &mut State, req: ChainRequests) -> anyhow::Result<()> {
+fn handle_local_request(
+    our: &Address,
+    state: &mut State,
+    req: ChainRequests,
+) -> anyhow::Result<()> {
     match req {
         ChainRequests::GetApp(package_id) => {
             let pid = package_id.clone().to_process_lib();
@@ -479,6 +489,11 @@ fn handle_local_request(state: &mut State, req: ChainRequests) -> anyhow::Result
                 let error_response = ChainResponses::Err(ChainError::NoPackage);
                 Response::new().body(&error_response).send()?;
             }
+        }
+        ChainRequests::Reset => {
+            state.db.reset(&our);
+            Response::new().body(&ChainResponses::ResetOk).send()?;
+            panic!("resetting state, restarting!");
         }
     }
     Ok(())
