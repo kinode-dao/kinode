@@ -6,6 +6,7 @@ use lib::types::core::{
     PackageId, PrintSender, Printout, ProcessId, Request, Response, FD_MANAGER_PROCESS_ID,
     KV_PROCESS_ID,
 };
+use rand::random;
 use rocksdb::OptimisticTransactionDB;
 use std::{
     collections::{HashMap, VecDeque},
@@ -24,6 +25,13 @@ struct KvState {
     /// access order of dbs, used to cull if we hit the fds limit
     access_order: Arc<Mutex<UniqueQueue<(PackageId, String)>>>,
     txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
+    /// track active iterators: (package_id, db_name) -> (iterator_id -> current position)
+    iterators: Arc<
+        DashMap<
+            (PackageId, String),
+            DashMap<u64, Vec<u8>>, // Store last seen key instead of iterator
+        >,
+    >,
     fds_limit: u64,
 }
 
@@ -42,6 +50,7 @@ impl KvState {
             open_kvs: Arc::new(DashMap::new()),
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
             txs: Arc::new(DashMap::new()),
+            iterators: Arc::new(DashMap::new()),
             fds_limit: 10,
         }
     }
@@ -97,6 +106,108 @@ impl KvState {
             drop(lock);
             self.remove_db(key.0, key.1).await;
         }
+    }
+
+    async fn handle_iter_start(
+        &mut self,
+        package_id: PackageId,
+        db: String,
+        prefix: Option<Vec<u8>>,
+    ) -> Result<u64, KvError> {
+        let db_key = (package_id.clone(), db.clone());
+        let _db = self.open_kvs.get(&db_key).ok_or(KvError::NoDb)?;
+
+        // Generate a random iterator ID and ensure it's unique
+        let iterators = self
+            .iterators
+            .entry(db_key.clone())
+            .or_insert_with(|| DashMap::new());
+
+        let mut iterator_id = random::<u64>();
+        while iterators.contains_key(&iterator_id) {
+            iterator_id = random::<u64>();
+        }
+
+        // Store the starting position (prefix or empty vec for start)
+        iterators.insert(iterator_id, prefix.unwrap_or_default());
+
+        Ok(iterator_id)
+    }
+
+    async fn handle_iter_next(
+        &mut self,
+        package_id: PackageId,
+        db: String,
+        iterator_id: u64,
+        count: u64,
+    ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, bool), KvError> {
+        let db_key = (package_id.clone(), db.clone());
+        let db = self.open_kvs.get(&db_key).ok_or(KvError::NoDb)?;
+
+        let db_iters = self.iterators.get(&db_key).ok_or(KvError::NoDb)?;
+        let last_key = db_iters
+            .get(&iterator_id)
+            .ok_or(KvError::NoIterator)?
+            .clone();
+
+        let mut entries = Vec::new();
+        let mut done = true;
+
+        // Create a fresh iterator starting from our last position
+        let mode = if last_key.is_empty() {
+            rocksdb::IteratorMode::Start
+        } else {
+            rocksdb::IteratorMode::From(&last_key, rocksdb::Direction::Forward)
+        };
+
+        let mut iter = db.iterator(mode);
+        let mut count_remaining = count;
+
+        while let Some(item) = iter.next() {
+            if count_remaining == 0 {
+                done = false;
+                break;
+            }
+
+            match item {
+                Ok((key, value)) => {
+                    let key_vec = key.to_vec();
+                    if !key_vec.starts_with(&last_key) && !last_key.is_empty() {
+                        // We've moved past our prefix
+                        break;
+                    }
+                    entries.push((key_vec.clone(), value.to_vec()));
+                    if let Some(mut last_key_entry) = db_iters.get_mut(&iterator_id) {
+                        *last_key_entry = key_vec;
+                    }
+                    count_remaining -= 1;
+                }
+                Err(e) => {
+                    return Err(KvError::RocksDBError {
+                        action: "iter_next".to_string(),
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok((entries, done))
+    }
+
+    async fn handle_iter_close(
+        &mut self,
+        package_id: PackageId,
+        db: String,
+        iterator_id: u64,
+    ) -> Result<(), KvError> {
+        let db_key = (package_id, db);
+        if let Some(db_iters) = self.iterators.get_mut(&db_key) {
+            db_iters.remove(&iterator_id);
+            if db_iters.is_empty() {
+                self.iterators.remove(&db_key);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -379,6 +490,39 @@ async fn handle_request(
             }
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
+        KvAction::IterStart { prefix } => {
+            let iterator_id = state
+                .handle_iter_start(
+                    request.package_id.clone(),
+                    request.db.clone(),
+                    prefix.clone(),
+                )
+                .await?;
+            (
+                serde_json::to_vec(&KvResponse::IterStart { iterator_id }).unwrap(),
+                None,
+            )
+        }
+        KvAction::IterNext { iterator_id, count } => {
+            let (entries, done) = state
+                .handle_iter_next(
+                    request.package_id.clone(),
+                    request.db.clone(),
+                    *iterator_id,
+                    *count,
+                )
+                .await?;
+            (
+                serde_json::to_vec(&KvResponse::IterNext { done }).unwrap(),
+                Some(serde_json::to_vec(&entries).unwrap()),
+            )
+        }
+        KvAction::IterClose { iterator_id } => {
+            state
+                .handle_iter_close(request.package_id.clone(), request.db.clone(), *iterator_id)
+                .await?;
+            (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
+        }
     };
 
     if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
@@ -534,6 +678,9 @@ async fn check_caps(
             Ok(())
         }
         KvAction::Backup { .. } => Ok(()),
+        KvAction::IterStart { .. } => Ok(()),
+        KvAction::IterNext { .. } => Ok(()),
+        KvAction::IterClose { .. } => Ok(()),
     }
 }
 

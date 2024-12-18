@@ -20,6 +20,10 @@ pub enum KvAction {
     BeginTx,
     Commit { tx_id: u64 },
     Backup,
+    // Iterator operations
+    IterStart { prefix: Option<Vec<u8>> },
+    IterNext { iterator_id: u64, count: u64 },
+    IterClose { iterator_id: u64 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,6 +32,10 @@ pub enum KvResponse {
     BeginTx { tx_id: u64 },
     Get { key: Vec<u8> },
     Err { error: KvError },
+    // Iterator responses
+    IterStart { iterator_id: u64 },
+    IterNext { done: bool },
+    IterClose { iterator_id: u64 },
 }
 
 #[derive(Debug, Serialize, Deserialize, Error)]
@@ -38,6 +46,8 @@ pub enum KvError {
     KeyNotFound,
     #[error("no Tx found")]
     NoTx,
+    #[error("Iterator not found")]
+    NoIterator,
     #[error("No capability: {error}")]
     NoCap { error: String },
     #[error("rocksdb internal error: {error}")]
