@@ -4,6 +4,8 @@ import Loader from "../components/Loader";
 import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
+// REMOVE IN 1.0.0
+import { sha256, toBytes } from "viem";
 
 interface LoginProps extends PageProps { }
 
@@ -54,6 +56,24 @@ function Login({
         );
 
         if (result.status > 399) {
+
+          // REMOVE IN 1.0.0
+          let salted = [knsName, pw].join("");
+          let hashed_password = sha256(toBytes(salted));
+          const result = await fetch(
+            "/login",
+            {
+              method: "POST",
+              credentials: 'include',
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password_hash: hashed_password }),
+            }
+          );
+          if (result.status > 399) {
+            throw new Error(await result.text());
+          }
+          // END REMOVE IN 1.0.0
+
           throw new Error(await result.text());
         }
         redirectToHomepage();

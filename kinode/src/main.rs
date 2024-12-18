@@ -874,8 +874,22 @@ async fn login_with_password(
 
     let password_hash_hex = format!("0x{}", password_hash);
 
-    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
-        .expect("could not decode keyfile, password incorrect");
+    // SWITCH BACK TO THIS IN 1.0.0
+    // let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
+    //     .expect("could not decode keyfile, password incorrect");
+
+    // REMOVE IN 1.0.0
+    let k = match keygen::decode_keyfile(&disk_keyfile, &password_hash_hex) {
+        Ok(k) => k,
+        Err(_) => {
+            use sha2::{Digest, Sha256};
+
+            let salted = [username.as_bytes(), password.as_bytes()].concat();
+            let password_hash = format!("0x{}", hex::encode(Sha256::digest(salted)));
+            keygen::decode_keyfile(&disk_keyfile, &password_hash)
+                .expect("could not decode keyfile, password incorrect")
+        }
+    };
 
     let mut our = Identity {
         name: k.username.clone(),

@@ -7,6 +7,8 @@ import {
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
+// REMOVE IN 1.0.0
+import { sha256, toBytes } from "viem";
 
 interface ImportKeyfileProps extends PageProps { }
 
@@ -69,6 +71,25 @@ function ImportKeyfile({
             });
 
             if (result.status > 399) {
+
+              // REMOVE IN 1.0.0
+              let salted = [knsName, pw].join("");
+              let hashed_password = sha256(toBytes(salted));
+              const result = await fetch("/import-keyfile", {
+                method: "POST",
+                credentials: 'include',
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  keyfile: Buffer.from(localKey).toString('utf8'),
+                  password_hash: hashed_password,
+                }),
+              });
+
+              if (result.status > 399) {
+                throw new Error("Incorrect password");
+              }
+              // END REMOVE IN 1.0.0
+
               throw new Error(await result.text());
             }
             redirectToHomepage();
