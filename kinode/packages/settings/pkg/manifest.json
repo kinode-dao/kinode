@@ -13,7 +13,11 @@
                 }
             },
             "homepage:homepage:sys",
-            "http_server:distro:sys",
+            {
+                "process": "homepage:homepage:sys",
+                "params": "SetStylesheet"
+            },
+            "http-server:distro:sys",
             "kernel:distro:sys",
             "net:distro:sys",
             "vfs:distro:sys",
@@ -26,7 +30,7 @@
         ],
         "grant_capabilities": [
             "eth:distro:sys",
-            "http_server:distro:sys",
+            "http-server:distro:sys",
             "kernel:distro:sys",
             "net:distro:sys",
             "vfs:distro:sys"
