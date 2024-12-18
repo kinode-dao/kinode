@@ -5685,6 +5685,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "reset"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib 0.10.0",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen 0.36.0",
+]
+
+[[package]]
 name = "rfc6979"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
