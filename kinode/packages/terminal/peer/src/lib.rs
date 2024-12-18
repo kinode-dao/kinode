@@ -2,7 +2,7 @@ use kinode_process_lib::{net, script, Address, Message, Request};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 script!(init);

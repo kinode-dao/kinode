@@ -5,8 +5,7 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "app_store:app_store:sys",
-            "contacts:contacts:sys",
+            "app-store:app-store:sys",
             "chess:chess:sys",
             "eth:distro:sys",
             {
@@ -15,12 +14,12 @@
                     "root": true
                 }
             },
-            "fd_manager:distro:sys",
+            "fd-manager:distro:sys",
             "filesystem:distro:sys",
-            "http_server:distro:sys",
-            "http_client:distro:sys",
+            "http-server:distro:sys",
+            "http-client:distro:sys",
             "kernel:distro:sys",
-            "kns_indexer:kns_indexer:sys",
+            "kns-indexer:kns-indexer:sys",
             "kv:distro:sys",
             "net:distro:sys",
             "sqlite:distro:sys",

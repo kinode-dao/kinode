@@ -9,7 +9,7 @@ const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 script!(init);
