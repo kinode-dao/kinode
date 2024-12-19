@@ -769,7 +769,7 @@ async fn fulfill_request(
                 }
             }
         };
-        match pubsub.raw_request(method.into(), params.clone()).await {
+        match pubsub.raw_request(method.into(), params).await {
             Ok(value) => {
                 let mut is_replacement_successful = true;
                 providers.entry(chain_id.clone()).and_modify(|aps| {
@@ -793,7 +793,7 @@ async fn fulfill_request(
                     )
                     .await;
                 }
-                let response = EthResponse::Response { value };
+                let response = EthResponse::Response(value);
                 let mut request_cache = request_cache.lock().await;
                 if request_cache.len() >= MAX_REQUEST_CACHE_LEN {
                     // drop 10% oldest cache entries
@@ -813,7 +813,9 @@ async fn fulfill_request(
                 .await;
                 // if rpc_error is of type ErrResponse, return to user!
                 if let RpcError::ErrorResp(err) = rpc_error {
-                    return EthResponse::Err(EthError::RpcError(err));
+                    let err_value =
+                        serde_json::to_value(err).unwrap_or_else(|_| serde_json::Value::Null);
+                    return EthResponse::Err(EthError::RpcError(err_value));
                 }
                 // this provider failed and needs to be reset
                 let mut is_reset_successful = true;
@@ -1136,10 +1138,11 @@ async fn check_for_root_cap(
 
 async fn verbose_print(print_tx: &PrintSender, content: &str) {
     let _ = print_tx
-        .send(Printout {
-            verbosity: 2,
-            content: content.to_string(),
-        })
+        .send(Printout::new(
+            2,
+            NET_PROCESS_ID.clone(),
+            content.to_string(),
+        ))
         .await;
 }
 

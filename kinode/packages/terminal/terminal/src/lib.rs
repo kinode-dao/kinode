@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,8 +90,8 @@ impl TerminalState {
                     ProcessId::new(Some("m"), "terminal", "sys"),
                 ),
                 (
-                    "net_diagnostics".to_string(),
-                    ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
+                    "net-diagnostics".to_string(),
+                    ProcessId::new(Some("net-diagnostics"), "terminal", "sys"),
                 ),
                 (
                     "peer".to_string(),

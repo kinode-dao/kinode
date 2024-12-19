@@ -7,30 +7,53 @@ interface contacts {
     }
 
     variant request {
-        get-names,                                // requires read-names-only
-        get-all-contacts,                         // requires read
-        get-contact(string),                      // requires read
-        add-contact(string),                      // requires add
-        // tuple<node, field, value>
-        add-field(tuple<string, string, string>), // requires add
-        remove-contact(string),                   // requires remove
-        // tuple<node, field>
-        remove-field(tuple<string, string>),      // requires remove
+        /// requires ReadNameOnly capability
+        /// lazy-load-blob: none.
+        get-names,
+        /// requires Read capability
+        /// lazy-load-blob: none.
+        get-all-contacts,
+        /// requires Read capability
+        /// lazy-load-blob: none.
+        get-contact(string),
+        /// requires Add capability
+        /// lazy-load-blob: none.
+        add-contact(string),
+        /// requires Add capability
+        /// lazy-load-blob: none.
+        /// tuple<node, field, value>
+        add-field(tuple<string, string, string>),
+        /// requires Remove capability
+        /// lazy-load-blob: none.
+        remove-contact(string),
+        /// requires Remove capability
+        /// lazy-load-blob: none.
+        /// tuple<node, field>
+        remove-field(tuple<string, string>),
     }
 
     variant response {
+        /// lazy-load-blob: none.
         get-names(list<string>),
-        get-all-contacts, // JSON all-contacts dict in blob
-        get-contact,      // JSON contact dict in blob
+        /// lazy-load-blob: required; JSON all-contacts dict in blob.
+        get-all-contacts,
+        /// lazy-load-blob: required; JSON contact dict in blob.
+        get-contact,
+        /// lazy-load-blob: none.
         add-contact,
+        /// lazy-load-blob: none.
         add-field,
+        /// lazy-load-blob: none.
         remove-contact,
+        /// lazy-load-blob: none.
         remove-field,
-        err(string),      // any failed request will receive this response
+        /// any failed request will receive this response
+        /// lazy-load-blob: none.
+        err(string),
     }
 }
 
 world contacts-sys-v0 {
     import contacts;
-    include process-v0;
+    include process-v1;
 }

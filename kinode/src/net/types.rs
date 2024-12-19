@@ -175,6 +175,7 @@ pub struct Peer {
     /// associated with them. We can send them prompts to establish Passthroughs.
     pub routing_for: bool,
     pub sender: UnboundedSender<KernelMessage>,
+    pub handle: Option<tokio::task::JoinHandle<()>>,
     /// unix timestamp of last message sent *or* received
     pub last_message: u64,
 }
@@ -189,6 +190,7 @@ impl Peer {
                 identity,
                 routing_for,
                 sender: peer_tx,
+                handle: None,
                 last_message: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
@@ -214,6 +216,12 @@ impl Peer {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
+    }
+
+    pub fn kill(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
     }
 }
 /// [`Identity`], with additional fields for networking.
