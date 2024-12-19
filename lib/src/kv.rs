@@ -31,7 +31,7 @@ pub enum KvResponse {
     Ok,
     BeginTx { tx_id: u64 },
     Get { key: Vec<u8> },
-    Err { error: KvError },
+    Err(KvError),
     // Iterator responses
     IterStart { iterator_id: u64 },
     IterNext { done: bool },
