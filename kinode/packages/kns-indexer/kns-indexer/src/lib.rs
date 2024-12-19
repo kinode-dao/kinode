@@ -314,7 +314,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
 
     // if block in state is < current_block, get logs from that part.
-    println!("syncing old logs...");
+    println!("syncing old logs from block: {}", last_block);
     fetch_and_process_logs(
         &eth_provider,
         &mut state,
@@ -516,8 +516,7 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
     if !kimap::valid_note(&note_label) {
         return Err(anyhow::anyhow!("skipping invalid note: {note_label}"));
     }
-
-    let Some(node_name) = get_parent_name(&state, &node_hash) else {
+    let Some(node_name) = state.get_name(&node_hash) else {
         return Err(KnsError::NoParentError.into());
     };
 
@@ -591,7 +590,7 @@ fn handle_log(
                 return Err(anyhow::anyhow!("skipping invalid name: {name}"));
             }
 
-            let full_name = match get_parent_name(&state, &parent_hash) {
+            let full_name = match state.get_name(&parent_hash) {
                 Some(parent_name) => format!("{name}.{parent_name}"),
                 None => name,
             };
@@ -664,36 +663,6 @@ fn fetch_and_process_logs(
             }
         }
     }
-}
-
-fn get_parent_name(state: &State, parent_hash: &str) -> Option<String> {
-    let mut current_hash = parent_hash.to_string();
-    let mut components = Vec::new(); // Collect components in a vector
-    let mut visited_hashes = std::collections::HashSet::new();
-
-    while let Some(parent_name) = state.get_name(&current_hash) {
-        if !visited_hashes.insert(current_hash.clone()) {
-            break;
-        }
-
-        if !parent_name.is_empty() {
-            components.push(parent_name.clone());
-        }
-
-        // Update current_hash to the parent's hash for the next iteration
-        if let Some(new_parent_hash) = state.get_name(&parent_name) {
-            current_hash = new_parent_hash;
-        } else {
-            break;
-        }
-    }
-
-    if components.is_empty() {
-        return None;
-    }
-
-    components.reverse();
-    Some(components.join("."))
 }
 
 // TEMP. Either remove when event reimitting working with anvil,
