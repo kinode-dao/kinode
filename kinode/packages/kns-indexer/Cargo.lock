@@ -1918,6 +1918,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "node_info"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "num-bigint"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2381,6 +2392,17 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "windows-registry",
+]
+
+[[package]]
+name = "reset"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
 ]
 
 [[package]]

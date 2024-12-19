@@ -20,6 +20,12 @@
             "http-client:distro:sys",
             "kernel:distro:sys",
             "kns-indexer:kns-indexer:sys",
+            {
+                "process": "kns-indexer:kns-indexer:sys",
+                "params": {
+                    "root": true
+                }
+            },
             "kv:distro:sys",
             "net:distro:sys",
             "sqlite:distro:sys",

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FaFolder, FaFile, FaChevronLeft, FaSync, FaRocket, FaSpinner, FaCheck, FaTrash, FaExclamationTriangle, FaTimesCircle, FaChevronDown, FaChevronRight } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import useAppsStore from "../store";
+import { ResetButton} from "../components";
 import { DownloadItem, PackageManifestEntry, PackageState, Updates, DownloadError, UpdateInfo } from "../types/Apps";
 
 // Core packages that cannot be uninstalled
@@ -308,6 +309,10 @@ export default function MyAppsPage() {
 
     return (
         <div className="my-apps-page">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                <h1>My Apps</h1>
+                <ResetButton />
+            </div>
             {error && <div className="error-message">{error}</div>}
             {renderUpdates()}
 

@@ -841,7 +841,7 @@ td {
     50%,
     70% {
         transform: translate3d(-4px, 0, 0);
-    }
+}
 
     40%,
     60% {
@@ -856,7 +856,7 @@ td {
 
     50% {
         opacity: 0.6;
-    }
+}
 
     100% {
         opacity: 1;
@@ -1287,4 +1287,80 @@ td {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.header-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+/* Modal styles */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+}
+
+.modal-container {
+    padding: 1rem;
+    width: 100%;
+    max-width: 28rem;
+}
+
+.modal-content {
+    background-color: light-dark(var(--surface-light), var(--surface-dark));
+    padding: 1.5rem;
+    border-radius: var(--border-radius);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.modal-title {
+    font-size: 1.25rem;
+    font-weight: 500;
+    margin: 0;
+    color: inherit;
+}
+
+.modal-description {
+    color: light-dark(var(--text-light), var(--text-dark));
+    margin-bottom: 1.5rem;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+/* Button variants */
+.danger-button {
+    background-color: var(--red) !important;
+    color: white !important;
+}
+
+.danger-button:hover {
+    opacity: 0.9;
+}
+
+.danger-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }

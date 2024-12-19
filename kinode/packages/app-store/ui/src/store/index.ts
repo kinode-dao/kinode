@@ -27,6 +27,7 @@ interface AppsStore {
   fetchOurApps: () => Promise<void>
   fetchDownloadsForApp: (id: string) => Promise<DownloadItem[]>
   checkMirror: (node: string) => Promise<MirrorCheckFile | null>
+  resetStore: () => Promise<void>
 
   fetchHomepageApps: () => Promise<void>
   getLaunchUrl: (id: string) => string | null
@@ -407,6 +408,28 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
       });
     } catch (error) {
       console.error("Error clearing updates:", error);
+    }
+  },
+
+  resetStore: async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/reset`, {
+        method: 'POST',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Reset failed');
+      }
+
+      // Refresh the store data
+      await Promise.all([
+        get().fetchInstalled(),
+        get().fetchListings(),
+        get().fetchUpdates(),
+      ]);
+    } catch (error) {
+      console.error('Reset failed:', error);
+      throw error;
     }
   },
 
