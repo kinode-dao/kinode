@@ -16,7 +16,13 @@
         "public": false,
         "request_networking": false,
         "request_capabilities": [
-            "kns-indexer:kns-indexer:sys"
+            "kns-indexer:kns-indexer:sys",
+            {
+                "process": "kns-indexer:kns-indexer:sys",
+                "params": {
+                    "root": true
+                }
+            }
         ],
         "grant_capabilities": [
             "kns-indexer:kns-indexer:sys"

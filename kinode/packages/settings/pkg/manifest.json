@@ -19,6 +19,13 @@
             },
             "http-server:distro:sys",
             "kernel:distro:sys",
+            "kns-indexer:kns-indexer:sys",
+            {
+                "process": "kns-indexer:kns-indexer:sys",
+                "params": {
+                    "root": true
+                }
+            },
             "net:distro:sys",
             "vfs:distro:sys",
             {

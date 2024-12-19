@@ -14,15 +14,15 @@ interface kns-indexer {
         /// returns an Option<KnsUpdate>
         /// set block to 0 if you just want to get the current state of the indexer
         node-info(node-info-request),
-        /// resets and re-indexes the chain
-        /// returns a reset-ok
+        /// resets and re-indexes the chain, requires root cap,
+        /// returns a response varaint reset
         reset,
     }
 
     variant indexer-response {
         name(option<string>),
         node-info(option<wit-kns-update>),
-        reset-ok,
+        reset(reset-result),
      }
 
     record namehash-to-name-request {
@@ -41,6 +41,16 @@ interface kns-indexer {
         ips: list<string>,
         ports: list<tuple<string, u16>>, // map, but wit doesn't support maps
         routers: list<string>,
+    }
+
+    variant reset-result {
+        success,
+        err(reset-error),
+    }
+
+    variant reset-error {
+        no-root-cap,
+        db-error(string),
     }
 }
 

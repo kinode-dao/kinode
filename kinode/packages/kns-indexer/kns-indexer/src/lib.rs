@@ -1,12 +1,13 @@
 use crate::kinode::process::kns_indexer::{
-    IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest, WitKnsUpdate,
+    IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest, ResetError,
+    ResetResult, WitKnsUpdate,
 };
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
     await_message, call_init, eth, kimap,
     kv::{self, Kv},
-    net, print_to_terminal, println, timer, Address, Message, Request, Response,
+    net, print_to_terminal, println, timer, Address, Capability, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -336,7 +337,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
         // if true, time to go check current block number and handle pending notes.
         let tick = message.is_local(&our) && message.source().process == "timer:distro:sys";
-        let Message::Request { source, body, .. } = message else {
+        let Message::Request {
+            source,
+            body,
+            capabilities,
+            ..
+        } = message
+        else {
             if tick {
                 handle_eth_message(
                     &mut state,
@@ -382,9 +389,26 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         .send()?;
                 }
                 IndexerRequest::Reset => {
-                    // Reload state fresh - this will create new db
+                    // check for root capability
+                    let root_cap = Capability {
+                        issuer: our.clone(),
+                        params: "{\"root\":true}".to_string(),
+                    };
+                    if source.package_id() != our.package_id() {
+                        if !capabilities.contains(&root_cap) {
+                            Response::new()
+                                .body(IndexerResponse::Reset(ResetResult::Err(
+                                    ResetError::NoRootCap,
+                                )))
+                                .send()?;
+                            continue;
+                        }
+                    }
+                    // reload state fresh - this will create new db
                     state.reset(&our);
-                    Response::new().body(IndexerResponse::ResetOk).send()?;
+                    Response::new()
+                        .body(IndexerResponse::Reset(ResetResult::Success))
+                        .send()?;
                     panic!("resetting state, restarting!");
                 }
             }
