@@ -7,12 +7,13 @@ import { mechAbi, KIMAP, encodeIntoMintCall, encodeMulticalls, kimapAbi, MULTICA
 import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
 import { PackageSelector } from "../components";
+import { Tooltip } from '../components/Tooltip';
 
 const NAME_INVALID = "Package name must contain only valid characters (a-z, 0-9, -, and .)";
 
 export default function PublishPage() {
   const { openConnectModal } = useConnectModal();
-  const { ourApps, fetchOurApps, downloads } = useAppsStore();
+  const { ourApps, fetchOurApps, downloads, fetchDownloadsForApp } = useAppsStore();
   const publicClient = usePublicClient();
 
   const { address, isConnected, isConnecting } = useAccount();
@@ -23,6 +24,7 @@ export default function PublishPage() {
     });
 
   const [packageName, setPackageName] = useState<string>("");
+  // @ts-ignore
   const [publisherId, setPublisherId] = useState<string>(window.our?.node || "");
   const [metadataUrl, setMetadataUrl] = useState<string>("");
   const [metadataHash, setMetadataHash] = useState<string>("");
@@ -33,6 +35,26 @@ export default function PublishPage() {
   useEffect(() => {
     fetchOurApps();
   }, [fetchOurApps]);
+
+  useEffect(() => {
+    if (packageName && publisherId) {
+      const id = `${packageName}:${publisherId}`;
+      fetchDownloadsForApp(id);
+    }
+  }, [packageName, publisherId, fetchDownloadsForApp]);
+
+  useEffect(() => {
+    if (isConfirmed) {
+      // Fetch our apps again after successful publish
+      fetchOurApps();
+      // Reset form fields
+      setPackageName("");
+      // @ts-ignore
+      setPublisherId(window.our?.node || "");
+      setMetadataUrl("");
+      setMetadataHash("");
+    }
+  }, [isConfirmed, fetchOurApps]);
 
   const validatePackageName = useCallback((name: string) => {
     // Allow lowercase letters, numbers, hyphens, and dots
@@ -69,9 +91,12 @@ export default function PublishPage() {
       // Check if code_hashes exist in metadata and is an object
       if (metadata.properties && metadata.properties.code_hashes && typeof metadata.properties.code_hashes === 'object') {
         const codeHashes = metadata.properties.code_hashes;
-        const missingHashes = Object.entries(codeHashes).filter(([version, hash]) =>
-          !downloads[`${packageName}:${publisherId}`]?.some(d => d.File?.name === `${hash}.zip`)
-        );
+        console.log('Available downloads:', downloads[`${packageName}:${publisherId}`]);
+
+        const missingHashes = Object.entries(codeHashes).filter(([version, hash]) => {
+          const hasDownload = downloads[`${packageName}:${publisherId}`]?.some(d => d.File?.name === `${hash}.zip`);
+          return !hasDownload;
+        });
 
         if (missingHashes.length > 0) {
           setMetadataError(`Missing local downloads for mirroring versions: ${missingHashes.map(([version]) => version).join(', ')}`);
@@ -163,12 +188,6 @@ export default function PublishPage() {
           gas: BigInt(1000000),
         });
 
-        // Reset form fields
-        setPackageName("");
-        setPublisherId(window.our?.node || "");
-        setMetadataUrl("");
-        setMetadataHash("");
-
       } catch (error) {
         console.error(error);
       }
@@ -223,22 +242,31 @@ export default function PublishPage() {
   return (
     <div className="publish-page">
       <h1>Publish Package</h1>
-      {Boolean(address) && (
-        <div className="publisher-info">
-          <span>Publishing as:</span>
-          <span className="address">{address?.slice(0, 4)}...{address?.slice(-4)}</span>
+      {!address ? (
+        <div className="wallet-status">
+          <button onClick={() => openConnectModal?.()}>Connect Wallet</button>
+        </div>
+      ) : (
+        <div className="wallet-status">
+          Connected: {address.slice(0, 6)}...{address.slice(-4)}
+          <Tooltip content="Make sure the wallet you're connecting to publish is the same as the owner for the publisher!" />
         </div>
       )}
-
       {isConfirming ? (
-        <div className="message info">Publishing package...</div>
+        <div className="message info">
+          <div className="loading-spinner"></div>
+          <span>Publishing package...</span>
+        </div>
       ) : !address || !isConnected ? (
-        <>
+        <div className="connect-wallet">
           <h4>Please connect your wallet to publish a package</h4>
           <ConnectButton />
-        </>
+        </div>
       ) : isConnecting ? (
-        <div className="message info">Approve connection in your wallet</div>
+        <div className="message info">
+          <div className="loading-spinner"></div>
+          <span>Approve connection in your wallet</span>
+        </div>
       ) : (
         <form className="publish-form" onSubmit={publishPackage}>
           <div className="form-group">
@@ -248,33 +276,36 @@ export default function PublishPage() {
           </div>
 
           <div className="form-group">
-            <label htmlFor="metadata-url">Metadata URL</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <label>Metadata URL</label>
+              <Tooltip content={<>add a link to metadata.json here (<a href="https://raw.githubusercontent.com/kinode-dao/kit/47cdf82f70b36f2a102ddfaaeed5efa10d7ef5b9/src/new/templates/rust/ui/chat/metadata.json" target="_blank" rel="noopener noreferrer">example link</a>)</>} />
+            </div>
             <input
-              id="metadata-url"
               type="text"
-              required
               value={metadataUrl}
               onChange={(e) => setMetadataUrl(e.target.value)}
               onBlur={calculateMetadataHash}
-              placeholder="https://github/my-org/my-repo/metadata.json"
             />
-            <p className="help-text">
-              Metadata is a JSON file that describes your package.
-            </p>
             {metadataError && <p className="error-message">{metadataError}</p>}
           </div>
           <div className="form-group">
-            <label htmlFor="metadata-hash">Metadata Hash</label>
+            <label>Metadata Hash</label>
             <input
               readOnly
-              id="metadata-hash"
               type="text"
               value={metadataHash}
               placeholder="Calculated automatically from metadata URL"
             />
           </div>
-          <button type="submit" disabled={isConfirming || nameValidity !== null}>
-            {isConfirming ? 'Publishing...' : 'Publish'}
+          <button type="submit" disabled={isConfirming || nameValidity !== null || Boolean(metadataError)}>
+            {isConfirming ? (
+              <>
+                <div className="loading-spinner small"></div>
+                <span>Publishing...</span>
+              </>
+            ) : (
+              'Publish'
+            )}
           </button>
         </form>
       )}
@@ -293,21 +324,24 @@ export default function PublishPage() {
       <div className="my-packages">
         <h2>Packages You Own</h2>
         {Object.keys(ourApps).length > 0 ? (
-          <ul>
+          <ul className="package-list">
             {Object.values(ourApps).map((app) => (
               <li key={`${app.package_id.package_name}:${app.package_id.publisher_node}`}>
                 <Link to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`} className="app-name">
-                  {app.metadata?.name || app.package_id.package_name}
+                  {app.metadata?.image && (
+                    <img src={app.metadata.image} alt="" className="package-icon" />
+                  )}
+                  <span>{app.metadata?.name || app.package_id.package_name}</span>
                 </Link>
 
-                <button onClick={() => unpublishPackage(app.package_id.package_name, app.package_id.publisher_node)}>
+                <button onClick={() => unpublishPackage(app.package_id.package_name, app.package_id.publisher_node)} className="danger">
                   Unpublish
                 </button>
               </li>
             ))}
           </ul>
         ) : (
-          <p>No packages published</p>
+          <p className="no-packages">No packages published</p>
         )}
       </div>
     </div>

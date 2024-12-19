@@ -94,6 +94,35 @@ export interface HomepageApp {
     favorite: boolean;
 }
 
+export interface HashMismatch {
+    desired: string;
+    actual: string;
+}
+
+export type DownloadError = 
+    | "NoPackage"
+    | "NotMirroring"
+    | { HashMismatch: HashMismatch }
+    | "FileNotFound"
+    | "WorkerSpawnFailed"
+    | "HttpClientError"
+    | "BlobNotFound"
+    | "VfsError"
+    | { HandlingError: string }
+    | "Timeout"
+    | "InvalidManifest"
+    | "Offline";
+
+export interface UpdateInfo {
+    errors: [string, DownloadError][]; // [url/node, error]
+    pending_manifest_hash: string | null;
+}
+
+export type Updates = {
+    [key: string]: { // package_id
+        [key: string]: UpdateInfo; // version_hash -> update info
+    };
+};
 
 export type NotificationActionType = 'click' | 'modal' | 'popup' | 'redirect';
 

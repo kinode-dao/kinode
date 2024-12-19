@@ -1,5 +1,5 @@
-use crate::{utils, VFS_TIMEOUT};
-use kinode_process_lib::{kimap, vfs, PackageId};
+use crate::{kinode::process::downloads::DownloadError, utils, VFS_TIMEOUT};
+use kinode_process_lib::{get_state, kimap, set_state, vfs, PackageId};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -54,9 +54,6 @@ pub struct PackageState {
     /// capabilities have changed. if they have changed, auto-install must fail
     /// and the user must approve the new capabilities.
     pub manifest_hash: Option<String>,
-    /// stores the version hash of a failed auto-install attempt, which can be
-    /// later installed by the user by approving new caps.
-    pub pending_update_hash: Option<String>,
 }
 
 // this seems cleaner to me right now with pending_update_hash, but given how we serialize
@@ -133,7 +130,6 @@ impl State {
                     verified: true,       // implicitly verified (TODO re-evaluate)
                     caps_approved: false, // must re-approve if you want to do something ??
                     manifest_hash: Some(manifest_hash),
-                    pending_update_hash: None, // ... this could be a separate state saved. don't want to reflect this info on-disk as a file.
                 },
             );
 
@@ -145,5 +141,78 @@ impl State {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Updates {
+    #[serde(with = "package_id_map")]
+    pub package_updates: HashMap<PackageId, HashMap<String, UpdateInfo>>, // package id -> version_hash -> update info
+}
+
+impl Default for Updates {
+    fn default() -> Self {
+        Self {
+            package_updates: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpdateInfo {
+    pub errors: Vec<(String, DownloadError)>, // errors collected by downloads process
+    pub pending_manifest_hash: Option<String>, // pending manifest hash that differed from the installed one
+}
+
+impl Updates {
+    pub fn load() -> Self {
+        let bytes = get_state();
+
+        if let Some(bytes) = bytes {
+            serde_json::from_slice(&bytes).unwrap_or_default()
+        } else {
+            Self::default()
+        }
+    }
+
+    pub fn save(&self) {
+        let bytes = serde_json::to_vec(self).unwrap_or_default();
+        set_state(&bytes);
+    }
+}
+
+// note: serde_json doesn't support non-string keys when serializing maps, so
+// we have to use a custom simple serializer.
+mod package_id_map {
+    use super::*;
+    use std::{collections::HashMap, str::FromStr};
+
+    pub fn serialize<S>(
+        map: &HashMap<PackageId, HashMap<String, UpdateInfo>>,
+        s: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut map_ser = s.serialize_map(Some(map.len()))?;
+        for (k, v) in map {
+            map_ser.serialize_entry(&k.to_string(), v)?;
+        }
+        map_ser.end()
+    }
+
+    pub fn deserialize<'de, D>(
+        d: D,
+    ) -> Result<HashMap<PackageId, HashMap<String, UpdateInfo>>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let string_map = HashMap::<String, HashMap<String, UpdateInfo>>::deserialize(d)?;
+        Ok(string_map
+            .into_iter()
+            .filter_map(|(k, v)| PackageId::from_str(&k).ok().map(|pid| (pid, v)))
+            .collect())
     }
 }

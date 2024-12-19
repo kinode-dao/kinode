@@ -1,7 +1,6 @@
 interface chess {
     /// Our "chess protocol" request/response format. We'll always serialize these
     /// to a byte vector and send them over IPC.
-
     variant request {
         /// lazy-load-blob: none.
         new-game(new-game-request),

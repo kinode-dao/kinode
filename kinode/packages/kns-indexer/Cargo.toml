@@ -3,8 +3,9 @@ resolver = "2"
 members = [
     "get-block",
     "kns-indexer",
-    "state",
-]
+    "reset",
+    "node-info",
+ ]
 
 [profile.release]
 panic = "abort"

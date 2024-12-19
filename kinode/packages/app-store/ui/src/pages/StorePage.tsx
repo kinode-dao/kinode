@@ -2,13 +2,15 @@ import React, { useState, useEffect } from "react";
 import useAppsStore from "../store";
 import { AppListing } from "../types/Apps";
 import { Link } from "react-router-dom";
+import { FaSearch } from "react-icons/fa";
 
 export default function StorePage() {
-  const { listings, fetchListings } = useAppsStore();
+  const { listings, fetchListings, fetchUpdates } = useAppsStore();
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   useEffect(() => {
     fetchListings();
+    fetchUpdates();
   }, [fetchListings]);
 
   // extensive temp null handling due to weird prod bug
@@ -25,12 +27,15 @@ export default function StorePage() {
   return (
     <div className="store-page">
       <div className="store-header">
-        <input
-          type="text"
-          placeholder="Search apps..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+        <div className="search-bar">
+          <input
+            type="text"
+            placeholder="Search apps..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <FaSearch />
+        </div>
       </div>
       <div className="app-list">
         {!listings ? (

@@ -11,7 +11,25 @@
         ],
         "wit_version": 1
     },
-    "state.wasm": {
+    "reset.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "kns-indexer:kns-indexer:sys",
+            {
+                "process": "kns-indexer:kns-indexer:sys",
+                "params": {
+                    "root": true
+                }
+            }
+        ],
+        "grant_capabilities": [
+            "kns-indexer:kns-indexer:sys"
+        ],
+        "wit_version": 1
+    },
+    "node-info.wasm": {
         "root": false,
         "public": false,
         "request_networking": false,

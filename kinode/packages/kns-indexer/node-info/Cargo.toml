@@ -1,5 +1,5 @@
 [package]
-name = "state"
+name = "node_info"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,10 +7,10 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "0443ece" }
-process_macros = "0.1"
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "d97e012" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+process_macros = "0.1"
 wit-bindgen = "0.36.0"
 
 [lib]

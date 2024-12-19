@@ -80,6 +80,11 @@ function App() {
     setTimeout(() => window.location.reload(), 1000);
   };
 
+  const handleReset = () => {
+    apiCall("Reset");
+    setTimeout(() => window.location.reload(), 1000);
+  };
+
   const handleSaveStylesheet = () => {
     const stylesheet = (document.getElementById('stylesheet-editor') as HTMLTextAreaElement).value;
     apiCall({ "SetStylesheet": stylesheet });
@@ -141,7 +146,20 @@ function App() {
           <p id="net-key">{appState.identity?.networking_key}</p>
           {appState.identity?.ws_routing && <p id="ip-ports">{appState.identity.ws_routing}</p>}
           {appState.identity?.routers && <p id="routers">{appState.identity.routers}</p>}
-          <button id="shutdown" onClick={handleShutdown}>shut down node(!)</button>
+          <div className="mt-16 flex flex-col justify-start">
+            <button
+              onClick={handleShutdown}
+              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded w-full mb-8"
+            >
+              Shutdown Node
+            </button>
+            <button
+              onClick={handleReset}
+              className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded w-full"
+            >
+              Reset KNS State
+            </button>
+          </div>
         </article>
 
         <article id="pings">

@@ -42,7 +42,7 @@ use kinode_process_lib::{
     LazyLoadBlob, Message, PackageId, Response,
 };
 use serde::{Deserialize, Serialize};
-use state::State;
+use state::{State, UpdateInfo, Updates};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -78,20 +78,22 @@ pub enum Resp {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("started");
-
     let mut http_server = http::server::HttpServer::new(5);
     http_api::init_frontend(&our, &mut http_server);
 
+    // state = state built from the filesystem, installed packages
+    // updates = state saved with get/set_state(), auto_update metadata.
     let mut state = State::load().expect("state loading failed");
-
+    let mut updates = Updates::load();
     loop {
         match await_message() {
             Err(send_error) => {
                 print_to_terminal(1, &format!("main: got network error: {send_error}"));
             }
             Ok(message) => {
-                if let Err(e) = handle_message(&our, &mut state, &mut http_server, &message) {
+                if let Err(e) =
+                    handle_message(&our, &mut state, &mut updates, &mut http_server, &message)
+                {
                     let error_message = format!("error handling message: {e:?}");
                     print_to_terminal(1, &error_message);
                     Response::new()
@@ -111,6 +113,7 @@ fn init(our: Address) {
 fn handle_message(
     our: &Address,
     state: &mut State,
+    updates: &mut Updates,
     http_server: &mut http::server::HttpServer,
     message: &Message,
 ) -> anyhow::Result<()> {
@@ -134,7 +137,7 @@ fn handle_message(
                 }
                 http_server.handle_request(
                     server_request,
-                    |incoming| http_api::handle_http_request(our, state, &incoming),
+                    |incoming| http_api::handle_http_request(our, state, updates, &incoming),
                     |_channel_id, _message_type, _blob| {
                         // not expecting any websocket messages from FE currently
                     },
@@ -168,40 +171,80 @@ fn handle_message(
                         "auto download complete from non-local node"
                     ));
                 }
-                // auto_install case:
-                // the downloads process has given us the new package manifest's
-                // capability hashes, and the old package's capability hashes.
-                // we can use these to determine if the new package has the same
-                // capabilities as the old one, and if so, auto-install it.
 
-                let manifest_hash = req.manifest_hash;
-                let package_id = req.download_info.package_id;
-                let version_hash = req.download_info.version_hash;
+                match req {
+                    AutoDownloadCompleteRequest::Success(succ) => {
+                        // auto_install case:
+                        // the downloads process has given us the new package manifest's
+                        // capability hashes, and the old package's capability hashes.
+                        // we can use these to determine if the new package has the same
+                        // capabilities as the old one, and if so, auto-install it.
+                        let manifest_hash = succ.manifest_hash;
+                        let package_id = succ.package_id;
+                        let version_hash = succ.version_hash;
 
-                let process_lib_package_id = package_id.clone().to_process_lib();
+                        let process_lib_package_id = package_id.clone().to_process_lib();
 
-                // first, check if we have the package and get its manifest hash
-                let should_auto_install = state
-                    .packages
-                    .get(&process_lib_package_id)
-                    .map(|package| package.manifest_hash == Some(manifest_hash.clone()))
-                    .unwrap_or(false);
+                        // first, check if we have the package and get its manifest hash
+                        let should_auto_install = state
+                            .packages
+                            .get(&process_lib_package_id)
+                            .map(|package| package.manifest_hash == Some(manifest_hash.clone()))
+                            .unwrap_or(false);
 
-                if should_auto_install {
-                    if let Err(e) =
-                        utils::install(&package_id, None, &version_hash, state, &our.node)
-                    {
-                        if let Some(package) = state.packages.get_mut(&process_lib_package_id) {
-                            package.pending_update_hash = Some(version_hash);
+                        if should_auto_install {
+                            if let Err(e) =
+                                utils::install(&package_id, None, &version_hash, state, &our.node)
+                            {
+                                println!("error auto-installing package: {e}");
+                                // Get or create the outer map for this package
+                                updates
+                                    .package_updates
+                                    .entry(package_id.to_process_lib())
+                                    .or_default()
+                                    .insert(
+                                        version_hash.clone(),
+                                        UpdateInfo {
+                                            errors: vec![],
+                                            pending_manifest_hash: Some(manifest_hash.clone()),
+                                        },
+                                    );
+                                updates.save();
+                            } else {
+                                println!(
+                                    "auto-installed update for package: {process_lib_package_id}"
+                                );
+                            }
+                        } else {
+                            // TODO.
+                            updates
+                                .package_updates
+                                .entry(package_id.to_process_lib())
+                                .or_default()
+                                .insert(
+                                    version_hash.clone(),
+                                    UpdateInfo {
+                                        errors: vec![],
+                                        pending_manifest_hash: Some(manifest_hash.clone()),
+                                    },
+                                );
+                            updates.save();
                         }
-                        println!("error auto-installing package: {e}");
-                    } else {
-                        println!("auto-installed update for package: {process_lib_package_id}");
                     }
-                } else {
-                    if let Some(package) = state.packages.get_mut(&process_lib_package_id) {
-                        package.pending_update_hash = Some(version_hash);
-                        println!("error auto-installing package: manifest hash mismatch");
+                    AutoDownloadCompleteRequest::Err(err) => {
+                        println!("error auto-downloading package: {err:?}");
+                        updates
+                            .package_updates
+                            .entry(err.package_id.to_process_lib())
+                            .or_default()
+                            .insert(
+                                err.version_hash.clone(),
+                                UpdateInfo {
+                                    errors: err.tries,
+                                    pending_manifest_hash: None,
+                                },
+                            );
+                        updates.save();
                     }
                 }
             }

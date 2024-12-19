@@ -42,13 +42,18 @@
 //! mechanism is implemented in the FT worker for improved modularity and performance.
 //!
 use crate::kinode::process::downloads::{
-    AutoDownloadCompleteRequest, AutoUpdateRequest, DirEntry, DownloadCompleteRequest,
-    DownloadError, DownloadRequests, DownloadResponses, Entry, FileEntry, HashMismatch,
-    LocalDownloadRequest, RemoteDownloadRequest, RemoveFileRequest,
+    AutoDownloadCompleteRequest, AutoDownloadError, AutoUpdateRequest, DirEntry,
+    DownloadCompleteRequest, DownloadError, DownloadRequests, DownloadResponses, Entry, FileEntry,
+    HashMismatch, LocalDownloadRequest, RemoteDownloadRequest, RemoveFileRequest,
 };
-use std::{collections::HashSet, io::Read, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Read,
+    str::FromStr,
+};
 
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
+use kinode::process::downloads::AutoDownloadSuccess;
 use kinode_process_lib::{
     await_message, call_init, get_blob, get_state,
     http::client,
@@ -69,7 +74,6 @@ wit_bindgen::generate!({
 mod ft_worker_lib;
 
 pub const VFS_TIMEOUT: u64 = 5; // 5s
-pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 
 #[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
@@ -77,6 +81,15 @@ pub enum Resp {
     Download(DownloadResponses),
     HttpClient(Result<client::HttpClientResponse, client::HttpClientError>),
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AutoUpdateStatus {
+    mirrors_left: HashSet<String>,                // set(node/url)
+    mirrors_failed: Vec<(String, DownloadError)>, // vec(node/url, error)
+    active_mirror: String,                        // (node/url)
+}
+
+type AutoUpdates = HashMap<(PackageId, String), AutoUpdateStatus>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
@@ -117,13 +130,11 @@ fn init(our: Address) {
     let mut tmp =
         vfs::open_dir("/app-store:sys/downloads/tmp", true, None).expect("could not open tmp");
 
-    let mut auto_updates: HashSet<(PackageId, String)> = HashSet::new();
+    // metadata for in-flight auto-updates
+    let mut auto_updates: AutoUpdates = HashMap::new();
 
     loop {
         match await_message() {
-            Err(send_error) => {
-                print_to_terminal(1, &format!("downloads: got network error: {send_error}"));
-            }
             Ok(message) => {
                 if let Err(e) = handle_message(
                     &our,
@@ -143,6 +154,33 @@ fn init(our: Address) {
                         .unwrap();
                 }
             }
+            Err(send_error) => {
+                print_to_terminal(1, &format!("downloads: got network error: {send_error}"));
+                if let Some(context) = &send_error.context {
+                    if let Ok(download_request) =
+                        serde_json::from_slice::<LocalDownloadRequest>(&context)
+                    {
+                        let key = (
+                            download_request.package_id.to_process_lib(),
+                            download_request.desired_version_hash.clone(),
+                        );
+
+                        // Get the error first
+                        let error = if send_error.kind.is_timeout() {
+                            DownloadError::Timeout
+                        } else if send_error.kind.is_offline() {
+                            DownloadError::Offline
+                        } else {
+                            DownloadError::HandlingError(send_error.to_string())
+                        };
+
+                        // Then remove and get metadata
+                        if let Some(metadata) = auto_updates.remove(&key) {
+                            try_next_mirror(metadata, key, &mut auto_updates, error);
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -157,7 +195,7 @@ fn handle_message(
     message: &Message,
     downloads: &mut Directory,
     _tmp: &mut Directory,
-    auto_updates: &mut HashSet<(PackageId, String)>,
+    auto_updates: &mut AutoUpdates,
 ) -> anyhow::Result<()> {
     if message.is_request() {
         match message.body().try_into()? {
@@ -174,8 +212,12 @@ fn handle_message(
                 } = download_request.clone();
 
                 if download_from.starts_with("http") {
-                    // use http-client to GET it
-                    Request::to(("our", "http-client", "distro", "sys"))
+                    // use http_client to GET it
+                    print_to_terminal(
+                        1,
+                        "kicking off http download for {package_id:?} and {version_hash:?}",
+                    );
+                    Request::to(("our", "http_client", "distro", "sys"))
                         .body(
                             serde_json::to_vec(&client::HttpClientAction::Http(
                                 client::OutgoingHttpRequest {
@@ -200,7 +242,6 @@ fn handle_message(
                     &package_id,
                     &desired_version_hash,
                     &download_from,
-                    APP_SHARE_TIMEOUT,
                 )?;
 
                 Request::to((&download_from, "downloads", "app-store", "sys"))
@@ -236,13 +277,8 @@ fn handle_message(
                 }
 
                 let target_worker = Address::from_str(&worker_address)?;
-                let _ = spawn_send_transfer(
-                    our,
-                    &package_id,
-                    &desired_version_hash,
-                    APP_SHARE_TIMEOUT,
-                    &target_worker,
-                )?;
+                let _ =
+                    spawn_send_transfer(our, &package_id, &desired_version_hash, &target_worker)?;
                 let resp = DownloadResponses::Success;
                 Response::new().body(&resp).send()?;
             }
@@ -257,50 +293,30 @@ fn handle_message(
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("got non local download complete"));
                 }
-                // if we have a pending auto_install, forward that context to the main process.
-                // it will check if the caps_hashes match (no change in capabilities), and auto_install if it does.
 
-                let manifest_hash = if auto_updates.remove(&(
-                    req.package_id.clone().to_process_lib(),
-                    req.version_hash.clone(),
-                )) {
-                    match get_manifest_hash(
-                        req.package_id.clone().to_process_lib(),
-                        req.version_hash.clone(),
-                    ) {
-                        Ok(manifest_hash) => Some(manifest_hash),
-                        Err(e) => {
-                            print_to_terminal(
-                                1,
-                                &format!("auto_update: error getting manifest hash: {:?}", e),
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                // pushed to UI via websockets
-                Request::to(("our", "main", "app-store", "sys"))
+                // forward to main:app_store:sys, pushed to UI via websockets
+                Request::to(("our", "main", "app_store", "sys"))
                     .body(serde_json::to_vec(&req)?)
                     .send()?;
 
-                // trigger auto-update install trigger to main:app-store:sys
-                if let Some(manifest_hash) = manifest_hash {
-                    let auto_download_complete_req = AutoDownloadCompleteRequest {
-                        download_info: req.clone(),
-                        manifest_hash,
-                    };
-                    print_to_terminal(
-                        1,
-                        &format!(
-                            "auto_update download complete: triggering install on main:app-store:sys"
-                        ),
-                    );
-                    Request::to(("our", "main", "app-store", "sys"))
-                        .body(serde_json::to_vec(&auto_download_complete_req)?)
-                        .send()?;
+                // Check if this is an auto-update download
+                let key = (
+                    req.package_id.clone().to_process_lib(),
+                    req.version_hash.clone(),
+                );
+
+                if let Some(metadata) = auto_updates.remove(&key) {
+                    if let Some(err) = req.err {
+                        try_next_mirror(metadata, key, auto_updates, err);
+                    } else if let Err(_e) = handle_auto_update_success(key.0.clone(), key.1.clone())
+                    {
+                        try_next_mirror(
+                            metadata,
+                            key,
+                            auto_updates,
+                            DownloadError::InvalidManifest,
+                        );
+                    }
                 }
             }
             DownloadRequests::GetFiles(maybe_id) => {
@@ -414,29 +430,61 @@ fn handle_message(
                 } = auto_update_request.clone();
                 let process_lib_package_id = package_id.clone().to_process_lib();
 
-                // default auto_update to publisher. TODO: more config here.
-                let download_from = metadata.properties.publisher;
+                // default auto_update to publisher
+                // let download_from = metadata.properties.publisher.clone();
                 let current_version = metadata.properties.current_version;
                 let code_hashes = metadata.properties.code_hashes;
 
+                // Create a HashSet of mirrors including the publisher
+                let mut mirrors = HashSet::new();
+
+                let download_from = if let Some(first_mirror) = metadata.properties.mirrors.first()
+                {
+                    first_mirror.clone()
+                } else {
+                    "randomnode111.os".to_string()
+                };
+                println!("first_download_from: {download_from}");
+                mirrors.extend(metadata.properties.mirrors.into_iter());
+                mirrors.insert(metadata.properties.publisher.clone());
+
                 let version_hash = code_hashes
-                    .iter()
-                    .find(|(version, _)| version == &current_version)
-                    .map(|(_, hash)| hash.clone())
-                    .ok_or_else(|| anyhow::anyhow!("auto_update: error for package_id: {}, current_version: {}, no matching hash found", process_lib_package_id.to_string(), current_version))?;
+                .iter()
+                .find(|(version, _)| version == &current_version)
+                .map(|(_, hash)| hash.clone())
+                // note, if this errors, full on failure I thnk no? 
+                // and bubble this up.
+                .ok_or_else(|| anyhow::anyhow!("auto_update: error for package_id: {}, current_version: {}, no matching hash found", process_lib_package_id.to_string(), current_version))?;
+
+                print_to_terminal(
+                    1,
+                    &format!(
+                        "auto_update: kicking off download for {:?} from {} with version {} from mirror {}",
+                        package_id, download_from, version_hash, download_from
+                    ),
+                );
 
                 let download_request = LocalDownloadRequest {
                     package_id,
-                    download_from,
+                    download_from: download_from.clone(),
                     desired_version_hash: version_hash.clone(),
                 };
 
-                // kick off local download to ourselves.
-                Request::to(("our", "downloads", "app-store", "sys"))
+                // Initialize auto-update status with mirrors
+                let key = (process_lib_package_id.clone(), version_hash.clone());
+                auto_updates.insert(
+                    key,
+                    AutoUpdateStatus {
+                        mirrors_left: mirrors,
+                        mirrors_failed: Vec::new(),
+                        active_mirror: download_from.clone(),
+                    },
+                );
+
+                // kick off local download to ourselves
+                Request::to(("our", "downloads", "app_store", "sys"))
                     .body(DownloadRequests::LocalDownload(download_request))
                     .send()?;
-
-                auto_updates.insert((process_lib_package_id, version_hash));
             }
             _ => {}
         }
@@ -445,18 +493,30 @@ fn handle_message(
             Resp::Download(download_response) => {
                 // get context of the response.
                 // handled are errors or ok responses from a remote node.
+                // check state, do action based on that!
 
                 if let Some(context) = message.context() {
                     let download_request = serde_json::from_slice::<LocalDownloadRequest>(context)?;
                     match download_response {
                         DownloadResponses::Err(e) => {
-                            Request::to(("our", "main", "app_store", "sys"))
-                                .body(DownloadCompleteRequest {
-                                    package_id: download_request.package_id.clone(),
-                                    version_hash: download_request.desired_version_hash.clone(),
-                                    err: Some(e),
-                                })
-                                .send()?;
+                            print_to_terminal(1, &format!("downloads: got error response: {e:?}"));
+                            let key = (
+                                download_request.package_id.clone().to_process_lib(),
+                                download_request.desired_version_hash.clone(),
+                            );
+
+                            if let Some(metadata) = auto_updates.remove(&key) {
+                                try_next_mirror(metadata, key, auto_updates, e);
+                            } else {
+                                // If not an auto-update, forward error normally
+                                Request::to(("our", "main", "app_store", "sys"))
+                                    .body(DownloadCompleteRequest {
+                                        package_id: download_request.package_id,
+                                        version_hash: download_request.desired_version_hash,
+                                        err: Some(e),
+                                    })
+                                    .send()?;
+                            }
                         }
                         DownloadResponses::Success => {
                             // todo: maybe we do something here.
@@ -477,34 +537,154 @@ fn handle_message(
                     return Err(anyhow::anyhow!("http-client response without context"));
                 };
                 let download_request = serde_json::from_slice::<LocalDownloadRequest>(context)?;
-                if let Ok(client::HttpClientResponse::Http(client::HttpResponse {
-                    status, ..
-                })) = resp
-                {
-                    if status == 200 {
-                        if let Err(e) = handle_receive_http_download(&download_request) {
-                            print_to_terminal(
-                                1,
-                                &format!("error handling http-client response: {:?}", e),
-                            );
-                            Request::to(("our", "main", "app-store", "sys"))
-                                .body(DownloadRequests::DownloadComplete(
-                                    DownloadCompleteRequest {
-                                        package_id: download_request.package_id.clone(),
-                                        version_hash: download_request.desired_version_hash.clone(),
-                                        err: Some(e),
-                                    },
-                                ))
-                                .send()?;
+                let key = (
+                    download_request.package_id.clone().to_process_lib(),
+                    download_request.desired_version_hash.clone(),
+                );
+
+                // Check if this is an auto-update request
+                let is_auto_update = auto_updates.contains_key(&key);
+                let metadata = if is_auto_update {
+                    auto_updates.remove(&key)
+                } else {
+                    None
+                };
+
+                // Handle any non-200 response or client error
+                let Ok(client::HttpClientResponse::Http(resp)) = resp else {
+                    if let Some(meta) = metadata {
+                        let error = if let Err(e) = resp {
+                            format!("HTTP client error: {e:?}")
+                        } else {
+                            "unexpected response type".to_string()
+                        };
+                        try_next_mirror(
+                            meta,
+                            key,
+                            auto_updates,
+                            DownloadError::HandlingError(error),
+                        );
+                    }
+                    return Ok(());
+                };
+
+                if resp.status != 200 {
+                    let error =
+                        DownloadError::HandlingError(format!("HTTP status {}", resp.status));
+                    handle_download_error(
+                        is_auto_update,
+                        metadata,
+                        key,
+                        auto_updates,
+                        error,
+                        &download_request,
+                    )?;
+                    return Ok(());
+                }
+
+                // Handle successful download
+                if let Err(e) = handle_receive_http_download(&download_request) {
+                    print_to_terminal(1, &format!("error handling http_client response: {:?}", e));
+                    handle_download_error(
+                        is_auto_update,
+                        metadata,
+                        key,
+                        auto_updates,
+                        e,
+                        &download_request,
+                    )?;
+                } else if is_auto_update {
+                    match handle_auto_update_success(key.0.clone(), key.1.clone()) {
+                        Ok(_) => print_to_terminal(
+                            1,
+                            &format!(
+                                "auto_update: successfully downloaded package {:?} version {}",
+                                &download_request.package_id,
+                                &download_request.desired_version_hash
+                            ),
+                        ),
+                        Err(_) => {
+                            if let Some(meta) = metadata {
+                                try_next_mirror(
+                                    meta,
+                                    key,
+                                    auto_updates,
+                                    DownloadError::HandlingError(
+                                        "could not get manifest hash".to_string(),
+                                    ),
+                                );
+                            }
                         }
                     }
-                } else {
-                    println!("got http-client error: {resp:?}");
                 }
             }
         }
     }
     Ok(())
+}
+
+/// Try the next available mirror for a download, recording the current mirror's failure
+fn try_next_mirror(
+    mut metadata: AutoUpdateStatus,
+    key: (PackageId, String),
+    auto_updates: &mut AutoUpdates,
+    error: DownloadError,
+) {
+    print_to_terminal(
+        1,
+        &format!(
+            "auto_update: got error from mirror {mirror:?} {error:?}, trying next mirror: {next_mirror:?}",
+            next_mirror = metadata.mirrors_left.iter().next().cloned(),
+            mirror = metadata.active_mirror,
+            error = error
+        ),
+    );
+    // Record failure and remove from available mirrors
+    metadata
+        .mirrors_failed
+        .push((metadata.active_mirror.clone(), error));
+    metadata.mirrors_left.remove(&metadata.active_mirror);
+
+    let (package_id, version_hash) = key.clone();
+
+    match metadata.mirrors_left.iter().next().cloned() {
+        Some(next_mirror) => {
+            metadata.active_mirror = next_mirror.clone();
+            auto_updates.insert(key, metadata);
+            Request::to(("our", "downloads", "app_store", "sys"))
+                .body(
+                    serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
+                        package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                            package_id,
+                        ),
+                        download_from: next_mirror,
+                        desired_version_hash: version_hash.clone(),
+                    }))
+                    .unwrap(),
+                )
+                .send()
+                .unwrap();
+        }
+        None => {
+            print_to_terminal(
+                1,
+                "auto_update: no more mirrors to try for package_id {package_id:?}",
+            );
+            // gather, and send error to main.
+            let node_tries = metadata.mirrors_failed;
+            let auto_download_error = AutoDownloadCompleteRequest::Err(AutoDownloadError {
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                version_hash,
+                tries: node_tries,
+            });
+
+            Request::to(("our", "main", "app_store", "sys"))
+                .body(auto_download_error)
+                .send()
+                .unwrap();
+            auto_updates.remove(&key);
+        }
+    }
 }
 
 fn handle_receive_http_download(
@@ -555,6 +735,46 @@ fn handle_receive_http_download(
         .send()
         .unwrap();
 
+    Ok(())
+}
+
+fn handle_download_error(
+    is_auto_update: bool,
+    metadata: Option<AutoUpdateStatus>,
+    key: (PackageId, String),
+    auto_updates: &mut AutoUpdates,
+    error: impl Into<DownloadError>,
+    download_request: &LocalDownloadRequest,
+) -> anyhow::Result<()> {
+    let error = error.into();
+    if is_auto_update {
+        if let Some(meta) = metadata {
+            try_next_mirror(meta, key, auto_updates, error);
+        }
+    } else {
+        Request::to(("our", "main", "app_store", "sys"))
+            .body(DownloadCompleteRequest {
+                package_id: download_request.package_id.clone(),
+                version_hash: download_request.desired_version_hash.clone(),
+                err: Some(error),
+            })
+            .send()?;
+    }
+    Ok(())
+}
+
+/// Handle auto-update success case by getting manifest hash and sending completion message
+fn handle_auto_update_success(package_id: PackageId, version_hash: String) -> anyhow::Result<()> {
+    let manifest_hash = get_manifest_hash(package_id.clone(), version_hash.clone())?;
+
+    Request::to(("our", "main", "app_store", "sys"))
+        .body(AutoDownloadCompleteRequest::Success(AutoDownloadSuccess {
+            package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
+            version_hash,
+            manifest_hash,
+        }))
+        .send()
+        .unwrap();
     Ok(())
 }
 
