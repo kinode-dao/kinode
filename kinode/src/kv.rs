@@ -191,6 +191,16 @@ impl KvState {
             }
         }
 
+        // if we're done, automatically close the iterator
+        if done {
+            if let Some(db_iters) = self.iterators.get_mut(&db_key) {
+                db_iters.remove(&iterator_id);
+                if db_iters.is_empty() {
+                    self.iterators.remove(&db_key);
+                }
+            }
+        }
+
         Ok((entries, done))
     }
 
