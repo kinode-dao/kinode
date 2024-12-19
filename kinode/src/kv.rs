@@ -290,7 +290,7 @@ pub async fn kv(
                         .message(Message::Response((
                             Response {
                                 inherit: false,
-                                body: serde_json::to_vec(&KvResponse::Err { error: e }).unwrap(),
+                                body: serde_json::to_vec(&KvResponse::Err(e)).unwrap(),
                                 metadata: None,
                                 capabilities: vec![],
                             },
