@@ -1,0 +1,85 @@
+interface settings {
+    variant request {
+        /// lazy-load-blob: none.
+        hi(hi-request),
+        /// lazy-load-blob: none.
+        peer-id(string),
+        /// lazy-load-blob: none.
+        eth-config(eth-config-request),
+        /// lazy-load-blob: none.
+        shutdown,
+        /// lazy-load-blob: none.
+        kill-process(string),
+        /// lazy-load-blob: none.
+        set-stylesheet(string),
+    }
+
+    type response = result<option<settings-data>, settings-error>;
+
+    record hi-request {
+        node: string,
+        content: string,
+        timeout: u64,
+    }
+
+    /// A subset of the actions that can be taken on the `eth`
+    /// runtime module. These are mostly used by the settings frontend.
+    variant eth-config-request {
+        add-provider(provider-config),
+        remove-provider(tuple<u64, string>),
+        set-public,
+        set-private,
+        allow-node(string),
+        unallow-node(string),
+        deny-node(string),
+        undeny-node(string),
+    }
+
+    /// This will be converted to the ProviderConfig type used in `eth`.
+    /// `trusted` in ProviderConfig will always be true.
+    /// Rather than provide full NodeOrRpcUrl, the settings
+    /// process will fetch KNS update for node-providers
+    /// and convert this to the type used in `eth`.
+    record provider-config {
+        chain-id: u64,
+        node-or-rpc-url: node-or-rpc-url,
+    }
+
+    variant node-or-rpc-url {
+        node(string),
+        rpc-url(string),
+    }
+
+    variant settings-data {
+        peer-id(identity),
+    }
+
+    record identity {
+        name: string,
+        networking-key: string,
+        routing: node-routing,
+    }
+
+    variant node-routing {
+        routers(list<string>),
+        direct(direct),
+    }
+
+    record direct {
+        ip: string,
+        ports: list<tuple<string, u16>>,
+    }
+
+    variant settings-error {
+        hi-timeout,
+        hi-offline,
+        kernel-nonresponsive,
+        malformed-request,
+        state-fetch-failed,
+    }
+}
+
+world settings-sys-v0 {
+    import settings;
+    include process-v1;
+}

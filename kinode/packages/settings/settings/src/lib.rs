@@ -1,6 +1,11 @@
+use crate::kinode::process::settings::{
+    Direct, EthConfigRequest as SettingsEthConfigAction, HiRequest, Identity as SettingsIdentity,
+    NodeOrRpcUrl as SettingsNodeOrRpcUrl, NodeRouting as SettingsNodeRouting,
+    Request as SettingsRequest, Response as SettingsResponse, SettingsData, SettingsError,
+};
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, homepage, http, kernel_types, kimap, net, println,
-    Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError,
+    Address, Capability, LazyLoadBlob, Message, ProcessId, Request, Response, SendError,
     SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
@@ -8,35 +13,12 @@ use std::collections::HashMap;
 
 const ICON: &str = include_str!("icon");
 
-#[derive(Debug, Serialize, Deserialize)]
-enum SettingsRequest {
-    Hi {
-        node: NodeId,
-        content: String,
-        timeout: u64,
-    },
-    PeerId(NodeId),
-    EthConfig(eth::EthConfigAction),
-    Shutdown,
-    KillProcess(ProcessId),
-    SetStylesheet(String),
-}
-
-type SettingsResponse = Result<Option<SettingsData>, SettingsError>;
-
-#[derive(Debug, Serialize, Deserialize)]
-enum SettingsData {
-    PeerId(net::Identity),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum SettingsError {
-    HiTimeout,
-    HiOffline,
-    KernelNonresponsive,
-    MalformedRequest,
-    StateFetchFailed,
-}
+wit_bindgen::generate!({
+    path: "target/wit",
+    world: "settings-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [serde::Deserialize, serde::Serialize],
+});
 
 /// never gets persisted
 #[derive(Debug, Serialize, Deserialize)]
@@ -213,11 +195,6 @@ impl SettingsState {
     }
 }
 
-wit_bindgen::generate!({
-    path: "target/wit",
-    world: "process-v1",
-});
-
 call_init!(initialize);
 fn initialize(our: Address) {
     // Grab our state, then enter the main event loop.
@@ -386,11 +363,11 @@ fn handle_settings_request(
     request: SettingsRequest,
 ) -> SettingsResponse {
     match request {
-        SettingsRequest::Hi {
+        SettingsRequest::Hi(HiRequest {
             node,
             content,
             timeout,
-        } => {
+        }) => {
             if let Err(SendError { kind, .. }) = Request::to((&node, "net", "distro", "sys"))
                 .body(content.into_bytes())
                 .send_and_await_response(timeout)
@@ -420,7 +397,23 @@ fn handle_settings_request(
                 Ok(msg) => match rmp_serde::from_slice::<net::NetResponse>(msg.body()) {
                     Ok(net::NetResponse::Peer(Some(peer))) => {
                         println!("got peer info: {peer:?}");
-                        return Ok(Some(SettingsData::PeerId(peer)));
+                        // convert Identity to SettingsIdentity
+                        let settings_identity = SettingsIdentity {
+                            name: peer.name,
+                            networking_key: peer.networking_key,
+                            routing: match peer.routing {
+                                net::NodeRouting::Direct { ip, ports } => {
+                                    SettingsNodeRouting::Direct(Direct {
+                                        ip,
+                                        ports: ports.into_iter().map(|(p, q)| (p, q)).collect(),
+                                    })
+                                }
+                                net::NodeRouting::Routers(routers) => {
+                                    SettingsNodeRouting::Routers(routers)
+                                }
+                            },
+                        };
+                        return Ok(Some(SettingsData::PeerId(settings_identity)));
                     }
                     Ok(net::NetResponse::Peer(None)) => {
                         println!("peer not found");
@@ -435,7 +428,9 @@ fn handle_settings_request(
                 }
             }
         }
-        SettingsRequest::EthConfig(action) => {
+        SettingsRequest::EthConfig(settings_eth_config_request) => {
+            // convert SettingsEthConfigRequest to EthConfigRequest
+            let action = eth_config_convert(settings_eth_config_request)?;
             match Request::to(("our", "eth", "distro", "sys"))
                 .body(serde_json::to_vec(&action).unwrap())
                 .send_and_await_response(30)
@@ -464,8 +459,11 @@ fn handle_settings_request(
                 .send()
                 .unwrap();
         }
-        SettingsRequest::KillProcess(pid) => {
+        SettingsRequest::KillProcess(pid_str) => {
             // kill a process
+            let Ok(pid) = pid_str.parse::<ProcessId>() else {
+                return SettingsResponse::Err(SettingsError::MalformedRequest);
+            };
             if let Err(_) = Request::to(("our", "kernel", "distro", "sys"))
                 .body(serde_json::to_vec(&kernel_types::KernelCommand::KillProcess(pid)).unwrap())
                 .send_and_await_response(30)
@@ -501,6 +499,45 @@ fn handle_settings_request(
 
     state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
     SettingsResponse::Ok(None)
+}
+
+fn eth_config_convert(
+    settings_eth_config_request: SettingsEthConfigAction,
+) -> Result<eth::EthConfigAction, SettingsError> {
+    match settings_eth_config_request {
+        SettingsEthConfigAction::AddProvider(settings_provider_config) => {
+            Ok(eth::EthConfigAction::AddProvider(eth::ProviderConfig {
+                chain_id: settings_provider_config.chain_id,
+                provider: match settings_provider_config.node_or_rpc_url {
+                    SettingsNodeOrRpcUrl::Node(node_str) => {
+                        // the eth module does not actually need the full routing info
+                        // so we can just use the name as the kns update
+                        eth::NodeOrRpcUrl::Node {
+                            kns_update: net::KnsUpdate {
+                                name: node_str,
+                                public_key: "".to_string(),
+                                ips: vec![],
+                                ports: std::collections::BTreeMap::new(),
+                                routers: vec![],
+                            },
+                            use_as_provider: true,
+                        }
+                    }
+                    SettingsNodeOrRpcUrl::RpcUrl(url) => eth::NodeOrRpcUrl::RpcUrl(url),
+                },
+                trusted: true,
+            }))
+        }
+        SettingsEthConfigAction::RemoveProvider((chain_id, provider_str)) => Ok(
+            eth::EthConfigAction::RemoveProvider((chain_id, provider_str)),
+        ),
+        SettingsEthConfigAction::SetPublic => Ok(eth::EthConfigAction::SetPublic),
+        SettingsEthConfigAction::SetPrivate => Ok(eth::EthConfigAction::SetPrivate),
+        SettingsEthConfigAction::AllowNode(node) => Ok(eth::EthConfigAction::AllowNode(node)),
+        SettingsEthConfigAction::UnallowNode(node) => Ok(eth::EthConfigAction::UnallowNode(node)),
+        SettingsEthConfigAction::DenyNode(node) => Ok(eth::EthConfigAction::DenyNode(node)),
+        SettingsEthConfigAction::UndenyNode(node) => Ok(eth::EthConfigAction::UndenyNode(node)),
+    }
 }
 
 fn make_widget(state: &SettingsState) -> String {
