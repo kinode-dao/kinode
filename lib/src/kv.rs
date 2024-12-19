@@ -2,7 +2,9 @@ use crate::types::core::{CapMessage, PackageId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// IPC Request format for the kv:distro:sys runtime module.
+/// Actions are sent to a specific key value database, `db` is the name,
+/// `package_id` is the [`PackageId`]. Capabilities are checked, you can access another process's
+/// database if it has given you the [`crate::Capability`].
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KvRequest {
     pub package_id: PackageId,
