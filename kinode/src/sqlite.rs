@@ -190,8 +190,7 @@ pub async fn sqlite(
                         .message(Message::Response((
                             Response {
                                 inherit: false,
-                                body: serde_json::to_vec(&SqliteResponse::Err { error: e })
-                                    .unwrap(),
+                                body: serde_json::to_vec(&SqliteResponse::Err(e)).unwrap(),
                                 metadata: None,
                                 capabilities: vec![],
                             },

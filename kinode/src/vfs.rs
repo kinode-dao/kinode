@@ -453,7 +453,7 @@ async fn handle_request(
             file.read_to_end(&mut contents).await?;
             (VfsResponse::Read, Some(contents))
         }
-        VfsAction::ReadExact(length) => {
+        VfsAction::ReadExact { length } => {
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = vec![0; length as usize];
@@ -495,7 +495,7 @@ async fn handle_request(
             file.read_to_string(&mut contents).await?;
             (VfsResponse::ReadToString(contents), None)
         }
-        VfsAction::Seek { seek_from } => {
+        VfsAction::Seek(seek_from) => {
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
             let seek_from = match seek_from {
@@ -504,7 +504,12 @@ async fn handle_request(
                 lib::types::core::SeekFrom::Current(offset) => std::io::SeekFrom::Current(offset),
             };
             let response = file.seek(seek_from).await?;
-            (VfsResponse::SeekFrom(response), None)
+            (
+                VfsResponse::SeekFrom {
+                    new_offset: response,
+                },
+                None,
+            )
         }
         VfsAction::RemoveFile => {
             fs::remove_file(&path).await?;
@@ -813,10 +818,10 @@ async fn check_caps(
         }
         VfsAction::Read
         | VfsAction::ReadDir
-        | VfsAction::ReadExact(_)
+        | VfsAction::ReadExact { .. }
         | VfsAction::ReadToEnd
         | VfsAction::ReadToString
-        | VfsAction::Seek { .. }
+        | VfsAction::Seek(_)
         | VfsAction::Hash
         | VfsAction::Metadata
         | VfsAction::Len => {
