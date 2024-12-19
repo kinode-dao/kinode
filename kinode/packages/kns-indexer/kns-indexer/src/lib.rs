@@ -299,7 +299,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
     let eth_provider: eth::Provider = eth::Provider::new(chain_id, SUBSCRIPTION_TIMEOUT);
-    let _kimap_helper = kimap::Kimap::new(eth_provider.clone(), kimap_address);
+    // let _kimap_helper = kimap::Kimap::new(eth_provider.clone(), kimap_address);
 
     // subscribe to logs first, so no logs are missed
     eth_provider.subscribe_loop(1, mints_filter.clone());
@@ -646,10 +646,10 @@ fn fetch_and_process_logs(
     filter: eth::Filter,
     pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
 ) {
-    let filter = filter.from_block(state.last_block);
     loop {
         match eth_provider.get_logs(&filter) {
             Ok(logs) => {
+                println!("log len: {}", logs.len());
                 for log in logs {
                     if let Err(e) = handle_log(state, pending_notes, &log) {
                         print_to_terminal(1, &format!("log-handling error! {e:?}"));
