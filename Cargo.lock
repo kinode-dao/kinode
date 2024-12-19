@@ -4702,6 +4702,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "node_info"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib 0.10.0",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen 0.36.0",
+]
+
+[[package]]
 name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
