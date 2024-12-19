@@ -1,0 +1,29 @@
+interface terminal {
+    variant request {
+        /// lazy-load-blob: none.
+        edit-alias(edit-alias-request),
+    }
+
+    variant response {
+        /// lazy-load-blob: none.
+        edit-alias(edit-alias-response)
+    }
+
+    record edit-alias-request {
+        alias: string,
+        /// string must be a valid process ID
+        process: option<string>,
+    }
+
+    variant edit-alias-response {
+        alias-set,
+        alias-removed,
+        alias-not-found,
+        invalid-process-id,
+    }
+}
+
+world terminal-sys-v0 {
+    import terminal;
+    include process-v1;
+}
