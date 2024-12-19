@@ -1,22 +1,19 @@
+use crate::kinode::process::terminal::{
+    EditAliasResponse, Request as TerminalRequest, Response as TerminalResponse,
+};
 use kinode_process_lib::{
     await_message, call_init, get_typed_state, kernel_types as kt, our_capabilities, println,
-    set_state, vfs, Address, Capability, Message, ProcessId, Request,
+    set_state, vfs, Address, Capability, Message, ProcessId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v1",
+    world: "terminal-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
-
-#[derive(Debug, Serialize, Deserialize)]
-enum TerminalAction {
-    EditAlias {
-        alias: String,
-        process: Option<ProcessId>,
-    },
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 enum ScriptError {
@@ -139,7 +136,12 @@ fn init(our: Address) {
             Ok(message) => message,
         };
         match message {
-            Message::Request { source, body, .. } => {
+            Message::Request {
+                source,
+                body,
+                expects_response,
+                ..
+            } => {
                 // this is a message from the runtime terminal, parse as a command
                 if state.our == source {
                     if let Err(e) =
@@ -149,13 +151,23 @@ fn init(our: Address) {
                     }
                 // checks for a request from a terminal script (different process, same package)
                 } else if state.our.node == source.node && state.our.package() == source.package() {
-                    let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
-                        println!("failed to parse action from {source}");
+                    let Ok(action) = serde_json::from_slice::<TerminalRequest>(&body) else {
+                        println!("failed to parse TerminalRequest from {source}");
                         continue;
                     };
                     match action {
-                        TerminalAction::EditAlias { alias, process } => {
-                            handle_alias_change(&mut state, alias, process);
+                        TerminalRequest::EditAlias(edit_alias_request) => {
+                            let terminal_response = handle_alias_change(
+                                &mut state,
+                                edit_alias_request.alias,
+                                edit_alias_request.process,
+                            );
+                            if expects_response.is_some() {
+                                Response::new()
+                                    .body(serde_json::to_vec(&terminal_response).unwrap())
+                                    .send()
+                                    .unwrap();
+                            }
                         }
                     }
                 } else {
@@ -368,22 +380,33 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> Result<(), Sc
     Ok(())
 }
 
-fn handle_alias_change(state: &mut TerminalState, alias: String, process: Option<ProcessId>) {
-    match process {
+fn handle_alias_change(
+    state: &mut TerminalState,
+    alias: String,
+    process: Option<String>,
+) -> TerminalResponse {
+    let response = match process {
         Some(process) => {
+            let Ok(parsed_process) = process.parse::<ProcessId>() else {
+                return TerminalResponse::EditAlias(EditAliasResponse::InvalidProcessId);
+            };
             println!("alias {alias} set for {process}");
-            state.aliases.insert(alias, process);
+            state.aliases.insert(alias, parsed_process);
+            TerminalResponse::EditAlias(EditAliasResponse::AliasSet)
         }
         None => {
             if state.aliases.contains_key(&alias) {
                 state.aliases.remove(&alias);
                 println!("alias {alias} removed");
+                TerminalResponse::EditAlias(EditAliasResponse::AliasRemoved)
             } else {
                 println!("alias {alias} not found");
+                TerminalResponse::EditAlias(EditAliasResponse::AliasNotFound)
             }
         }
-    }
+    };
     set_state(&bincode::serialize(&state).expect("failed to serialize terminal state"));
+    response
 }
 
 fn get_entry(process: &ProcessId) -> Result<kt::DotScriptsEntry, ScriptError> {
