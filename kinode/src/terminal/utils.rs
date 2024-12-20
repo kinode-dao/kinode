@@ -34,6 +34,8 @@ pub fn splash(
     our: &Identity,
     version: &str,
     is_detached: bool,
+    our_ip: &std::net::Ipv4Addr,
+    home_directory_path: &Path,
 ) -> std::io::Result<(Stdout, Option<RawMode>)> {
     let mut stdout = std::io::stdout();
     crossterm::execute!(
@@ -50,9 +52,7 @@ pub fn splash(
             stdout,
             crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta),
             crossterm::style::Print(format!(
-                r#"
-     .`
- `@@,,                     ,*    888    d8P  d8b                        888
+                r#" `@@,,                     ,*    888    d8P  d8b                        888
    `@%@@@,            ,~-##`     888   d8P   Y8P                        888
      ~@@#@%#@@,      #####       888  d8P                               888
        ~-%######@@@, #####       888d88K     888 88888b.   .d88b.   .d88888  .d88b.
@@ -65,12 +65,10 @@ pub fn splash(
              /##%@#  `           runtime version {}
           ./######`              a general purpose sovereign cloud computer
         /.^`.#^#^`
-       `   ,#`#`#,
-          ,/ /` `
+       `   ,#`#`#,               public IP {}
+          ,/ /` `                home directory at {}
         .*`
- networking public key: {}
- {}
-                    "#,
+ networking public key: {}{}\n"#,
                 our.name,
                 if our.is_direct() {
                     "direct"
@@ -78,8 +76,10 @@ pub fn splash(
                     "indirect"
                 },
                 version,
+                our_ip,
+                home_directory_path.display(),
                 our.networking_key,
-                if is_detached { "(detached)" } else { "" }
+                if is_detached { "\n(detached)" } else { "" }
             )),
             crossterm::style::ResetColor
         )
@@ -89,8 +89,7 @@ pub fn splash(
             stdout,
             crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta),
             crossterm::style::Print(format!(
-                r#"
- 888    d8P  d8b                        888
+                r#"888    d8P  d8b                        888
  888   d8P   Y8P                        888
  888  d8P                               888
  888d88K     888 88888b.   .d88b.   .d88888  .d88b.
@@ -102,9 +101,9 @@ pub fn splash(
  {} ({})
  version {}
  a general purpose sovereign cloud computer
- net pubkey: {}
- {}
-                    "#,
+ public IP {}
+ home directory at {}
+ net pubkey: {}{}\n"#,
                 our.name,
                 if our.is_direct() {
                     "direct"
@@ -112,8 +111,10 @@ pub fn splash(
                     "indirect"
                 },
                 version,
+                our_ip,
+                home_directory_path.display(),
                 our.networking_key,
-                if is_detached { "(detached)" } else { "" }
+                if is_detached { "\n(detached)" } else { "" }
             )),
             crossterm::style::ResetColor
         )?;

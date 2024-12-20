@@ -44,7 +44,6 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const FD_MANAGER_CHANNEL_CAPACITY: usize = 1_000;
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WS_MIN_PORT: u16 = 9_000;
 const TCP_MIN_PORT: u16 = 10_000;
 const MAX_PORT: u16 = 65_535;
@@ -66,17 +65,6 @@ pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
 #[tokio::main]
 async fn main() {
-    // embed values in binary for inspection without running & print on boot
-    //  e.g., to inspect without running, use
-    //  ```bash
-    //  strings kinode | grep DOCKER_BUILD_IMAGE_VERSION
-    //  ```
-    println!(
-        "\nDOCKER_BUILD_IMAGE_VERSION: {}\nPACKAGES_ZIP_HASH: {}\n",
-        env!("DOCKER_BUILD_IMAGE_VERSION"),
-        env!("PACKAGES_ZIP_HASH"),
-    );
-
     let app = build_command();
 
     let matches = app.get_matches();
@@ -87,8 +75,7 @@ async fn main() {
         panic!("failed to create home directory: {e:?}");
     }
     let home_directory_path = std::fs::canonicalize(&home_directory_path)
-        .expect("specified home directory {home_directory_path} not found");
-    println!("home at {home_directory_path:?}\r");
+        .expect(&format!("specified home directory {home_directory_path} not found"));
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
     #[cfg(not(feature = "simulation-mode"))]
@@ -126,7 +113,6 @@ async fn main() {
         tokio::fs::read_to_string(home_directory_path.join(".eth_providers")).await
     {
         if let Ok(contents) = serde_json::from_str(&contents) {
-            println!("loaded saved eth providers\r");
             contents
         } else {
             println!("error loading saved eth providers, using default providers\r");
@@ -233,8 +219,9 @@ async fn main() {
 
     #[cfg(not(feature = "simulation-mode"))]
     println!(
-        "login or register at http://localhost:{}\r",
-        http_server_port
+        "Welcome to Kinode.\nThe time is {}.\nLogin or register at http://localhost:{}\r",
+        chrono::Local::now().to_rfc3339(),
+        http_server_port,
     );
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = match password {
@@ -475,7 +462,7 @@ async fn main() {
         }
         quit = terminal::terminal(
             our.clone(),
-            VERSION,
+            env!("CARGO_PKG_VERSION"),
             home_directory_path.clone(),
             kernel_message_sender.clone(),
             kernel_debug_message_sender,
@@ -487,6 +474,7 @@ async fn main() {
             max_log_size.copied(),
             number_log_files.copied(),
             process_verbosity,
+            &our_ip,
         ) => {
             match quit {
                 Ok(()) => {
@@ -678,9 +666,22 @@ pub async fn simulate_node(
 /// build the command line interface for kinode
 ///
 fn build_command() -> Command {
+    // embed values in binary for inspection without running & print on boot
+    //  e.g., to inspect without running, use
+    //  ```bash
+    //  strings kinode | grep DOCKER_BUILD_IMAGE_VERSION
+    //  ```
+    let version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        "\nDOCKER_BUILD_IMAGE_VERSION: ",
+        env!("DOCKER_BUILD_IMAGE_VERSION"),
+        "\nPACKAGES_ZIP_HASH: ",
+        env!("PACKAGES_ZIP_HASH"),
+        "\n",
+    );
     let app = Command::new("kinode")
-        .version(VERSION)
-        .author("Kinode DAO: https://github.com/kinode-dao")
+        .version(version)
+        .author("Sybil Technologies AG")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(
@@ -763,10 +764,8 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
 
     #[cfg(not(feature = "simulation-mode"))]
     {
-        println!("Finding public IP address...");
         match tokio::time::timeout(std::time::Duration::from_secs(5), public_ip::addr_v4()).await {
             Ok(Some(ip)) => {
-                println!("Public IP found: {ip}");
                 ip
             }
             _ => {

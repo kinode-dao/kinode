@@ -318,8 +318,15 @@ pub async fn terminal(
     max_log_size: Option<u64>,
     number_log_files: Option<u64>,
     process_verbosity: ProcessVerbosity,
+    our_ip: &std::net::Ipv4Addr,
 ) -> anyhow::Result<()> {
-    let (stdout, _maybe_raw_mode) = utils::splash(&our, version, is_detached)?;
+    let (stdout, _maybe_raw_mode) = utils::splash(
+        &our,
+        version,
+        is_detached,
+        our_ip,
+        &home_directory_path,
+    )?;
 
     let (win_cols, win_rows) = crossterm::terminal::size().unwrap_or_else(|_| (0, 0));
 

@@ -254,14 +254,6 @@ async fn serve(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
-    Printout::new(
-        0,
-        HTTP_SERVER_PROCESS_ID.clone(),
-        format!("http-server: running on port {our_port}"),
-    )
-    .send(&print_tx)
-    .await;
-
     // filter to receive websockets
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
