@@ -6,6 +6,7 @@ use lib::types::core::{
     PackageId, PrintSender, Printout, ProcessId, Request, Response, FD_MANAGER_PROCESS_ID,
     KV_PROCESS_ID,
 };
+use rand::random;
 use rocksdb::OptimisticTransactionDB;
 use std::{
     collections::{HashMap, VecDeque},
@@ -24,6 +25,8 @@ struct KvState {
     /// access order of dbs, used to cull if we hit the fds limit
     access_order: Arc<Mutex<UniqueQueue<(PackageId, String)>>>,
     txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
+    /// track active iterators: (package_id, db_name, iterator_id) -> (prefix, current_key)
+    iterators: Arc<DashMap<(PackageId, String, u64), (Vec<u8>, Vec<u8>)>>,
     fds_limit: u64,
 }
 
@@ -42,6 +45,7 @@ impl KvState {
             open_kvs: Arc::new(DashMap::new()),
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
             txs: Arc::new(DashMap::new()),
+            iterators: Arc::new(DashMap::new()),
             fds_limit: 10,
         }
     }
@@ -97,6 +101,117 @@ impl KvState {
             drop(lock);
             self.remove_db(key.0, key.1).await;
         }
+    }
+
+    async fn handle_iter_start(
+        &mut self,
+        package_id: PackageId,
+        db: String,
+        prefix: Option<Vec<u8>>,
+    ) -> Result<u64, KvError> {
+        // Ensure DB exists
+        let db_key = (package_id.clone(), db.clone());
+        if !self.open_kvs.contains_key(&db_key) {
+            return Err(KvError::NoDb);
+        }
+
+        // Generate unique iterator ID
+        let mut iterator_id = random::<u64>();
+        while self
+            .iterators
+            .contains_key(&(package_id.clone(), db.clone(), iterator_id))
+        {
+            iterator_id = random::<u64>();
+        }
+
+        // Store initial state: (prefix, current_key)
+        self.iterators.insert(
+            (package_id, db, iterator_id),
+            (prefix.unwrap_or_default(), Vec::new()),
+        );
+
+        Ok(iterator_id)
+    }
+
+    async fn handle_iter_next(
+        &mut self,
+        package_id: PackageId,
+        db: String,
+        iterator_id: u64,
+        count: u64,
+    ) -> Result<(Vec<(Vec<u8>, Vec<u8>)>, bool), KvError> {
+        let iter_key = (package_id.clone(), db.clone(), iterator_id);
+        let db_key = (package_id, db);
+
+        // Get DB and iterator state
+        let db = self.open_kvs.get(&db_key).ok_or(KvError::NoDb)?;
+        let (prefix, current_key) = self
+            .iterators
+            .get(&iter_key)
+            .ok_or(KvError::NoIterator)?
+            .clone();
+
+        let mut entries = Vec::new();
+
+        // create iterator based on whether we're doing prefix iteration
+        let mut iter = if !prefix.is_empty() {
+            if !current_key.is_empty() {
+                db.iterator(rocksdb::IteratorMode::From(
+                    &current_key,
+                    rocksdb::Direction::Forward,
+                ))
+            } else {
+                db.prefix_iterator(&prefix)
+            }
+        } else {
+            if !current_key.is_empty() {
+                db.iterator(rocksdb::IteratorMode::From(
+                    &current_key,
+                    rocksdb::Direction::Forward,
+                ))
+            } else {
+                db.iterator(rocksdb::IteratorMode::Start)
+            }
+        };
+
+        let mut items_collected = 0;
+
+        // collect entries until we hit our batch size
+        while let Some(Ok((key, value))) = iter.next() {
+            let key_vec = key.to_vec();
+            // if we have a prefix, check that the key still starts with it
+            if !prefix.is_empty() {
+                if key_vec.len() < prefix.len() || !key_vec.starts_with(&prefix) {
+                    // we've moved past our prefix range, we're done
+                    self.iterators.remove(&iter_key);
+                    return Ok((entries, true));
+                }
+            }
+
+            entries.push((key_vec.clone(), value.to_vec()));
+            items_collected += 1;
+
+            if items_collected >= count {
+                // not done, save last key for next batch
+                self.iterators.insert(iter_key, (prefix, key_vec));
+                return Ok((entries, false));
+            }
+        }
+
+        // no more entries, clean up iterator state
+        self.iterators.remove(&iter_key);
+        Ok((entries, true))
+    }
+
+    async fn handle_iter_close(
+        &mut self,
+        package_id: PackageId,
+        db: String,
+        iterator_id: u64,
+    ) -> Result<(), KvError> {
+        let iter_key = (package_id, db, iterator_id);
+        self.iterators.remove(&iter_key);
+        Ok(())
     }
 }
 
@@ -222,8 +337,8 @@ async fn handle_request(
 
     let request: KvRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
-        Err(e) => {
-            println!("kv: got invalid Request: {}", e);
+        Err(_e) => {
+            // println!("kv: got invalid Request: {}", e);
             return Err(KvError::InputError {
                 error: "didn't serialize to KvAction.".into(),
             });
@@ -377,6 +492,39 @@ async fn handle_request(
                 let db = db_ref.value();
                 db.flush().map_err(rocks_to_kv_err)?;
             }
+            (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
+        }
+        KvAction::IterStart { prefix } => {
+            let iterator_id = state
+                .handle_iter_start(
+                    request.package_id.clone(),
+                    request.db.clone(),
+                    prefix.clone(),
+                )
+                .await?;
+            (
+                serde_json::to_vec(&KvResponse::IterStart { iterator_id }).unwrap(),
+                None,
+            )
+        }
+        KvAction::IterNext { iterator_id, count } => {
+            let (entries, done) = state
+                .handle_iter_next(
+                    request.package_id.clone(),
+                    request.db.clone(),
+                    *iterator_id,
+                    *count,
+                )
+                .await?;
+            (
+                serde_json::to_vec(&KvResponse::IterNext { done }).unwrap(),
+                Some(serde_json::to_vec(&entries).unwrap()),
+            )
+        }
+        KvAction::IterClose { iterator_id } => {
+            state
+                .handle_iter_close(request.package_id.clone(), request.db.clone(), *iterator_id)
+                .await?;
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
     };
@@ -534,6 +682,9 @@ async fn check_caps(
             Ok(())
         }
         KvAction::Backup { .. } => Ok(()),
+        KvAction::IterStart { .. } => Ok(()),
+        KvAction::IterNext { .. } => Ok(()),
+        KvAction::IterClose { .. } => Ok(()),
     }
 }
 
