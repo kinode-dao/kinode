@@ -153,7 +153,7 @@ impl KvState {
 
         let mut entries = Vec::new();
 
-        // Create the appropriate iterator
+        // create iterator based on whether we're doing prefix iteration
         let mut iter = if !prefix.is_empty() {
             if !current_key.is_empty() {
                 db.iterator(rocksdb::IteratorMode::From(
@@ -164,28 +164,41 @@ impl KvState {
                 db.prefix_iterator(&prefix)
             }
         } else {
-            db.iterator(rocksdb::IteratorMode::Start)
+            if !current_key.is_empty() {
+                db.iterator(rocksdb::IteratorMode::From(
+                    &current_key,
+                    rocksdb::Direction::Forward,
+                ))
+            } else {
+                db.iterator(rocksdb::IteratorMode::Start)
+            }
         };
 
         let mut items_collected = 0;
-        let mut last_key = None;
 
+        // collect entries until we hit our batch size
         while let Some(Ok((key, value))) = iter.next() {
             let key_vec = key.to_vec();
+            // if we have a prefix, check that the key still starts with it
+            if !prefix.is_empty() {
+                if key_vec.len() < prefix.len() || !key_vec.starts_with(&prefix) {
+                    // we've moved past our prefix range, we're done
+                    self.iterators.remove(&iter_key);
+                    return Ok((entries, true));
+                }
+            }
+
             entries.push((key_vec.clone(), value.to_vec()));
-            last_key = Some(key_vec);
             items_collected += 1;
 
             if items_collected >= count {
-                // Not done, save the last key
-                if let Some(last_key) = last_key {
-                    self.iterators.insert(iter_key, (prefix, last_key));
-                }
+                // not done, save last key for next batch
+                self.iterators.insert(iter_key, (prefix, key_vec));
                 return Ok((entries, false));
             }
         }
 
-        // We've exhausted the iterator
+        // no more entries, clean up iterator state
         self.iterators.remove(&iter_key);
         Ok((entries, true))
     }
@@ -324,7 +337,7 @@ async fn handle_request(
 
     let request: KvRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
-        Err(e) => {
+        Err(_e) => {
             // println!("kv: got invalid Request: {}", e);
             return Err(KvError::InputError {
                 error: "didn't serialize to KvAction.".into(),
