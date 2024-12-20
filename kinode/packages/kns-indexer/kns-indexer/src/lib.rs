@@ -286,9 +286,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // if they do time out, we try them again
     let eth_provider: eth::Provider = eth::Provider::new(chain_id, SUBSCRIPTION_TIMEOUT);
 
-    // subscribe to logs first, so no logs are missed
-    eth_provider.subscribe_loop(1, mints_filter.clone());
-    eth_provider.subscribe_loop(2, notes_filter.clone());
+    // subscribe to logs first, so no logs are m issed
+    eth_provider.subscribe_loop(1, mints_filter.clone(), 2, 0);
+    eth_provider.subscribe_loop(2, notes_filter.clone(), 2, 0);
 
     // if subscription results come back in the wrong order, we store them here
     // until the right block is reached.
@@ -426,9 +426,9 @@ fn handle_eth_message(
         Ok(Err(e)) => {
             println!("got eth subscription error ({e:?}), resubscribing");
             if e.id == 1 {
-                eth_provider.subscribe_loop(1, mints_filter.clone());
+                eth_provider.subscribe_loop(1, mints_filter.clone(), 2, 0);
             } else if e.id == 2 {
-                eth_provider.subscribe_loop(2, notes_filter.clone());
+                eth_provider.subscribe_loop(2, notes_filter.clone(), 2, 0);
             }
         }
         _ => {}
