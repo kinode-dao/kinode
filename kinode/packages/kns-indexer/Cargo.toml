@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "get-block",
     "kns-indexer",
+    "reset",
+    "node-info",
  ]
 
 [profile.release]

@@ -40,7 +40,7 @@ wit_bindgen::generate!({
 
 call_init!(init);
 fn init(our: Address) {
-    println!("begin");
+    println!("started");
 
     let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 

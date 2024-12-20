@@ -89,7 +89,7 @@ pub async fn networking(
                     ip
                 ));
             }
-            utils::print_loud(&ext.print_tx, "going online as a direct node").await;
+            utils::print_debug(&ext.print_tx, "going online as a direct node").await;
             if !ports.contains_key(WS_PROTOCOL) && !ports.contains_key(TCP_PROTOCOL) {
                 return Err(anyhow::anyhow!(
                     "net: fatal error: need at least one networking protocol"
@@ -108,7 +108,7 @@ pub async fn networking(
                     "net: fatal error: need at least one router, update your KNS identity"
                 ));
             }
-            utils::print_loud(&ext.print_tx, "going online as an indirect node").await;
+            utils::print_debug(&ext.print_tx, "going online as an indirect node").await;
             // if we are indirect, we need to establish a route to each router
             // and then listen for incoming connections on each of them.
             // this task will periodically check and re-connect to routers

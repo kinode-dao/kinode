@@ -1761,7 +1761,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.10.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=d97e012#d97e012842dd4cc0e036d5de5048064e770302ab"
+source = "git+https://github.com/kinode-dao/process_lib?rev=ea8490a#ea8490aba4837d04243d84b4f5b76fbefb498007"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -1915,6 +1915,17 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "node_info"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -2381,6 +2392,17 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "windows-registry",
+]
+
+[[package]]
+name = "reset"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib",
+ "process_macros",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
 ]
 
 [[package]]

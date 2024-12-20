@@ -107,6 +107,12 @@ impl DB {
         Ok(Self { inner })
     }
 
+    pub fn reset(&self, our: &Address) {
+        if let Err(e) = sqlite::remove_db(our.package_id(), "app_store_chain.sqlite", None) {
+            println!("failed to reset app_store DB: {e}");
+        }
+    }
+
     pub fn get_last_saved_block(&self) -> anyhow::Result<u64> {
         let query = "SELECT value FROM meta WHERE key = 'last_saved_block'";
         let rows = self.inner.read(query.into(), vec![])?;
@@ -121,7 +127,7 @@ impl DB {
     }
 
     pub fn set_last_saved_block(&self, block: u64) -> anyhow::Result<()> {
-        let query = "INSERT INTO meta (key, value) VALUES ('last_saved_block', ?) 
+        let query = "INSERT INTO meta (key, value) VALUES ('last_saved_block', ?)
             ON CONFLICT(key) DO UPDATE SET value=excluded.value";
         let params = vec![block.to_string().into()];
         self.inner.write(query.into(), params, None)?;
@@ -141,12 +147,12 @@ impl DB {
 
         let query = "INSERT INTO listings (package_name, publisher_node, tba, metadata_uri, metadata_hash, metadata_json, auto_update, block)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(package_name, publisher_node) 
-            DO UPDATE SET 
-              tba=excluded.tba, 
-              metadata_uri=excluded.metadata_uri, 
-              metadata_hash=excluded.metadata_hash, 
-              metadata_json=excluded.metadata_json, 
+            ON CONFLICT(package_name, publisher_node)
+            DO UPDATE SET
+              tba=excluded.tba,
+              metadata_uri=excluded.metadata_uri,
+              metadata_hash=excluded.metadata_hash,
+              metadata_json=excluded.metadata_json,
               auto_update=excluded.auto_update,
               block=excluded.block";
         let params = vec![
@@ -234,7 +240,7 @@ impl DB {
         block_number: u64,
     ) -> anyhow::Result<Vec<(PackageId, PackageListing)>> {
         let query = "SELECT package_name, publisher_node, tba, metadata_uri, metadata_hash, metadata_json, auto_update, block
-                     FROM listings 
+                     FROM listings
                      WHERE block > ?";
         let params = vec![block_number.into()];
         let rows = self.inner.read(query.into(), params)?;
@@ -415,11 +421,11 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                     state
                         .kimap
                         .provider
-                        .subscribe_loop(1, app_store_filter(state));
+                        .subscribe_loop(1, app_store_filter(state), 1, 0);
                 }
             }
             Req::Request(chains) => {
-                handle_local_request(state, chains)?;
+                handle_local_request(our, state, chains)?;
             }
         }
     }
@@ -427,7 +433,11 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
     Ok(())
 }
 
-fn handle_local_request(state: &mut State, req: ChainRequests) -> anyhow::Result<()> {
+fn handle_local_request(
+    our: &Address,
+    state: &mut State,
+    req: ChainRequests,
+) -> anyhow::Result<()> {
     match req {
         ChainRequests::GetApp(package_id) => {
             let pid = package_id.clone().to_process_lib();
@@ -479,6 +489,11 @@ fn handle_local_request(state: &mut State, req: ChainRequests) -> anyhow::Result
                 let error_response = ChainResponses::Err(ChainError::NoPackage);
                 Response::new().body(&error_response).send()?;
             }
+        }
+        ChainRequests::Reset => {
+            state.db.reset(&our);
+            Response::new().body(&ChainResponses::ResetOk).send()?;
+            panic!("resetting state, restarting!");
         }
     }
     Ok(())
@@ -746,7 +761,7 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
     // subscribe first so we don't miss any logs
-    state.kimap.provider.subscribe_loop(1, filter.clone());
+    state.kimap.provider.subscribe_loop(1, filter.clone(), 1, 0);
     // println!("fetching old logs from block {last_saved_block}");
     for log in fetch_logs(&state.kimap.provider, &filter.from_block(last_saved_block)) {
         if let Err(e) = handle_eth_log(our, state, log, true) {
