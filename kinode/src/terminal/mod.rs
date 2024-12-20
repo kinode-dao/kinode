@@ -320,13 +320,8 @@ pub async fn terminal(
     process_verbosity: ProcessVerbosity,
     our_ip: &std::net::Ipv4Addr,
 ) -> anyhow::Result<()> {
-    let (stdout, _maybe_raw_mode) = utils::splash(
-        &our,
-        version,
-        is_detached,
-        our_ip,
-        &home_directory_path,
-    )?;
+    let (stdout, _maybe_raw_mode) =
+        utils::splash(&our, version, is_detached, our_ip, &home_directory_path)?;
 
     let (win_cols, win_rows) = crossterm::terminal::size().unwrap_or_else(|_| (0, 0));
 

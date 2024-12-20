@@ -74,8 +74,9 @@ async fn main() {
     if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {e:?}");
     }
-    let home_directory_path = std::fs::canonicalize(&home_directory_path)
-        .expect(&format!("specified home directory {home_directory_path} not found"));
+    let home_directory_path = std::fs::canonicalize(&home_directory_path).expect(&format!(
+        "specified home directory {home_directory_path} not found"
+    ));
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
     #[cfg(not(feature = "simulation-mode"))]
@@ -765,9 +766,7 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
     #[cfg(not(feature = "simulation-mode"))]
     {
         match tokio::time::timeout(std::time::Duration::from_secs(5), public_ip::addr_v4()).await {
-            Ok(Some(ip)) => {
-                ip
-            }
+            Ok(Some(ip)) => ip,
             _ => {
                 println!("Failed to find public IPv4 address: booting as a routed node.");
                 std::net::Ipv4Addr::LOCALHOST
