@@ -20,7 +20,7 @@ members = [
     "kinode/packages/contacts/contacts",
     "kinode/packages/homepage/homepage",
     "kinode/packages/kns-indexer/kns-indexer", "kinode/packages/kns-indexer/get-block", "kinode/packages/settings/settings", "kinode/packages/kns-indexer/reset",
-    "kinode/packages/kns-indexer/node-info",
+    "kinode/packages/kns-indexer/node-info", "kinode/packages/kns-indexer/state",
     "kinode/packages/terminal/terminal",
     "kinode/packages/terminal/alias", "kinode/packages/terminal/cat", "kinode/packages/terminal/echo",
     "kinode/packages/terminal/help", "kinode/packages/terminal/hi", "kinode/packages/terminal/kfetch",
