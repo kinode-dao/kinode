@@ -227,10 +227,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
 
     // if block in state is < current_block, get logs from that part.
-    print_to_terminal(
-        2,
-        &format!("syncing old logs from block: {}", last_block),
-    );
+    print_to_terminal(2, &format!("syncing old logs from block: {}", last_block));
     fetch_and_process_logs(
         &eth_provider,
         &mut state,
