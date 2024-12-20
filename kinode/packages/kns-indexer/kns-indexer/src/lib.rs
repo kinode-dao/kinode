@@ -37,8 +37,6 @@ const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1; // local
 
-const CURRENT_VERSION: u32 = 1;
-
 const MAX_PENDING_ATTEMPTS: u8 = 3;
 const SUBSCRIPTION_TIMEOUT: u64 = 60;
 const DELAY_MS: u64 = 1_000; // 1s
@@ -65,7 +63,7 @@ impl State {
             contract_address: eth::Address::from_str(KIMAP_ADDRESS).unwrap(),
             names: HashMap::new(),
             nodes: HashMap::new(),
-            last_checkpoint_block: 0,
+            last_checkpoint_block: KIMAP_FIRST_BLOCK,
         }
     }
 
@@ -165,15 +163,20 @@ enum KnsError {
 
 call_init!(init);
 fn init(our: Address) {
-    // state is checkpointed regularly (default every 5 minutes if new events are found)
-    let state = State::load();
+    println!("started");
 
-    if let Err(e) = main(our, state) {
-        println!("fatal error: {e}");
+    // state is checkpointed regularly (default every 5 minutes if new events are found)
+    let mut state = State::load();
+
+    loop {
+        if let Err(e) = main(&our, &mut state) {
+            println!("fatal error: {e}");
+            break;
+        }
     }
 }
 
-fn main(our: Address, mut state: State) -> anyhow::Result<()> {
+fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
     #[cfg(feature = "simulation-mode")]
     add_temp_hardcoded_tlzs(&mut state);
 
@@ -230,14 +233,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     print_to_terminal(2, &format!("syncing old logs from block: {}", last_block));
     fetch_and_process_logs(
         &eth_provider,
-        &mut state,
+        state,
         mints_filter.clone(),
         &mut pending_notes,
         &mut last_block,
     );
     fetch_and_process_logs(
         &eth_provider,
-        &mut state,
+        state,
         notes_filter.clone(),
         &mut pending_notes,
         &mut last_block,
@@ -266,12 +269,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             source,
             body,
             capabilities,
+            expects_response,
             ..
         } = message
         else {
             if tick {
                 handle_eth_message(
-                    &mut state,
+                    state,
                     &eth_provider,
                     tick,
                     checkpoint,
@@ -287,7 +291,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
         if source.node() == our.node() && source.process == "eth:distro:sys" {
             handle_eth_message(
-                &mut state,
+                state,
                 &eth_provider,
                 tick,
                 checkpoint,
@@ -298,48 +302,41 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 &mut last_block,
             )?;
         } else {
-            match serde_json::from_slice(&body)? {
+            let response_body = match serde_json::from_slice(&body)? {
                 IndexerRequest::NamehashToName(NamehashToNameRequest { ref hash, .. }) => {
                     // TODO: make sure we've seen the whole block, while actually
                     // sending a response to the proper place.
-                    Response::new()
-                        .body(IndexerResponse::Name(state.names.get(hash).cloned()))
-                        .send()?;
+                    IndexerResponse::Name(state.names.get(hash).cloned())
                 }
                 IndexerRequest::NodeInfo(NodeInfoRequest { ref name, .. }) => {
-                    Response::new()
-                        .body(IndexerResponse::NodeInfo(
-                            state.nodes.get(name).map(|n| n.clone().into()),
-                        ))
-                        .send()?;
+                    IndexerResponse::NodeInfo(state.nodes.get(name).map(|n| n.clone().into()))
                 }
                 IndexerRequest::Reset => {
                     // check for root capability
-                    let root_cap = Capability {
-                        issuer: our.clone(),
-                        params: "{\"root\":true}".to_string(),
-                    };
-                    if source.package_id() != our.package_id() {
-                        if !capabilities.contains(&root_cap) {
-                            Response::new()
-                                .body(IndexerResponse::Reset(ResetResult::Err(
-                                    ResetError::NoRootCap,
-                                )))
-                                .send()?;
-                            continue;
-                        }
+                    let root_cap = Capability::new(our.clone(), "{\"root\":true}");
+                    if source.package_id() != our.package_id() && !capabilities.contains(&root_cap)
+                    {
+                        IndexerResponse::Reset(ResetResult::Err(ResetError::NoRootCap))
+                    } else {
+                        // reload state fresh - this will create new db
+                        state.reset();
+                        IndexerResponse::Reset(ResetResult::Success)
                     }
-                    // reload state fresh - this will create new db
-                    state.reset();
+                }
+                IndexerRequest::GetState(_) => IndexerResponse::GetState(state.clone().into()),
+            };
+
+            if let IndexerResponse::Reset(ResetResult::Success) = response_body {
+                println!("resetting state");
+                if expects_response.is_some() {
                     Response::new()
                         .body(IndexerResponse::Reset(ResetResult::Success))
                         .send()?;
-                    panic!("resetting state, restarting!");
                 }
-                IndexerRequest::GetState(_) => {
-                    Response::new()
-                        .body(IndexerResponse::GetState(state.clone().into()))
-                        .send()?;
+                return Ok(());
+            } else {
+                if expects_response.is_some() {
+                    Response::new().body(response_body).send()?;
                 }
             }
         }
