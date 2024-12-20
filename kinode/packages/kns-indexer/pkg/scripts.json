@@ -40,5 +40,17 @@
             "kns-indexer:kns-indexer:sys"
         ],
         "wit_version": 1
+    },
+    "state.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "kns-indexer:kns-indexer:sys"
+        ],
+        "grant_capabilities": [
+            "kns-indexer:kns-indexer:sys"
+        ],
+        "wit_version": 1
     }
 }

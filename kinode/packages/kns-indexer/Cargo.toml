@@ -5,6 +5,7 @@ members = [
     "kns-indexer",
     "reset",
     "node-info",
+    "state",
  ]
 
 [profile.release]

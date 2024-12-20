@@ -1,6 +1,6 @@
 use crate::kinode::process::kns_indexer::{
     IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest, ResetError,
-    ResetResult, WitKnsUpdate,
+    ResetResult, WitKnsUpdate, WitState,
 };
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
@@ -72,7 +72,7 @@ impl State {
     fn load() -> Self {
         match get_state() {
             None => Self::new(),
-            Some(state_bytes) => match postcard::from_bytes(&state_bytes) {
+            Some(state_bytes) => match rmp_serde::from_slice(&state_bytes) {
                 Ok(state) => state,
                 Err(e) => {
                     println!("failed to deserialize saved state: {e:?}");
@@ -87,16 +87,12 @@ impl State {
         clear_state();
     }
 
-    /// Saves a checkkpoint, serializes to the current block
+    /// Saves a checkpoint, serializes to the current block
     fn save(&mut self, block: u64) {
         self.last_checkpoint_block = block;
-        match postcard::to_allocvec(self) {
-            Ok(state_bytes) => {
-                set_state(&state_bytes);
-            }
-            Err(e) => {
-                println!("failed to serialize state: {e:?}");
-            }
+        match rmp_serde::to_vec(self) {
+            Ok(state_bytes) => set_state(&state_bytes),
+            Err(e) => println!("failed to serialize state: {e:?}"),
         }
     }
 
@@ -140,23 +136,26 @@ impl From<WitKnsUpdate> for net::KnsUpdate {
     }
 }
 
-// impl From<WitState> for State {
-//     fn from(s: WitState) -> Self {
-//         let contract_address: [u8; 20] = s
-//             .contract_address
-//             .try_into()
-//             .expect("invalid contract addess: doesn't have 20 bytes");
-//         State {
-//             chain_id: s.chain_id.clone(),
-//             contract_address: contract_address.into(),
-//             names: HashMap::from_iter(s.names),
-//             nodes: HashMap::from_iter(s.nodes.iter().map(|(k, v)| (k.clone(), v.clone().into()))),
-//             last_block: s.last_block.clone(),
-//         }
-//     }
-// }
-// add back state!
-// and another todo, loop through entries at the start and give them to uhh net?
+impl From<State> for WitState {
+    fn from(s: State) -> Self {
+        let contract_address: [u8; 20] = s.contract_address.into();
+        WitState {
+            chain_id: s.chain_id.clone(),
+            contract_address: contract_address.to_vec(),
+            names: s
+                .names
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<Vec<_>>(),
+            nodes: s
+                .nodes
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone().into()))
+                .collect::<Vec<_>>(),
+            last_block: s.last_checkpoint_block.clone(),
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 enum KnsError {
@@ -336,6 +335,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         .body(IndexerResponse::Reset(ResetResult::Success))
                         .send()?;
                     panic!("resetting state, restarting!");
+                }
+                IndexerRequest::GetState(_) => {
+                    Response::new()
+                        .body(IndexerResponse::GetState(state.clone().into()))
+                        .send()?;
                 }
             }
         }
