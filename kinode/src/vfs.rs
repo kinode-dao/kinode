@@ -504,7 +504,12 @@ async fn handle_request(
                 lib::types::core::SeekFrom::Current(offset) => std::io::SeekFrom::Current(offset),
             };
             let response = file.seek(seek_from).await?;
-            (VfsResponse::SeekFrom { new_offset: response }, None)
+            (
+                VfsResponse::SeekFrom {
+                    new_offset: response,
+                },
+                None,
+            )
         }
         VfsAction::RemoveFile => {
             fs::remove_file(&path).await?;
