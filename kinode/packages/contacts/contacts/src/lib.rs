@@ -101,8 +101,6 @@ impl ContactsState {
 
 call_init!(initialize);
 fn initialize(our: Address) {
-    kiprintln!("started");
-
     homepage::add_to_homepage("Contacts", Some(ICON), Some("/"), None);
 
     let mut state: ContactsState = ContactsState::new(our);
