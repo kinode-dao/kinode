@@ -407,7 +407,6 @@ async fn bootstrap(
             continue;
         }
 
-        println!("fs: handling package {package_name}...\r");
         let package_publisher = package_metadata.properties.publisher.as_str();
 
         // create a new package in VFS

@@ -9,6 +9,8 @@ interface settings {
         /// lazy-load-blob: none.
         shutdown,
         /// lazy-load-blob: none.
+        reset,
+        /// lazy-load-blob: none.
         kill-process(string),
         /// lazy-load-blob: none.
         set-stylesheet(string),

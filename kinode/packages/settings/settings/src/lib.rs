@@ -4,12 +4,12 @@ use crate::kinode::process::settings::{
     Request as SettingsRequest, Response as SettingsResponse, SettingsData, SettingsError,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, homepage, http, kernel_types, kimap, net, println,
-    Address, Capability, LazyLoadBlob, Message, ProcessId, Request, Response, SendError,
-    SendErrorKind,
+    await_message, call_init, eth, get_blob, get_capability, homepage, http, kernel_types, kimap,
+    net, println, Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
+    SendError, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, vec};
 
 const ICON: &str = include_str!("icon");
 
@@ -458,6 +458,19 @@ fn handle_settings_request(
                 .body(serde_json::to_vec(&kernel_types::KernelCommand::Shutdown).unwrap())
                 .send()
                 .unwrap();
+        }
+        SettingsRequest::Reset => {
+            // reset KNS
+            let kns_address = Address::new(&state.our.node, ("kns-indexer", "kns-indexer", "sys"));
+            let root_cap = get_capability(&kns_address, "{\"root\":true}");
+
+            if let Some(cap) = root_cap {
+                Request::to(("our", "kns-indexer", "kns-indexer", "sys"))
+                    .body(serde_json::to_vec(&SettingsRequest::Reset).unwrap())
+                    .capabilities(vec![cap])
+                    .send()
+                    .unwrap();
+            }
         }
         SettingsRequest::KillProcess(pid_str) => {
             // kill a process
