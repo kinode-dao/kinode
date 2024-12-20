@@ -214,9 +214,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // if they do time out, we try them again
     let eth_provider: eth::Provider = eth::Provider::new(state.chain_id, SUBSCRIPTION_TIMEOUT);
 
-    // subscribe to logs first, so no logs are missed
-    eth_provider.subscribe_loop(1, mints_filter.clone());
-    eth_provider.subscribe_loop(2, notes_filter.clone());
+    // subscribe to logs first, so no logs are m issed
+    eth_provider.subscribe_loop(1, mints_filter.clone(), 2, 0);
+    eth_provider.subscribe_loop(2, notes_filter.clone(), 2, 0);
 
     // if subscription results come back in the wrong order, we store them here
     // until the right block is reached.
@@ -227,7 +227,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
 
     // if block in state is < current_block, get logs from that part.
-    println!("syncing old logs from block: {}", last_block);
+    print_to_terminal(
+        2,
+        &format!("syncing old logs from block: {}", last_block),
+    );
     fetch_and_process_logs(
         &eth_provider,
         &mut state,
@@ -249,7 +252,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // set a timer tick for checkpointing
     timer::set_timer(CHECKPOINT_MS, Some(b"checkpoint".to_vec()));
 
-    println!("done syncing old logs.");
+    print_to_terminal(2, "done syncing old logs.");
 
     loop {
         let Ok(message) = await_message() else {
@@ -370,9 +373,9 @@ fn handle_eth_message(
         Ok(Err(e)) => {
             println!("got eth subscription error ({e:?}), resubscribing");
             if e.id == 1 {
-                eth_provider.subscribe_loop(1, mints_filter.clone());
+                eth_provider.subscribe_loop(1, mints_filter.clone(), 2, 0);
             } else if e.id == 2 {
-                eth_provider.subscribe_loop(2, notes_filter.clone());
+                eth_provider.subscribe_loop(2, notes_filter.clone(), 2, 0);
             }
         }
         _ => {}
@@ -603,7 +606,7 @@ fn fetch_and_process_logs(
     loop {
         match eth_provider.get_logs(&filter) {
             Ok(logs) => {
-                println!("log len: {}", logs.len());
+                print_to_terminal(2, &format!("log len: {}", logs.len()));
                 for log in logs {
                     if let Err(e) = handle_log(state, pending_notes, &log, last_block) {
                         print_to_terminal(1, &format!("log-handling error! {e:?}"));

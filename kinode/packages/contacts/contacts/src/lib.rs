@@ -1,7 +1,7 @@
 use crate::kinode::process::contacts;
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_typed_state, homepage, http, kimap, kiprintln,
-    set_state, Address, Capability, LazyLoadBlob, Message, NodeId, Response,
+    await_message, call_init, eth, get_blob, get_typed_state, homepage, http, kimap, set_state,
+    Address, Capability, LazyLoadBlob, Message, NodeId, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -101,8 +101,6 @@ impl ContactsState {
 
 call_init!(initialize);
 fn initialize(our: Address) {
-    kiprintln!("started");
-
     homepage::add_to_homepage("Contacts", Some(ICON), Some("/"), None);
 
     let mut state: ContactsState = ContactsState::new(our);

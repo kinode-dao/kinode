@@ -245,10 +245,6 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubS
     } else {
         "wss://optimism-rpc.publicnode.com".to_string()
     };
-    println!(
-        "Connecting to Optimism RPC at {url}\n\
-        Specify a different RPC URL with the --rpc flag."
-    );
 
     let client = match ProviderBuilder::new().on_ws(WsConnect::new(url)).await {
         Ok(client) => client,
@@ -262,7 +258,6 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubS
         }
     };
 
-    println!("Connected to Optimism RPC");
     client
 }
 

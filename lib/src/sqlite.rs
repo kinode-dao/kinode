@@ -34,7 +34,7 @@ pub enum SqliteResponse {
     Ok,
     Read,
     BeginTx { tx_id: u64 },
-    Err { error: SqliteError },
+    Err(SqliteError),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
