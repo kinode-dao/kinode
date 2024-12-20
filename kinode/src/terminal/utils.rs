@@ -68,7 +68,8 @@ pub fn splash(
        `   ,#`#`#,               public IP {}
           ,/ /` `                home directory at {}
         .*`
- networking public key: {}{}\n"#,
+ networking public key: {}{}
+"#,
                 our.name,
                 if our.is_direct() {
                     "direct"
@@ -102,7 +103,7 @@ pub fn splash(
  version {}
  a general purpose sovereign cloud computer
  public IP {}
- home directory at {}
+ home dir at {}
  net pubkey: {}{}\n"#,
                 our.name,
                 if our.is_direct() {

@@ -95,14 +95,14 @@ impl State {
         state.last_block = last_block.unwrap_or(state.last_block);
 
         println!(
-            "\n   🐦‍⬛  KNS Indexer State\n\
-             ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔\n\
-                Version      {}\n\
-                Chain ID     {}\n\
-                Last Block   {}\n\
-                KIMAP        {}\n\
-             ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁\n",
-            state.version, state.last_block, CHAIN_ID, desired_contract_address,
+            "started\n          🐦‍⬛  KNS Indexer State\n\
+             ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔\n\
+                Version     {}\n\
+                Chain ID    {}\n\
+                Last Block  {}\n\
+                KIMAP       {}\n\
+             ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁\n",
+            state.version, CHAIN_ID, state.last_block, desired_contract_address,
         );
 
         state
@@ -299,7 +299,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
 
     // if block in state is < current_block, get logs from that part.
-    println!("syncing old logs from block: {}", state.last_block);
+    print_to_terminal(
+        2,
+        &format!("syncing old logs from block: {}", state.last_block),
+    );
     fetch_and_process_logs(
         &eth_provider,
         &mut state,
@@ -315,7 +318,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // set a timer tick so any pending logs will be processed
     timer::set_timer(DELAY_MS, None);
-    println!("done syncing old logs.");
+    print_to_terminal(2, "done syncing old logs.");
 
     loop {
         let Ok(message) = await_message() else {
@@ -634,7 +637,7 @@ fn fetch_and_process_logs(
     loop {
         match eth_provider.get_logs(&filter) {
             Ok(logs) => {
-                println!("log len: {}", logs.len());
+                print_to_terminal(2, &format!("log len: {}", logs.len()));
                 for log in logs {
                     if let Err(e) = handle_log(state, pending_notes, &log) {
                         print_to_terminal(1, &format!("log-handling error! {e:?}"));

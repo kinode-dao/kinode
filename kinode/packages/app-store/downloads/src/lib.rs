@@ -116,8 +116,6 @@ impl State {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("downloads: started");
-
     // mirroring metadata is separate from vfs downloads state.
     let mut state = State::load();
 
@@ -452,7 +450,7 @@ fn handle_message(
                 .iter()
                 .find(|(version, _)| version == &current_version)
                 .map(|(_, hash)| hash.clone())
-                // note, if this errors, full on failure I thnk no? 
+                // note, if this errors, full on failure I thnk no?
                 // and bubble this up.
                 .ok_or_else(|| anyhow::anyhow!("auto_update: error for package_id: {}, current_version: {}, no matching hash found", process_lib_package_id.to_string(), current_version))?;
 
