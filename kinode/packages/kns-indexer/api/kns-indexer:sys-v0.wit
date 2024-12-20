@@ -14,6 +14,9 @@ interface kns-indexer {
         /// returns an Option<KnsUpdate>
         /// set block to 0 if you just want to get the current state of the indexer
         node-info(node-info-request),
+        /// return the entire state of the indexer at the given block
+        /// set block to 0 if you just want to get the current state of the indexer
+        get-state(get-state-request),
         /// resets and re-indexes the chain, requires root cap,
         /// returns a response varaint reset
         reset,
@@ -22,6 +25,7 @@ interface kns-indexer {
     variant indexer-response {
         name(option<string>),
         node-info(option<wit-kns-update>),
+        get-state(wit-state),
         reset(reset-result),
      }
 
@@ -41,6 +45,18 @@ interface kns-indexer {
         ips: list<string>,
         ports: list<tuple<string, u16>>, // map, but wit doesn't support maps
         routers: list<string>,
+    }
+
+    record get-state-request {
+        block: u64,
+    }
+
+    record wit-state {
+        chain-id: u64,
+        contract-address: list<u8>, // 20-byte ETH address
+        names: list<tuple<string, string>>, // map, but wit doesn't support maps
+        nodes: list<tuple<string, wit-kns-update>>, // map, but wit doesn't support maps
+        last-block: u64,
     }
 
     variant reset-result {
