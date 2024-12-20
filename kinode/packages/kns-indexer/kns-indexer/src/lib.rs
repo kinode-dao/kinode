@@ -624,13 +624,13 @@ fn fetch_and_process_logs(
 #[cfg(feature = "simulation-mode")]
 fn add_temp_hardcoded_tlzs(state: &mut State) {
     // add some hardcoded top level zones
-    state.set_name(
-        &"0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
-        &"os".to_string(),
+    state.names.insert(
+        "0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
+        "os".to_string(),
     );
-    state.set_name(
-        &"0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
-        &"dev".to_string(),
+    state.names.insert(
+        "0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
+        "dev".to_string(),
     );
 }
 
