@@ -11,6 +11,7 @@ import KinodeHome from "./pages/KinodeHome"
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
 import Header from "./components/Header";
+import ProgressBar from "./components/ProgressBar";
 
 function App() {
   const params = useParams()
@@ -104,13 +105,33 @@ function App() {
                 ? <Navigate to="/login" replace />
                 : <KinodeHome {...props} />
               } />
-              <Route path="/commit-os-name" element={<CommitDotOsName  {...props} />} />
-              <Route path="/mint-os-name" element={<MintDotOsName  {...props} />} />
-              <Route path="/set-password" element={<SetPassword {...props} />} />
+              <Route path="/commit-os-name" element={
+                <>
+                  <ProgressBar knsName={knsName} />
+                  <CommitDotOsName {...props} />
+                </>
+              } />
+              <Route path="/mint-os-name" element={
+                <>
+                  <ProgressBar knsName={knsName} />
+                  <MintDotOsName {...props} />
+                </>
+              } />
+              <Route path="/set-password" element={
+                <>
+                  <ProgressBar knsName={knsName} />
+                  <SetPassword {...props} />
+                </>
+              } />
               <Route path="/reset" element={<ResetName {...props} />} />
               <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
               <Route path="/login" element={<Login {...props} />} />
-              <Route path="/custom-register" element={<MintCustom {...props} />} />
+              <Route path="/custom-register" element={
+                <>
+                  <ProgressBar knsName={knsName} />
+                  <MintCustom {...props} />
+                </>
+              } />
             </Routes>
           </main>
         </Router>
