@@ -70,7 +70,7 @@ pub async fn networking(
         pending_passthroughs,
         active_passthroughs,
         max_passthroughs,
-        fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
+        fds_limit: 10, // small hardcoded limit that gets replaced by fd-manager soon after boot
     };
 
     let mut tasks = JoinSet::<anyhow::Result<()>>::new();
@@ -89,7 +89,7 @@ pub async fn networking(
                     ip
                 ));
             }
-            utils::print_loud(&ext.print_tx, "going online as a direct node").await;
+            utils::print_debug(&ext.print_tx, "going online as a direct node").await;
             if !ports.contains_key(WS_PROTOCOL) && !ports.contains_key(TCP_PROTOCOL) {
                 return Err(anyhow::anyhow!(
                     "net: fatal error: need at least one networking protocol"
@@ -108,7 +108,7 @@ pub async fn networking(
                     "net: fatal error: need at least one router, update your KNS identity"
                 ));
             }
-            utils::print_loud(&ext.print_tx, "going online as an indirect node").await;
+            utils::print_debug(&ext.print_tx, "going online as an indirect node").await;
             // if we are indirect, we need to establish a route to each router
             // and then listen for incoming connections on each of them.
             // this task will periodically check and re-connect to routers
@@ -171,7 +171,7 @@ async fn handle_local_request(
 ) {
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Err(_e) => {
-            // only other possible message is from fd_manager -- handle here
+            // only other possible message is from fd-manager -- handle here
             handle_fdman(km, request_body, data).await;
         }
         Ok(NetAction::ConnectionRequest(_)) => {
@@ -198,7 +198,11 @@ async fn handle_local_request(
                     None,
                 ),
                 NetAction::GetPeer(peer) => (
-                    NetResponse::Peer(data.pki.get(&peer).map(|p| p.clone())),
+                    if peer == ext.our.name {
+                        NetResponse::Peer(Some((*ext.our).clone()))
+                    } else {
+                        NetResponse::Peer(data.pki.get(&peer).map(|p| p.clone()))
+                    },
                     None,
                 ),
                 NetAction::GetDiagnostics => {
@@ -408,7 +412,7 @@ async fn handle_remote_request(
         }
         _ => {
             // if we can't parse this to a NetAction, treat it as a hello and print it,
-            // and respond with a simple "delivered" response
+            // and respond with a simple "ack" response
             utils::parse_hello_message(
                 &ext.our,
                 &km,

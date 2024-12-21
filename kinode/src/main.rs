@@ -3,11 +3,12 @@ use clap::{arg, value_parser, Command};
 use lib::types::core::{
     CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
     KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
-    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
-    KERNEL_PROCESS_ID,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, ProcessVerbosity,
+    Request, KERNEL_PROCESS_ID,
 };
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
+use std::collections::HashMap;
 use std::env;
 use std::path::Path;
 use std::sync::Arc;
@@ -43,7 +44,6 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const FD_MANAGER_CHANNEL_CAPACITY: usize = 1_000;
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WS_MIN_PORT: u16 = 9_000;
 const TCP_MIN_PORT: u16 = 10_000;
 const MAX_PORT: u16 = 65_535;
@@ -65,17 +65,6 @@ pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
 #[tokio::main]
 async fn main() {
-    // embed values in binary for inspection without running & print on boot
-    //  e.g., to inspect without running, use
-    //  ```bash
-    //  strings kinode | grep DOCKER_BUILD_IMAGE_VERSION
-    //  ```
-    println!(
-        "\nDOCKER_BUILD_IMAGE_VERSION: {}\nPACKAGES_ZIP_HASH: {}\n",
-        env!("DOCKER_BUILD_IMAGE_VERSION"),
-        env!("PACKAGES_ZIP_HASH"),
-    );
-
     let app = build_command();
 
     let matches = app.get_matches();
@@ -85,9 +74,9 @@ async fn main() {
     if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {e:?}");
     }
-    let home_directory_path = std::fs::canonicalize(&home_directory_path)
-        .expect("specified home directory {home_directory_path} not found");
-    println!("home at {home_directory_path:?}\r");
+    let home_directory_path = std::fs::canonicalize(&home_directory_path).expect(&format!(
+        "specified home directory {home_directory_path} not found"
+    ));
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
     #[cfg(not(feature = "simulation-mode"))]
@@ -106,6 +95,14 @@ async fn main() {
     // detached determines whether terminal is interactive
     let detached = *matches.get_one::<bool>("detached").unwrap();
 
+    let process_verbosity = matches.get_one::<String>("process-verbosity").unwrap();
+    let process_verbosity: ProcessVerbosity = if process_verbosity.is_empty() {
+        HashMap::new()
+    } else {
+        serde_json::from_str(&process_verbosity)
+            .expect("failed to parse given --process-verbosity. Must be JSON Object with keys `ProcessId`s and values either `{\"U8\": <verbosity>}` or `\"Muted\"`")
+    };
+
     #[cfg(feature = "simulation-mode")]
     let (fake_node_name, fakechain_port) = (
         matches.get_one::<String>("fake-node-name"),
@@ -117,7 +114,6 @@ async fn main() {
         tokio::fs::read_to_string(home_directory_path.join(".eth_providers")).await
     {
         if let Ok(contents) = serde_json::from_str(&contents) {
-            println!("loaded saved eth providers\r");
             contents
         } else {
             println!("error loading saved eth providers, using default providers\r");
@@ -224,8 +220,9 @@ async fn main() {
 
     #[cfg(not(feature = "simulation-mode"))]
     println!(
-        "login or register at http://localhost:{}\r",
-        http_server_port
+        "Welcome to Kinode.\nThe time is {}.\nLogin or register at http://localhost:{}\r",
+        chrono::Local::now().to_rfc3339(),
+        http_server_port,
     );
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = match password {
@@ -259,13 +256,13 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http_server"), "distro", "sys"),
+            ProcessId::new(Some("http-server"), "distro", "sys"),
             http_server_sender,
             None,
             false,
         ),
         (
-            ProcessId::new(Some("http_client"), "distro", "sys"),
+            ProcessId::new(Some("http-client"), "distro", "sys"),
             http_client_sender,
             None,
             false,
@@ -307,7 +304,7 @@ async fn main() {
             false,
         ),
         (
-            ProcessId::new(Some("fd_manager"), "distro", "sys"),
+            ProcessId::new(Some("fd-manager"), "distro", "sys"),
             fd_manager_sender,
             None,
             false,
@@ -466,7 +463,7 @@ async fn main() {
         }
         quit = terminal::terminal(
             our.clone(),
-            VERSION,
+            env!("CARGO_PKG_VERSION"),
             home_directory_path.clone(),
             kernel_message_sender.clone(),
             kernel_debug_message_sender,
@@ -477,6 +474,8 @@ async fn main() {
             is_logging,
             max_log_size.copied(),
             number_log_files.copied(),
+            process_verbosity,
+            &our_ip,
         ) => {
             match quit {
                 Ok(()) => {
@@ -668,9 +667,22 @@ pub async fn simulate_node(
 /// build the command line interface for kinode
 ///
 fn build_command() -> Command {
+    // embed values in binary for inspection without running & print on boot
+    //  e.g., to inspect without running, use
+    //  ```bash
+    //  strings kinode | grep DOCKER_BUILD_IMAGE_VERSION
+    //  ```
+    let version = concat!(
+        env!("CARGO_PKG_VERSION"),
+        "\nDOCKER_BUILD_IMAGE_VERSION: ",
+        env!("DOCKER_BUILD_IMAGE_VERSION"),
+        "\nPACKAGES_ZIP_HASH: ",
+        env!("PACKAGES_ZIP_HASH"),
+        "\n",
+    );
     let app = Command::new("kinode")
-        .version(VERSION)
-        .author("Kinode DAO: https://github.com/kinode-dao")
+        .version(version)
+        .author("Sybil Technologies AG")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(
@@ -726,6 +738,10 @@ fn build_command() -> Command {
         .arg(
             arg!(--"soft-ulimit" <SOFT_ULIMIT> "Enforce a static maximum number of file descriptors (default fetched from system)")
                 .value_parser(value_parser!(u64)),
+        )
+        .arg(
+            arg!(--"process-verbosity" <JSON_STRING> "ProcessId: verbosity JSON object")
+                .default_value("")
         );
 
     #[cfg(feature = "simulation-mode")]
@@ -749,12 +765,8 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
 
     #[cfg(not(feature = "simulation-mode"))]
     {
-        println!("Finding public IP address...");
         match tokio::time::timeout(std::time::Duration::from_secs(5), public_ip::addr_v4()).await {
-            Ok(Some(ip)) => {
-                println!("Public IP found: {ip}");
-                ip
-            }
+            Ok(Some(ip)) => ip,
             _ => {
                 println!("Failed to find public IPv4 address: booting as a routed node.");
                 std::net::Ipv4Addr::LOCALHOST
@@ -830,21 +842,50 @@ async fn login_with_password(
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {
-        ring::signature::KeyPair,
-        sha2::{Digest, Sha256},
-    };
+    use argon2::Argon2;
+    use ring::signature::KeyPair;
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(home_directory_path.join(".keys"))
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
+    let (username, _, _, _, _, _) =
+        serde_json::from_slice::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+            &disk_keyfile,
+        )
+        .or_else(|_| {
+            bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+                &disk_keyfile,
+            )
+        })
+        .unwrap();
 
-    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
+    let mut output_key_material = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(
+            password.as_bytes(),
+            username.as_bytes(),
+            &mut output_key_material,
+        )
+        .expect("password hashing failed");
+    let password_hash = hex::encode(output_key_material);
 
-    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash)
-        .expect("could not decode keyfile, password incorrect");
+    let password_hash_hex = format!("0x{}", password_hash);
+
+    // SWITCH BACK TO THIS IN 1.0.0
+    // let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
+    //     .expect("could not decode keyfile, password incorrect");
+
+    // REMOVE IN 1.0.0
+    let k = match keygen::decode_keyfile(&disk_keyfile, &password_hash_hex) {
+        Ok(k) => k,
+        Err(_) => {
+            use sha2::{Digest, Sha256};
+            let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
+            keygen::decode_keyfile(&disk_keyfile, &password_hash)
+                .expect("could not decode keyfile, password incorrect")
+        }
+    };
 
     let mut our = Identity {
         name: k.username.clone(),
@@ -861,6 +902,8 @@ async fn login_with_password(
             NodeRouting::Routers(k.routers.clone())
         },
     };
+
+    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
 
     register::assign_routing(
         &mut our,

@@ -10,16 +10,24 @@ interface homepage {
         /// the package and process name will come from request source.
         /// the path will automatically have the process_id prepended.
         /// the icon is a base64 encoded image.
+        ///
+        /// lazy-load-blob: none.
         add(add-request),
         /// remove ourself from homepage (message source will be item removed)
+        ///
+        /// lazy-load-blob: none.
         remove,
         /// remove another app from homepage
         /// using this requires RemoveOther capability
         /// app store uses this to remove apps on uninstall
+        ///
+        /// lazy-load-blob: none.
         remove-other(string),
         /// set the stylesheet for the homepage
         /// using this requires SetStylesheet capability
         /// settings:settings:sys uses this to set the stylesheet
+        ///
+        /// lazy-load-blob: none.
         set-stylesheet(string),
     }
 
@@ -33,5 +41,5 @@ interface homepage {
 
 world homepage-sys-v1 {
     import homepage;
-    include process-v0;
+    include process-v1;
 }

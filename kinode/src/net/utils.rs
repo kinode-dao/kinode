@@ -5,7 +5,7 @@ use crate::net::types::{
 use lib::types::core::{
     Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
     NodeId, NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
-    WrappedSendError,
+    WrappedSendError, NET_PROCESS_ID,
 };
 use {
     futures::{SinkExt, StreamExt},
@@ -415,7 +415,7 @@ pub async fn parse_hello_message(
         .message(Message::Response((
             Response {
                 inherit: false,
-                body: "delivered".as_bytes().to_vec(),
+                body: b"ack".to_vec(),
                 metadata: None,
                 capabilities: vec![],
             },
@@ -429,12 +429,16 @@ pub async fn parse_hello_message(
 
 /// Create a terminal printout at verbosity level 0.
 pub async fn print_loud(print_tx: &PrintSender, content: &str) {
-    Printout::new(0, content).send(print_tx).await;
+    Printout::new(0, NET_PROCESS_ID.clone(), content)
+        .send(print_tx)
+        .await;
 }
 
 /// Create a terminal printout at verbosity level 2.
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
-    Printout::new(2, content).send(print_tx).await;
+    Printout::new(2, NET_PROCESS_ID.clone(), content)
+        .send(print_tx)
+        .await;
 }
 
 pub fn get_now() -> u64 {

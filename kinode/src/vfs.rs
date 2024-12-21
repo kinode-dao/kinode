@@ -63,6 +63,7 @@ pub async fn vfs(
         if *our_node != km.source.node {
             Printout::new(
                 1,
+                VFS_PROCESS_ID.clone(),
                 format!(
                     "vfs: got request from {}, but requests must come from our node {our_node}",
                     km.source.node
@@ -77,7 +78,8 @@ pub async fn vfs(
             if let Err(e) = handle_fd_request(km, &mut files).await {
                 Printout::new(
                     1,
-                    format!("vfs: got request from fd_manager that errored: {e:?}"),
+                    VFS_PROCESS_ID.clone(),
+                    format!("vfs: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&send_to_terminal)
                 .await;
@@ -161,7 +163,7 @@ impl Files {
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
             our,
             send_to_loop,
-            fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
+            fds_limit: 10, // small hardcoded limit that gets replaced by fd-manager soon after boot
         }
     }
 
@@ -451,7 +453,7 @@ async fn handle_request(
             file.read_to_end(&mut contents).await?;
             (VfsResponse::Read, Some(contents))
         }
-        VfsAction::ReadExact(length) => {
+        VfsAction::ReadExact { length } => {
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = vec![0; length as usize];
@@ -493,7 +495,7 @@ async fn handle_request(
             file.read_to_string(&mut contents).await?;
             (VfsResponse::ReadToString(contents), None)
         }
-        VfsAction::Seek { seek_from } => {
+        VfsAction::Seek(seek_from) => {
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
             let seek_from = match seek_from {
@@ -502,7 +504,12 @@ async fn handle_request(
                 lib::types::core::SeekFrom::Current(offset) => std::io::SeekFrom::Current(offset),
             };
             let response = file.seek(seek_from).await?;
-            (VfsResponse::SeekFrom(response), None)
+            (
+                VfsResponse::SeekFrom {
+                    new_offset: response,
+                },
+                None,
+            )
         }
         VfsAction::RemoveFile => {
             fs::remove_file(&path).await?;
@@ -811,10 +818,10 @@ async fn check_caps(
         }
         VfsAction::Read
         | VfsAction::ReadDir
-        | VfsAction::ReadExact(_)
+        | VfsAction::ReadExact { .. }
         | VfsAction::ReadToEnd
         | VfsAction::ReadToString
-        | VfsAction::Seek { .. }
+        | VfsAction::Seek(_)
         | VfsAction::Hash
         | VfsAction::Metadata
         | VfsAction::Len => {

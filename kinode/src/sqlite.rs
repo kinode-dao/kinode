@@ -83,10 +83,10 @@ impl SqliteState {
 
         fs::create_dir_all(&db_path).await?;
 
-        let db_file_path = format!("{}.db", db);
+        let db_file_path = db_path.join(format!("{}.db", db));
 
         let db_conn = Connection::open(db_file_path)?;
-        let _ = db_conn.execute("PRAGMA journal_mode=WAL", []);
+        let _: String = db_conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
 
         self.open_dbs.insert(key, Mutex::new(db_conn));
 
@@ -135,6 +135,7 @@ pub async fn sqlite(
         if state.our.node != km.source.node {
             Printout::new(
                 1,
+                SQLITE_PROCESS_ID.clone(),
                 format!(
                     "sqlite: got request from {}, but requests must come from our node {}",
                     km.source.node, state.our.node
@@ -149,7 +150,8 @@ pub async fn sqlite(
             if let Err(e) = handle_fd_request(km, &mut state).await {
                 Printout::new(
                     1,
-                    format!("sqlite: got request from fd_manager that errored: {e:?}"),
+                    SQLITE_PROCESS_ID.clone(),
+                    format!("sqlite: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&state.send_to_terminal)
                 .await;
@@ -178,7 +180,7 @@ pub async fn sqlite(
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
                 if let Err(e) = handle_request(km, &mut state, &send_to_caps_oracle).await {
-                    Printout::new(1, format!("sqlite: {e}"))
+                    Printout::new(1, SQLITE_PROCESS_ID.clone(), format!("sqlite: {e}"))
                         .send(&state.send_to_terminal)
                         .await;
                     KernelMessage::builder()
@@ -188,8 +190,7 @@ pub async fn sqlite(
                         .message(Message::Response((
                             Response {
                                 inherit: false,
-                                body: serde_json::to_vec(&SqliteResponse::Err { error: e })
-                                    .unwrap(),
+                                body: serde_json::to_vec(&SqliteResponse::Err(e)).unwrap(),
                                 metadata: None,
                                 capabilities: vec![],
                             },

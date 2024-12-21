@@ -145,11 +145,19 @@ fn handle_request(
                         .collect(),
                     caps_map["grant_capabilities"]
                         .iter()
-                        .map(|cap| cap.parse().unwrap())
+                        .map(|cap| {
+                            serde_json::from_str::<(ProcessId, String)>(cap).unwrap_or_else(|_| {
+                                (
+                                    cap.parse::<ProcessId>().unwrap(),
+                                    "\"messaging\"".to_string(),
+                                )
+                            })
+                        })
                         .collect(),
                 ))
             })
             .unwrap_or((vec![], vec![]));
+        println!("tester: request_caps: {request_caps:?}\ntester: grant_caps: {grant_caps:?}");
         request_caps.extend(our_capabilities());
         let child_process_id = match spawn(
             None,
@@ -238,7 +246,7 @@ fn init(our: Address) {
             .target(("our", "kernel", "distro", "sys"))
             .body(
                 serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                    target: ProcessId::new(Some("http_server"), "distro", "sys"),
+                    target: ProcessId::new(Some("http-server"), "distro", "sys"),
                     capabilities: vec![kt::Capability {
                         issuer: Address::new(
                             our.node.clone(),
