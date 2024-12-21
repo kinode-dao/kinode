@@ -32,7 +32,7 @@ pub enum KvResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize, Error)]
 pub enum KvError {
-    #[error("db {} in {} does not exist", _0.1, _0.0)]
+    #[error("db [{}, {}] does not exist", _0.0, _0.1)]
     NoDb((PackageId, String)),
     #[error("key not found")]
     KeyNotFound,
