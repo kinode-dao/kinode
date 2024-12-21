@@ -1,51 +1,70 @@
-use crate::types::core::{CapMessage, PackageId};
+use crate::types::core::PackageId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// IPC Request format for the kv:distro:sys runtime module.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KvRequest {
     pub package_id: PackageId,
     pub db: String,
     pub action: KvAction,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KvAction {
     Open,
     RemoveDb,
     Set { key: Vec<u8>, tx_id: Option<u64> },
     Delete { key: Vec<u8>, tx_id: Option<u64> },
-    Get { key: Vec<u8> },
+    Get(Vec<u8>),
     BeginTx,
     Commit { tx_id: u64 },
     Backup,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KvResponse {
     Ok,
     BeginTx { tx_id: u64 },
-    Get { key: Vec<u8> },
+    Get(Vec<u8>),
     Err(KvError),
 }
 
-#[derive(Debug, Serialize, Deserialize, Error)]
+#[derive(Clone, Debug, Serialize, Deserialize, Error)]
 pub enum KvError {
-    #[error("DbDoesNotExist")]
-    NoDb,
-    #[error("KeyNotFound")]
+    #[error("db {} in {} does not exist", _0.1, _0.0)]
+    NoDb((PackageId, String)),
+    #[error("key not found")]
     KeyNotFound,
-    #[error("no Tx found")]
-    NoTx,
-    #[error("No capability: {error}")]
-    NoCap { error: String },
-    #[error("rocksdb internal error: {error}")]
-    RocksDBError { action: String, error: String },
-    #[error("input bytes/json/key error: {error}")]
-    InputError { error: String },
-    #[error("IO error: {error}")]
-    IOError { error: String },
+    #[error("no transaction {0} found")]
+    NoTx(u64),
+    #[error("no write capability for requested DB")]
+    NoWriteCap,
+    #[error("no read capability for requested DB")]
+    NoReadCap,
+    #[error("request to open or remove DB with mismatching package ID")]
+    MismatchingPackageId,
+    #[error("failed to generate capability for new DB")]
+    AddCapFailed,
+    #[error("kv got a malformed request that either failed to deserialize or was missing a required blob")]
+    MalformedRequest,
+    #[error("RocksDB internal error: {0}")]
+    RocksDBError(String),
+    #[error("IO error: {0}")]
+    IOError(String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KvCapabilityParams {
+    pub kind: KvCapabilityKind,
+    pub db_key: (PackageId, String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KvCapabilityKind {
+    Read,
+    Write,
 }
 
 impl std::fmt::Display for KvAction {
@@ -54,26 +73,8 @@ impl std::fmt::Display for KvAction {
     }
 }
 
-impl From<tokio::sync::oneshot::error::RecvError> for KvError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        KvError::NoCap {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for KvError {
-    fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
-        KvError::NoCap {
-            error: err.to_string(),
-        }
-    }
-}
-
 impl From<std::io::Error> for KvError {
     fn from(err: std::io::Error) -> Self {
-        KvError::IOError {
-            error: err.to_string(),
-        }
+        KvError::IOError(err.to_string())
     }
 }
