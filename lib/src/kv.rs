@@ -12,21 +12,56 @@ pub struct KvRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KvAction {
+    /// Opens an existing key-value database or creates a new one if it doesn't exist.
     Open,
+    /// Permanently deletes the entire key-value database.
     RemoveDb,
+    /// Sets a value for the specified key in the database.
+    ///
+    /// # Parameters
+    /// * `key` - The key as a byte vector
+    /// * `tx_id` - Optional transaction ID if this operation is part of a transaction
+    ///
+    /// Blob: Value in Vec<u8>
     Set { key: Vec<u8>, tx_id: Option<u64> },
+    /// Deletes a key-value pair from the database.
+    ///
+    /// # Parameters
+    /// * `key` - The key to delete as a byte vector
+    /// * `tx_id` - Optional transaction ID if this operation is part of a transaction
     Delete { key: Vec<u8>, tx_id: Option<u64> },
+    /// Retrieves the value associated with the specified key.
+    ///
+    /// # Parameters
+    /// * `key` - The key to look up as a byte vector
     Get(Vec<u8>),
+    /// Begins a new transaction for atomic operations.
     BeginTx,
+    /// Commits all operations in the specified transaction.
+    ///
+    /// # Parameters
+    /// * `tx_id` - The ID of the transaction to commit
     Commit { tx_id: u64 },
-    Backup,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KvResponse {
+    /// Indicates successful completion of an operation.
+    /// Sent in response to actions Open, RemoveDb, Set, Delete, and Commit.
     Ok,
+    /// Returns the transaction ID for a newly created transaction.
+    ///
+    /// # Fields
+    /// * `tx_id` - The ID of the newly created transaction
     BeginTx { tx_id: u64 },
+    /// Returns the value for the key that was retrieved from the database.
+    ///
+    /// # Fields
+    /// * `key` - The retrieved key as a byte vector
+    ///
+    /// Blob: Value in Vec<u8>
     Get(Vec<u8>),
+    /// Indicates an error occurred during the operation.
     Err(KvError),
 }
 

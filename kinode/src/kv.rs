@@ -507,7 +507,6 @@ async fn check_caps(
 
             Ok(())
         }
-        KvAction::Backup { .. } => Ok(()),
     }
 }
 
