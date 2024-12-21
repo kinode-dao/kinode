@@ -248,7 +248,7 @@ async fn handle_request(
         KvAction::Get(key) => {
             let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb(db_key));
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
@@ -277,7 +277,7 @@ async fn handle_request(
         KvAction::Set { ref key, tx_id } => {
             let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb(db_key));
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
@@ -305,7 +305,7 @@ async fn handle_request(
         KvAction::Delete { ref key, tx_id } => {
             let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb(db_key));
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
@@ -328,7 +328,7 @@ async fn handle_request(
         KvAction::Commit { tx_id } => {
             let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb(db_key));
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
