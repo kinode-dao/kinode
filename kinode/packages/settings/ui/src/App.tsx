@@ -68,7 +68,7 @@ function App() {
   }, []);
 
   const apiCall = async (body: any) => {
-    await fetch(APP_PATH, {
+    return await fetch(APP_PATH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -106,6 +106,7 @@ function App() {
   const handlePeerPing = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const form = e.currentTarget;
     const response = await fetch(APP_PATH, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -117,14 +118,58 @@ function App() {
         }
       }),
     });
-    const data = await response.json();
-    if (data === null) {
-      e.currentTarget.reset();
+    form.reset();
+    try {
+      const data = await response.json();
+      if (data === null) {
+        setPeerPingResponse("ping successful!");
+      } else if (data === "HiTimeout") {
+        setPeerPingResponse("node timed out");
+      } else if (data === "HiOffline") {
+        setPeerPingResponse("node is offline");
+      }
+    } catch (err) {
       setPeerPingResponse("ping successful!");
-    } else if (data === "HiTimeout") {
-      setPeerPingResponse("node timed out");
-    } else if (data === "HiOffline") {
-      setPeerPingResponse("node is offline");
+    }
+  };
+
+  const handleAddEthProvider = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const response = await apiCall({
+      "EthConfig": {
+        "AddProvider": {
+          chain_id: Number(formData.get('chain-id')),
+          node_or_rpc_url: { "RpcUrl": formData.get('rpc-url') as string }
+        }
+      }
+    });
+    try {
+      const data = await response.json();
+      console.log(data);
+    } catch (err) {
+      form.reset();
+      // this is actually a success
+    }
+
+  };
+
+  const handleRemoveEthProvider = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+    const response = await apiCall({
+      "EthConfig": {
+        "RemoveProvider": [Number(formData.get('chain-id')), formData.get('rpc-url') as string]
+      }
+    });
+    try {
+      const data = await response.json();
+      console.log(data);
+    } catch (err) {
+      form.reset();
+      // this is actually a success
     }
   };
 
@@ -149,14 +194,14 @@ function App() {
           <div className="mt-16 flex flex-col justify-start">
             <button
               onClick={handleShutdown}
-              className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded w-full mb-8"
+              id="shutdown"
             >
               Shutdown Node
             </button>
             <br />
+            <br />
             <button
               onClick={handleReset}
-              className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded w-full"
             >
               Reset KNS State
             </button>
@@ -183,12 +228,12 @@ function App() {
         <article id="eth-rpc-providers">
           <h2>ETH RPC providers</h2>
           <article id="provider-edits">
-            <form id="add-eth-provider">
+            <form id="add-eth-provider" onSubmit={handleAddEthProvider}>
               <input type="number" name="chain-id" placeholder="1" />
               <input type="text" name="rpc-url" placeholder="wss://rpc-url.com" />
               <button type="submit">add provider</button>
             </form>
-            <form id="remove-eth-provider">
+            <form id="remove-eth-provider" onSubmit={handleRemoveEthProvider}>
               <input type="number" name="chain-id" placeholder="1" />
               <input type="text" name="rpc-url" placeholder="wss://rpc-url.com" />
               <button type="submit">remove provider</button>
