@@ -1,17 +1,17 @@
-use crate::types::core::{CapMessage, PackageId};
+use crate::types::core::PackageId;
 use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// IPC Request format for the sqlite:distro:sys runtime module.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SqliteRequest {
     pub package_id: PackageId,
     pub db: String,
     pub action: SqliteAction,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SqliteAction {
     Open,
     RemoveDb,
@@ -19,9 +19,7 @@ pub enum SqliteAction {
         statement: String,
         tx_id: Option<u64>,
     },
-    Read {
-        query: String,
-    },
+    Query(String),
     BeginTx,
     Commit {
         tx_id: u64,
@@ -29,7 +27,7 @@ pub enum SqliteAction {
     Backup,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SqliteResponse {
     Ok,
     Read,
@@ -37,7 +35,7 @@ pub enum SqliteResponse {
     Err(SqliteError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SqlValue {
     Integer(i64),
     Real(f64),
@@ -47,28 +45,45 @@ pub enum SqlValue {
     Null,
 }
 
-#[derive(Debug, Serialize, Deserialize, Error)]
+#[derive(Clone, Debug, Serialize, Deserialize, Error)]
 pub enum SqliteError {
-    #[error("sqlite: DbDoesNotExist")]
-    NoDb,
-    #[error("sqlite: NoTx")]
-    NoTx,
-    #[error("sqlite: No capability: {error}")]
-    NoCap { error: String },
-    #[error("sqlite: UnexpectedResponse")]
-    UnexpectedResponse,
-    #[error("sqlite: NotAWriteKeyword")]
+    #[error("db [{0}, {1}] does not exist")]
+    NoDb(PackageId, String),
+    #[error("no transaction {0} found")]
+    NoTx(u64),
+    #[error("no write capability for requested DB")]
+    NoWriteCap,
+    #[error("no read capability for requested DB")]
+    NoReadCap,
+    #[error("request to open or remove DB with mismatching package ID")]
+    MismatchingPackageId,
+    #[error("failed to generate capability for new DB")]
+    AddCapFailed,
+    #[error("write statement started with non-existent write keyword")]
     NotAWriteKeyword,
-    #[error("sqlite: NotAReadKeyword")]
+    #[error("read query started with non-existent read keyword")]
     NotAReadKeyword,
-    #[error("sqlite: Invalid Parameters")]
+    #[error("parameters blob in read/write was misshapen or contained invalid JSON objects")]
     InvalidParameters,
-    #[error("sqlite: IO error: {error}")]
-    IOError { error: String },
-    #[error("sqlite: rusqlite error: {error}")]
-    RusqliteError { error: String },
-    #[error("sqlite: input bytes/json/key error: {error}")]
-    InputError { error: String },
+    #[error("sqlite got a malformed request that failed to deserialize")]
+    MalformedRequest,
+    #[error("rusqlite error: {0}")]
+    RusqliteError(String),
+    #[error("IO error: {0}")]
+    IOError(String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SqliteCapabilityParams {
+    pub kind: SqliteCapabilityKind,
+    pub db_key: (PackageId, String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SqliteCapabilityKind {
+    Read,
+    Write,
 }
 
 impl ToSql for SqlValue {
@@ -109,32 +124,12 @@ impl std::fmt::Display for SqliteAction {
 
 impl From<std::io::Error> for SqliteError {
     fn from(err: std::io::Error) -> Self {
-        SqliteError::IOError {
-            error: err.to_string(),
-        }
+        SqliteError::IOError(err.to_string())
     }
 }
 
 impl From<rusqlite::Error> for SqliteError {
     fn from(err: rusqlite::Error) -> Self {
-        SqliteError::RusqliteError {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for SqliteError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        SqliteError::NoCap {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for SqliteError {
-    fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
-        SqliteError::NoCap {
-            error: err.to_string(),
-        }
+        SqliteError::RusqliteError(err.to_string())
     }
 }
