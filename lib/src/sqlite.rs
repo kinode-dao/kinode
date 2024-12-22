@@ -3,7 +3,10 @@ use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// IPC Request format for the sqlite:distro:sys runtime module.
+/// Actions are sent to a specific SQLite database. `db` is the name,
+/// `package_id` is the [`PackageId`] that created the database. Capabilities
+/// are checked: you can access another process's database if it has given
+/// you the read and/or write capability to do so.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SqliteRequest {
     pub package_id: PackageId,
@@ -11,11 +14,24 @@ pub struct SqliteRequest {
     pub action: SqliteAction,
 }
 
+/// IPC Action format representing operations that can be performed on the
+/// SQLite runtime module. These actions are included in a [`SqliteRequest`]
+/// sent to the `sqlite:distro:sys` runtime module.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SqliteAction {
-    /// Opens an existing sqlite database or creates a new one if it doesn't exist.
+    /// Opens an existing key-value database or creates a new one if it doesn't exist.
+    /// Requires `package_id` in [`SqliteRequest`] to match the package ID of the sender.
+    /// The sender will own the database and can remove it with [`SqliteAction::RemoveDb`].
+    ///
+    /// A successful open will respond with [`SqliteResponse::Ok`]. Any error will be
+    /// contained in the [`SqliteResponse::Err`] variant.
     Open,
-    /// Permanently deletes the entire sqlite database.
+    /// Permanently deletes the entire key-value database.
+    /// Requires `package_id` in [`SqliteRequest`] to match the package ID of the sender.
+    /// Only the owner can remove the database.
+    ///
+    /// A successful remove will respond with [`SqliteResponse::Ok`]. Any error will be
+    /// contained in the [`SqliteResponse::Err`] variant.
     RemoveDb,
     /// Executes a write statement (INSERT/UPDATE/DELETE)
     ///
@@ -28,6 +44,12 @@ pub enum SqliteAction {
     ///   - f64
     ///   - String
     ///   - Vec<u8> (binary data)
+    ///
+    /// Using this action requires the sender to have the write capability
+    /// for the database.
+    ///
+    /// A successful write will respond with [`SqliteResponse::Ok`]. Any error will be
+    /// contained in the [`SqliteResponse::Err`] variant.
     Write {
         statement: String,
         tx_id: Option<u64>,
@@ -41,19 +63,35 @@ pub enum SqliteAction {
     ///   - f64
     ///   - String
     ///   - Vec<u8> (binary data)
+    ///
+    /// Using this action requires the sender to have the read capability
+    /// for the database.
+    ///
+    /// A successful query will respond with [`SqliteResponse::Query`], where the
+    /// response blob contains the results of the query. Any error will be contained
+    /// in the [`SqliteResponse::Err`] variant.
     Query(String),
-    /// Starts a new transaction
+    /// Begins a new transaction for atomic operations.
+    ///
+    /// Sending this will prompt a [`SqliteResponse::BeginTx`] response with the
+    /// transaction ID. Any error will be contained in the [`SqliteResponse::Err`] variant.
     BeginTx,
-    /// Commits transaction with given ID
+    /// Commits all operations in the specified transaction.
+    ///
+    /// # Parameters
+    /// * `tx_id` - The ID of the transaction to commit
+    ///
+    /// A successful commit will respond with [`SqliteResponse::Ok`]. Any error will be
+    /// contained in the [`SqliteResponse::Err`] variant.
     Commit { tx_id: u64 },
 }
 
-/// Responses from SQLite operations
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SqliteResponse {
-    /// Operation succeeded
+    /// Indicates successful completion of an operation.
+    /// Sent in response to actions Open, RemoveDb, Write, Query, BeginTx, and Commit.
     Ok,
-    /// Query returned results
+    /// Returns the results of a query.
     ///
     /// * blob: Vec<Vec<SqlValue>> - Array of rows, where each row contains SqlValue types:
     ///   - null
@@ -63,12 +101,16 @@ pub enum SqliteResponse {
     ///   - String
     ///   - Vec<u8> (binary data)
     Read,
-    /// Transaction started with ID
+    /// Returns the transaction ID for a newly created transaction.
+    ///
+    /// # Fields
+    /// * `tx_id` - The ID of the newly created transaction
     BeginTx { tx_id: u64 },
-    /// Operation failed
+    /// Indicates an error occurred during the operation.
     Err(SqliteError),
 }
 
+/// Used in blobs to represent array row values in SQLite.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SqlValue {
     Integer(i64),
@@ -107,6 +149,11 @@ pub enum SqliteError {
     IOError(String),
 }
 
+/// The JSON parameters contained in all capabilities issued by `sqlite:distro:sys`.
+///
+/// # Fields
+/// * `kind` - The kind of capability, either [`SqliteCapabilityKind::Read`] or [`SqliteCapabilityKind::Write`]
+/// * `db_key` - The database key, a tuple of the [`PackageId`] that created the database and the database name
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SqliteCapabilityParams {
     pub kind: SqliteCapabilityKind,
@@ -147,12 +194,6 @@ impl FromSql for SqlValue {
             ValueRef::Blob(b) => Ok(SqlValue::Blob(b.to_vec())),
             _ => Err(FromSqlError::InvalidType),
         }
-    }
-}
-
-impl std::fmt::Display for SqliteAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
     }
 }
 
