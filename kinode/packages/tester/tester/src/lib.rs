@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::kinode::process::tester::{
     FailResponse, Request as TesterRequest, Response as TesterResponse, RunRequest,
 };
@@ -8,6 +6,7 @@ use kinode_process_lib::{
     await_message, call_init, our_capabilities, println, spawn, vfs, Address, Capability, Message,
     OnExit, ProcessId, Request, Response,
 };
+use std::collections::HashMap;
 
 mod tester_lib;
 
@@ -20,13 +19,6 @@ wit_bindgen::generate!({
 
 const SETUP_PATH: &str = "/tester:sys/setup";
 const TESTS_PATH: &str = "/tester:sys/tests";
-
-fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
-    Ok(Address {
-        node: our.node.clone(),
-        process: "vfs:distro:sys".parse()?,
-    })
-}
 
 fn handle_response(message: &Message) -> anyhow::Result<()> {
     let TesterResponse::Run(_) = message.body().try_into()?;
@@ -90,7 +82,7 @@ fn handle_request(
     let dir_prefix = "tester:sys/tests";
 
     let response = Request::new()
-        .target(make_vfs_address(&our)?)
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: dir_prefix.into(),
             action: vfs::VfsAction::ReadDir,
@@ -220,7 +212,7 @@ fn init(our: Address) {
     let mut node_names: Vec<String> = Vec::new();
     for path in [SETUP_PATH, TESTS_PATH] {
         match Request::new()
-            .target(make_vfs_address(&our).unwrap())
+            .target(("our", "vfs", "distro", "sys"))
             .body(
                 serde_json::to_vec(&vfs::VfsRequest {
                     path: path.into(),
@@ -271,7 +263,7 @@ fn init(our: Address) {
         match handle_message(&our, &mut node_names) {
             Ok(()) => {}
             Err(e) => {
-                println!("tester: error: {:?}", e,);
+                println!("tester: error: {e:?}");
                 fail!("tester");
             }
         };

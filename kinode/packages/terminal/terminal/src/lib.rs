@@ -43,15 +43,21 @@ impl std::fmt::Display for ScriptError {
 impl std::error::Error for ScriptError {}
 
 #[derive(Serialize, Deserialize)]
-struct TerminalState {
+#[serde(tag = "version")]
+enum VersionedState {
+    V1(TerminalStateV1),
+}
+
+#[derive(Serialize, Deserialize)]
+struct TerminalStateV1 {
     our: Address,
     aliases: HashMap<String, ProcessId>,
 }
 
-impl TerminalState {
+impl VersionedState {
     /// Create a new terminal state with the default system aliases
     fn new(our: Address) -> Self {
-        Self {
+        Self::V1(TerminalStateV1 {
             our,
             aliases: HashMap::from([
                 (
@@ -103,28 +109,52 @@ impl TerminalState {
                     ProcessId::new(Some("top"), "terminal", "sys"),
                 ),
             ]),
+        })
+    }
+
+    fn our(&self) -> &Address {
+        match self {
+            VersionedState::V1(state) => &state.our,
+        }
+    }
+
+    fn aliases(&self) -> &HashMap<String, ProcessId> {
+        match self {
+            VersionedState::V1(state) => &state.aliases,
+        }
+    }
+
+    fn alias_insert(&mut self, alias: String, process: ProcessId) {
+        match self {
+            VersionedState::V1(state) => {
+                state.aliases.insert(alias, process);
+            }
+        }
+    }
+
+    fn alias_remove(&mut self, alias: &str) {
+        match self {
+            VersionedState::V1(state) => {
+                state.aliases.remove(alias);
+            }
         }
     }
 }
 
 call_init!(init);
 fn init(our: Address) {
-    let mut state: TerminalState =
-        match get_typed_state(|bytes| bincode::deserialize::<TerminalState>(bytes)) {
+    let mut state: VersionedState =
+        match get_typed_state(|bytes| bincode::deserialize::<VersionedState>(bytes)) {
             Some(mut s) => {
                 // **add** the pre-installed scripts to the terminal state
                 // in case new ones have been added or if user has deleted aliases
-                let default_state = TerminalState::new(our);
+                let VersionedState::V1(default_state) = VersionedState::new(our);
                 for (alias, process) in default_state.aliases {
-                    s.aliases.insert(alias, process);
+                    s.alias_insert(alias, process);
                 }
                 s
             }
-            None => {
-                let state = TerminalState::new(our);
-                set_state(&bincode::serialize(&state).unwrap());
-                state
-            }
+            None => VersionedState::new(our),
         };
 
     loop {
@@ -143,14 +173,16 @@ fn init(our: Address) {
                 ..
             } => {
                 // this is a message from the runtime terminal, parse as a command
-                if state.our == source {
+                if *state.our() == source {
                     if let Err(e) =
                         parse_command(&mut state, String::from_utf8_lossy(&body).to_string())
                     {
                         println!("error calling script: {e}");
                     }
                 // checks for a request from a terminal script (different process, same package)
-                } else if state.our.node == source.node && state.our.package() == source.package() {
+                } else if state.our().node == source.node
+                    && state.our().package() == source.package()
+                {
                     let Ok(action) = serde_json::from_slice::<TerminalRequest>(&body) else {
                         println!("failed to parse TerminalRequest from {source}");
                         continue;
@@ -188,15 +220,15 @@ fn init(our: Address) {
     }
 }
 
-fn parse_command(state: &mut TerminalState, line: String) -> Result<(), ScriptError> {
+fn parse_command(state: &mut VersionedState, line: String) -> Result<(), ScriptError> {
     if line.is_empty() {
         return Ok(());
     }
     let (head, args) = line.split_once(" ").unwrap_or((&line, ""));
-    match state.aliases.get(head) {
-        Some(process) => handle_run(&state.our, process, args.to_string()),
+    match state.aliases().get(head) {
+        Some(process) => handle_run(state.our(), process, args.to_string()),
         None => match head.parse::<ProcessId>() {
-            Ok(pid) => handle_run(&state.our, &pid, args.to_string()),
+            Ok(pid) => handle_run(state.our(), &pid, args.to_string()),
             Err(_) => Err(ScriptError::UnknownName(head.to_string())),
         },
     }
@@ -381,7 +413,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> Result<(), Sc
 }
 
 fn handle_alias_change(
-    state: &mut TerminalState,
+    state: &mut VersionedState,
     alias: String,
     process: Option<String>,
 ) -> TerminalResponse {
@@ -391,12 +423,12 @@ fn handle_alias_change(
                 return TerminalResponse::EditAlias(EditAliasResponse::InvalidProcessId);
             };
             println!("alias {alias} set for {process}");
-            state.aliases.insert(alias, parsed_process);
+            state.alias_insert(alias, parsed_process);
             TerminalResponse::EditAlias(EditAliasResponse::AliasSet)
         }
         None => {
-            if state.aliases.contains_key(&alias) {
-                state.aliases.remove(&alias);
+            if state.aliases().contains_key(&alias) {
+                state.alias_remove(&alias);
                 println!("alias {alias} removed");
                 TerminalResponse::EditAlias(EditAliasResponse::AliasRemoved)
             } else {
