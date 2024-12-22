@@ -9,17 +9,19 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use http::uri::Authority;
 use lib::types::core::{
-    Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo, Message, MessageReceiver,
-    MessageSender, PrintSender, Printout, ProcessId, Request, Response, HTTP_SERVER_PROCESS_ID,
+    check_process_id_kimap_safe, Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo,
+    Message, MessageReceiver, MessageSender, PrintSender, Printout, ProcessId, Request, Response,
+    HTTP_SERVER_PROCESS_ID,
 };
 use route_recognizer::Router;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::RwLock;
 use warp::{
-    http::{header::HeaderValue, StatusCode},
+    http::{
+        header::{HeaderValue, SET_COOKIE},
+        StatusCode,
+    },
     ws::{WebSocket, Ws},
     Filter, Reply,
 };
@@ -28,6 +30,8 @@ use warp::{
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 15;
 #[cfg(feature = "simulation-mode")]
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 600;
+
+const WS_SELF_IMPOSED_MAX_CONNECTIONS: u32 = 128;
 
 const LOGIN_HTML: &str = include_str!("login.html");
 
@@ -59,7 +63,6 @@ struct BoundWsPath {
     pub app: Option<ProcessId>, // if None, path has been unbound
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
-    pub encrypted: bool, // TODO use
     pub extension: bool,
 }
 
@@ -234,7 +237,7 @@ pub async fn http_server(
         )
         .await;
     }
-    Err(anyhow::anyhow!("http_server: http_server loop exited"))
+    Err(anyhow::anyhow!("http-server: http-server loop exited"))
 }
 
 /// The 'server' part. Listens on a port assigned by runtime, and handles
@@ -251,10 +254,6 @@ async fn serve(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
-    Printout::new(0, format!("http_server: running on port {our_port}"))
-        .send(&print_tx)
-        .await;
-
     // filter to receive websockets
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
@@ -379,12 +378,31 @@ async fn login_handler(
 
             let cookie = match info.subdomain.unwrap_or_default().as_str() {
                 "" => format!("kinode-auth_{our}={token};"),
-                subdomain => format!("kinode-auth_{our}@{subdomain}={token};"),
+                subdomain => {
+                    // enforce that subdomain string only contains a-z, 0-9, ., :, and -
+                    let subdomain = subdomain
+                        .chars()
+                        .filter(|c| {
+                            c.is_ascii_alphanumeric() || c == &'-' || c == &':' || c == &'.'
+                        })
+                        .collect::<String>();
+                    format!("kinode-auth_{our}@{subdomain}={token};")
+                }
             };
 
             match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
-                    response.headers_mut().append("set-cookie", v);
+                    response.headers_mut().append(SET_COOKIE, v);
+                    response
+                        .headers_mut()
+                        .append("HttpOnly", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("Secure", HeaderValue::from_static("true"));
+                    response
+                        .headers_mut()
+                        .append("SameSite", HeaderValue::from_static("Strict"));
+
                     if let Some(redirect) = query_params.get("redirect") {
                         // get http/https from request headers
                         let proto = match response.headers().get("X-Forwarded-Proto") {
@@ -404,6 +422,7 @@ async fn login_handler(
                             .headers_mut()
                             .append("Content-Length", HeaderValue::from_str("0").unwrap());
                     }
+
                     Ok(response)
                 }
                 Err(e) => Ok(warp::reply::with_status(
@@ -435,9 +454,27 @@ async fn ws_handler(
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
-    Printout::new(2, format!("http_server: ws request for {original_path}"))
+    Printout::new(
+        2,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: ws request for {original_path}"),
+    )
+    .send(&print_tx)
+    .await;
+
+    if ws_senders.len() >= WS_SELF_IMPOSED_MAX_CONNECTIONS as usize {
+        Printout::new(
+            0,
+            HTTP_SERVER_PROCESS_ID.clone(),
+            format!(
+                "http-server: too many open websockets ({})! rejecting incoming",
+                ws_senders.len()
+            ),
+        )
         .send(&print_tx)
         .await;
+        return Err(warp::reject::reject());
+    }
 
     let serialized_headers = utils::serialize_headers(&headers);
 
@@ -465,12 +502,12 @@ async fn ws_handler(
             // parse out subdomain from host (there can only be one)
             let request_subdomain = host.host().split('.').next().unwrap_or("");
             if request_subdomain != subdomain
-                || !utils::auth_cookie_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
+                || !utils::auth_token_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
             {
                 return Err(warp::reject::not_found());
             }
         } else {
-            if !utils::auth_cookie_valid(&our, None, auth_token, &jwt_secret_bytes) {
+            if !utils::auth_token_valid(&our, None, auth_token, &jwt_secret_bytes) {
                 return Err(warp::reject::not_found());
             }
         }
@@ -504,7 +541,6 @@ async fn ws_handler(
             our.clone(),
             app,
             formatted_path,
-            jwt_secret_bytes.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
             print_tx.clone(),
@@ -532,9 +568,13 @@ async fn http_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = utils::normalize_path(path.as_str());
     let base_path = original_path.split('/').skip(1).next().unwrap_or("");
-    Printout::new(2, format!("http_server: request for {original_path}"))
-        .send(&print_tx)
-        .await;
+    Printout::new(
+        2,
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: request for {original_path}"),
+    )
+    .send(&print_tx)
+    .await;
 
     let id: u64 = rand::random();
     let serialized_headers = utils::serialize_headers(&headers);
@@ -550,7 +590,8 @@ async fn http_handler(
     } else {
         Printout::new(
             2,
-            format!("http_server: no route found for {original_path}"),
+            HTTP_SERVER_PROCESS_ID.clone(),
+            format!("http-server: no route found for {original_path}"),
         )
         .send(&print_tx)
         .await;
@@ -605,7 +646,7 @@ async fn http_handler(
                     .body(vec![])
                     .into_response());
             }
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 Some(&app),
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),
@@ -618,7 +659,7 @@ async fn http_handler(
                     .into_response());
             }
         } else {
-            if !utils::auth_cookie_valid(
+            if !utils::auth_token_valid(
                 &our,
                 None,
                 serialized_headers.get("cookie").unwrap_or(&"".to_string()),
@@ -789,7 +830,8 @@ async fn handle_rpc_message(
 
     Printout::new(
         2,
-        format!("http_server: passing on RPC message to {target_process}"),
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: passing on RPC message to {target_process}"),
     )
     .send(&print_tx)
     .await;
@@ -841,7 +883,7 @@ fn make_websocket_message(
     Some(KernelMessage {
         id: rand::random(),
         source: Address::new(&our, HTTP_SERVER_PROCESS_ID.clone()),
-        target: Address::new(&our, app),
+        target: Address::new(&our, &app),
         rsvp: None,
         message: Message::Request(Request {
             inherit: false,
@@ -948,7 +990,6 @@ async fn maintain_websocket(
     our: Arc<String>,
     app: ProcessId,
     path: String,
-    _jwt_secret_bytes: Arc<Vec<u8>>, // TODO use for encrypted channels
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
@@ -962,15 +1003,16 @@ async fn maintain_websocket(
 
     Printout::new(
         2,
-        format!("http_server: new websocket connection to {app} with id {channel_id}"),
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: new websocket connection to {app} with id {channel_id}"),
     )
     .send(&print_tx)
     .await;
 
     KernelMessage::builder()
         .id(rand::random())
-        .source(Address::new(&*our, HTTP_SERVER_PROCESS_ID.clone()))
-        .target(Address::new(&*our, app.clone()))
+        .source((&*our, HTTP_SERVER_PROCESS_ID.clone()))
+        .target((&*our, &app))
         .message(Message::Request(Request {
             inherit: false,
             expects_response: None,
@@ -1036,7 +1078,8 @@ async fn maintain_websocket(
     }
     Printout::new(
         2,
-        format!("http_server: websocket connection {channel_id} closed"),
+        HTTP_SERVER_PROCESS_ID.clone(),
+        format!("http-server: websocket connection {channel_id} closed"),
     )
     .send(&print_tx)
     .await;
@@ -1053,8 +1096,8 @@ async fn websocket_close(
     ws_senders.remove(&channel_id);
     KernelMessage::builder()
         .id(rand::random())
-        .source(Address::new("our", HTTP_SERVER_PROCESS_ID.clone()))
-        .target(Address::new("our", process))
+        .source(("our", HTTP_SERVER_PROCESS_ID.clone()))
+        .target(("our", &process))
         .message(Message::Request(Request {
             inherit: false,
             expects_response: None,
@@ -1130,7 +1173,7 @@ async fn handle_app_message(
         }) => {
             let Ok(message) = serde_json::from_slice::<HttpServerAction>(body) else {
                 println!(
-                    "http_server: got malformed request from {}: {:?}\r",
+                    "http-server: got malformed request from {}: {:?}\r",
                     km.source, body
                 );
                 send_action_response(
@@ -1151,10 +1194,27 @@ async fn handle_app_message(
                     local_only,
                     cache,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
                         2,
+                        HTTP_SERVER_PROCESS_ID.clone(),
                         format!(
                             "http: binding {path}, {}, {}, {}",
                             if authenticated {
@@ -1205,11 +1265,28 @@ async fn handle_app_message(
                     }
                 }
                 HttpServerAction::SecureBind { path, cache } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let subdomain = utils::generate_secure_subdomain(&km.source.process);
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
                         2,
+                        HTTP_SERVER_PROCESS_ID.clone(),
                         format!(
                             "http: binding subdomain {subdomain} with path {path}, {}",
                             if cache { "cached" } else { "dynamic" },
@@ -1271,9 +1348,24 @@ async fn handle_app_message(
                 HttpServerAction::WebSocketBind {
                     path,
                     authenticated,
-                    encrypted,
                     extension,
                 } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
                     ws_path_bindings.add(
@@ -1282,16 +1374,27 @@ async fn handle_app_message(
                             app: Some(km.source.process.clone()),
                             secure_subdomain: None,
                             authenticated,
-                            encrypted,
                             extension,
                         },
                     );
                 }
-                HttpServerAction::WebSocketSecureBind {
-                    path,
-                    encrypted,
-                    extension,
-                } => {
+                HttpServerAction::WebSocketSecureBind { path, extension } => {
+                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                        let source = km.source.clone();
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::PathBindError {
+                                error: format!(
+                                    "invalid source process (not Kimap safe): {}",
+                                    source
+                                ),
+                            }),
+                        )
+                        .await;
+                        return;
+                    }
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let subdomain = utils::generate_secure_subdomain(&km.source.process);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
@@ -1301,7 +1404,6 @@ async fn handle_app_message(
                             app: Some(km.source.process.clone()),
                             secure_subdomain: Some(subdomain),
                             authenticated: true,
-                            encrypted,
                             extension,
                         },
                     );
@@ -1315,7 +1417,6 @@ async fn handle_app_message(
                             app: None,
                             secure_subdomain: None,
                             authenticated: false,
-                            encrypted: false,
                             extension: false,
                         },
                     );
@@ -1418,7 +1519,7 @@ pub async fn send_action_response(
 ) {
     KernelMessage::builder()
         .id(id)
-        .source(Address::new("our", HTTP_SERVER_PROCESS_ID.clone()))
+        .source(("our", HTTP_SERVER_PROCESS_ID.clone()))
         .target(target)
         .message(Message::Response((
             Response {

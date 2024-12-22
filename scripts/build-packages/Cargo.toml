@@ -1,0 +1,14 @@
+[package]
+name = "build-packages"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.71"
+clap = "4"
+fs-err = "2.11"
+kit = { git = "https://github.com/kinode-dao/kit", rev = "23ee399" }
+serde_json = "1"
+tokio = "1.28"
+walkdir = "2.4"
+zip = "0.6"

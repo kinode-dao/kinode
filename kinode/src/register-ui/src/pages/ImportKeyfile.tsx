@@ -6,8 +6,9 @@ import {
 } from "react";
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
-import { sha256, toBytes } from "viem";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
+// REMOVE IN 1.0.0
+import { sha256, toBytes } from "viem";
 
 interface ImportKeyfileProps extends PageProps { }
 
@@ -24,6 +25,7 @@ function ImportKeyfile({
   const [pwVet, _setPwVet] = useState<boolean>(false);
   const [pwDebounced, _setPwDebounced] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [knsName, setKnsName] = useState<string>("");
 
   useEffect(() => {
     document.title = "Import Keyfile";
@@ -55,26 +57,51 @@ function ImportKeyfile({
 
       try {
         if (keyErrs.length === 0 && localKey !== null) {
-          let hashed_password = sha256(toBytes(pw));
+          argon2.hash({ pass: pw, salt: knsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
+            const hashed_password_hex = `0x${h.hashHex}`;
 
-          const result = await fetch("/import-keyfile", {
-            method: "POST",
-            credentials: 'include',
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              keyfile: Buffer.from(localKey).toString('utf8'),
-              password_hash: hashed_password,
-            }),
+            const result = await fetch("/import-keyfile", {
+              method: "POST",
+              credentials: 'include',
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                keyfile: Buffer.from(localKey).toString('utf8'),
+                password_hash: hashed_password_hex,
+              }),
+            });
+
+            if (result.status > 399) {
+
+              // REMOVE IN 1.0.0
+              let hashed_password = sha256(toBytes(pw));
+              const result = await fetch("/import-keyfile", {
+                method: "POST",
+                credentials: 'include',
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  keyfile: Buffer.from(localKey).toString('utf8'),
+                  password_hash: hashed_password,
+                }),
+              });
+
+              if (result.status > 399) {
+                throw new Error("Incorrect password");
+              } else {
+                redirectToHomepage();
+              }
+              // END REMOVE IN 1.0.0
+
+              // BRING BACK IN 1.0.0
+              // throw new Error(await result.text());
+            }
+            redirectToHomepage();
+          }).catch(err => {
+            window.alert(String(err));
+            setLoading(false);
           });
-
-          if (result.status > 399) {
-            throw new Error("Incorrect password");
-          }
-          redirectToHomepage();
-
         }
-      } catch {
-        window.alert("An error occurred, please try again.");
+      } catch (err) {
+        window.alert(String(err));
         setLoading(false);
       }
     },
@@ -103,8 +130,19 @@ function ImportKeyfile({
                   </span>
                 </label>
                 {localKeyFileName && <p className="mt-2">{localKeyFileName}</p>}
-              </div>            <div className="form-group">
-                <h4 className="form-label">2. Enter Password</h4>
+              </div>
+              <div className="form-group">
+                <h4 className="form-label">2. Enter Node ID</h4>
+                <label className="name-input-label">
+                  <input
+                    type="text"
+                    className="name-input"
+                    onChange={(e) => setKnsName(e.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="form-group">
+                <h4 className="form-label">3. Enter Password</h4>
                 <input
                   type="password"
                   id="password"

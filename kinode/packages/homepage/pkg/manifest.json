@@ -5,11 +5,11 @@
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
-            "http_server:distro:sys",
+            "http-server:distro:sys",
             "vfs:distro:sys"
         ],
         "grant_capabilities": [
-            "http_server:distro:sys"
+            "http-server:distro:sys"
         ],
         "public": false
     }
