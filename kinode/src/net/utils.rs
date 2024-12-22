@@ -415,7 +415,7 @@ pub async fn parse_hello_message(
         .message(Message::Response((
             Response {
                 inherit: false,
-                body: "delivered".as_bytes().to_vec(),
+                body: b"ack".to_vec(),
                 metadata: None,
                 capabilities: vec![],
             },

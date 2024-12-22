@@ -412,7 +412,7 @@ async fn handle_remote_request(
         }
         _ => {
             // if we can't parse this to a NetAction, treat it as a hello and print it,
-            // and respond with a simple "delivered" response
+            // and respond with a simple "ack" response
             utils::parse_hello_message(
                 &ext.our,
                 &km,
