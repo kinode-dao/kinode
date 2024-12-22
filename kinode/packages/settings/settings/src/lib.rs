@@ -5,7 +5,7 @@ use crate::kinode::process::settings::{
 };
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, get_capability, homepage, http, kernel_types, kimap,
-    net, println, Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
+    net, println, Address, Capability, LazyLoadBlob, Message, ProcessId, Request, Response,
     SendError, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
