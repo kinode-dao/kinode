@@ -21,8 +21,7 @@ pub enum KvAction {
     /// # Parameters
     /// * `key` - The key as a byte vector
     /// * `tx_id` - Optional transaction ID if this operation is part of a transaction
-    ///
-    /// Blob: Value in Vec<u8>
+    /// * blob: Vec<u8> - Value to store for the key
     Set { key: Vec<u8>, tx_id: Option<u64> },
     /// Deletes a key-value pair from the database.
     ///
@@ -58,8 +57,7 @@ pub enum KvResponse {
     ///
     /// # Fields
     /// * `key` - The retrieved key as a byte vector
-    ///
-    /// Blob: Value in Vec<u8>
+    /// * blob: Vec<u8> - Value associated with the key
     Get(Vec<u8>),
     /// Indicates an error occurred during the operation.
     Err(KvError),
