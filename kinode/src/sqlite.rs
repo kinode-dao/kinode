@@ -381,18 +381,6 @@ async fn handle_request(
             tx.commit()?;
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
-        SqliteAction::Backup => {
-            for db_ref in state.open_dbs.iter() {
-                let db = db_ref.value().lock().await;
-                let result: rusqlite::Result<()> = db
-                    .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
-                    .map(|_| ());
-                if let Err(e) = result {
-                    return Err(SqliteError::RusqliteError(e.to_string()));
-                }
-            }
-            (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
-        }
     };
 
     if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
@@ -528,10 +516,6 @@ async fn check_caps(
 
             fs::remove_dir_all(&db_path).await?;
 
-            Ok(())
-        }
-        SqliteAction::Backup => {
-            // flushing WALs for backup
             Ok(())
         }
     }

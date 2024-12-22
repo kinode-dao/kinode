@@ -13,25 +13,59 @@ pub struct SqliteRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SqliteAction {
+    /// Opens an existing sqlite database or creates a new one if it doesn't exist.
     Open,
+    /// Permanently deletes the entire sqlite database.
     RemoveDb,
+    /// Executes a write statement (INSERT/UPDATE/DELETE)
+    ///
+    /// * `statement` - SQL statement to execute
+    /// * `tx_id` - Optional transaction ID
+    /// * blob: Vec<SqlValue> - Parameters for the SQL statement, where SqlValue can be:
+    ///   - null
+    ///   - boolean
+    ///   - i64
+    ///   - f64
+    ///   - String
+    ///   - Vec<u8> (binary data)
     Write {
         statement: String,
         tx_id: Option<u64>,
     },
+    /// Executes a read query (SELECT)
+    ///
+    /// * blob: Vec<SqlValue> - Parameters for the SQL query, where SqlValue can be:
+    ///   - null
+    ///   - boolean
+    ///   - i64
+    ///   - f64
+    ///   - String
+    ///   - Vec<u8> (binary data)
     Query(String),
+    /// Starts a new transaction
     BeginTx,
-    Commit {
-        tx_id: u64,
-    },
-    Backup,
+    /// Commits transaction with given ID
+    Commit { tx_id: u64 },
 }
 
+/// Responses from SQLite operations
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SqliteResponse {
+    /// Operation succeeded
     Ok,
+    /// Query returned results
+    ///
+    /// * blob: Vec<Vec<SqlValue>> - Array of rows, where each row contains SqlValue types:
+    ///   - null
+    ///   - boolean
+    ///   - i64
+    ///   - f64
+    ///   - String
+    ///   - Vec<u8> (binary data)
     Read,
+    /// Transaction started with ID
     BeginTx { tx_id: u64 },
+    /// Operation failed
     Err(SqliteError),
 }
 
