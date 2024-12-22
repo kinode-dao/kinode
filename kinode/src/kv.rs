@@ -362,14 +362,6 @@ async fn handle_request(
                 }
             }
         }
-        KvAction::Backup => {
-            // looping through open dbs and flushing their memtables
-            for db_ref in state.open_kvs.iter() {
-                let db = db_ref.value();
-                db.flush().map_err(rocks_to_kv_err)?;
-            }
-            (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
-        }
     };
 
     if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
