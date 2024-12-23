@@ -1,4 +1,3 @@
-use crate::types::core::CapMessage;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -81,72 +80,26 @@ pub enum VfsResponse {
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum VfsError {
-    #[error("No capability for action {action} at path {path}")]
-    NoCap { action: String, path: String },
-    #[error("Bytes blob required for {action} at path {path}")]
-    BadBytes { action: String, path: String },
-    #[error("bad request error: {error}")]
-    BadRequest { error: String },
+    #[error("no write capability for requested drive")]
+    NoWriteCap,
+    #[error("no read capability for requested drive")]
+    NoReadCap,
+    #[error("failed to generate capability for new drive")]
+    AddCapFailed,
+    #[error("request could not be deserialized to valid VfsRequest")]
+    MalformedRequest,
+    #[error("request type used requires a blob")]
+    NoBlob,
     #[error("error parsing path: {path}: {error}")]
     ParseError { error: String, path: String },
-    #[error("IO error: {error}, at path {path}")]
-    IOError { error: String, path: String },
-    #[error("kernel capability channel error: {error}")]
-    CapChannelFail { error: String },
-    #[error("Bad JSON blob: {error}")]
-    BadJson { error: String },
-    #[error("File not found at path {path}")]
-    NotFound { path: String },
-    #[error("Creating directory failed at path: {path}: {error}")]
-    CreateDirError { path: String, error: String },
-    #[error("Other error: {error}")]
-    Other { error: String },
-}
-
-impl VfsError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            VfsError::NoCap { .. } => "NoCap",
-            VfsError::BadBytes { .. } => "BadBytes",
-            VfsError::BadRequest { .. } => "BadRequest",
-            VfsError::ParseError { .. } => "ParseError",
-            VfsError::IOError { .. } => "IOError",
-            VfsError::CapChannelFail { .. } => "CapChannelFail",
-            VfsError::BadJson { .. } => "NoJson",
-            VfsError::NotFound { .. } => "NotFound",
-            VfsError::CreateDirError { .. } => "CreateDirError",
-            VfsError::Other { .. } => "Other",
-        }
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for VfsError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        VfsError::CapChannelFail {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for VfsError {
-    fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
-        VfsError::CapChannelFail {
-            error: err.to_string(),
-        }
-    }
+    #[error("IO error: {0}")]
+    IOError(String),
+    #[error("non-file non-dir in zip")]
+    UnzipError,
 }
 
 impl From<std::io::Error> for VfsError {
     fn from(err: std::io::Error) -> Self {
-        VfsError::IOError {
-            path: "".into(),
-            error: err.to_string(),
-        }
-    }
-}
-
-impl std::fmt::Display for VfsAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        VfsError::IOError(err.to_string())
     }
 }
