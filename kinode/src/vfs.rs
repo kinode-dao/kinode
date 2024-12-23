@@ -63,6 +63,7 @@ pub async fn vfs(
         if *our_node != km.source.node {
             Printout::new(
                 1,
+                VFS_PROCESS_ID.clone(),
                 format!(
                     "vfs: got request from {}, but requests must come from our node {our_node}",
                     km.source.node
@@ -77,7 +78,8 @@ pub async fn vfs(
             if let Err(e) = handle_fd_request(km, &mut files).await {
                 Printout::new(
                     1,
-                    format!("vfs: got request from fd_manager that errored: {e:?}"),
+                    VFS_PROCESS_ID.clone(),
+                    format!("vfs: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&send_to_terminal)
                 .await;
@@ -161,7 +163,7 @@ impl Files {
             access_order: Arc::new(Mutex::new(UniqueQueue::new())),
             our,
             send_to_loop,
-            fds_limit: 10, // small hardcoded limit that gets replaced by fd_manager soon after boot
+            fds_limit: 10, // small hardcoded limit that gets replaced by fd-manager soon after boot
         }
     }
 
@@ -285,14 +287,12 @@ async fn handle_request(
         ..
     }) = km.message
     else {
-        return Err(VfsError::BadRequest {
-            error: "not a request".into(),
-        });
+        // we got a response -- safe to ignore
+        return Ok(());
     };
 
-    let request: VfsRequest = serde_json::from_slice(&body).map_err(|e| VfsError::BadJson {
-        error: e.to_string(),
-    })?;
+    let request: VfsRequest =
+        serde_json::from_slice(&body).map_err(|_| VfsError::MalformedRequest)?;
 
     // special case for root reading list of all drives.
     if request.action == VfsAction::ReadDir && request.path == "/" {
@@ -334,10 +334,7 @@ async fn handle_request(
                 .await;
             return Ok(());
         } else {
-            return Err(VfsError::NoCap {
-                action: request.action.to_string(),
-                path: request.path,
-            });
+            return Err(VfsError::NoReadCap);
         }
     }
 
@@ -346,7 +343,6 @@ async fn handle_request(
     // must have prepended `/` here or else it messes up caps downstream, e.g. in run-tests
     let drive = format!("/{package_id}/{drive}");
     let action = request.action;
-    let path = PathBuf::from(&request.path);
 
     if km.source.process != *KERNEL_PROCESS_ID {
         check_caps(
@@ -354,7 +350,6 @@ async fn handle_request(
             &km.source,
             &send_to_caps_oracle,
             &action,
-            &path,
             &drive,
             &package_id,
             vfs_path,
@@ -404,9 +399,7 @@ async fn handle_request(
         VfsAction::WriteAll => {
             // doesn't create a file, writes at exact cursor.
             let Some(blob) = km.lazy_load_blob else {
-                return Err(VfsError::BadRequest {
-                    error: "blob needs to exist for WriteAll".into(),
-                });
+                return Err(VfsError::NoBlob);
             };
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
@@ -415,18 +408,14 @@ async fn handle_request(
         }
         VfsAction::Write => {
             let Some(blob) = km.lazy_load_blob else {
-                return Err(VfsError::BadRequest {
-                    error: "blob needs to exist for Write".into(),
-                });
+                return Err(VfsError::NoBlob);
             };
             fs::write(&path, &blob.bytes).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::Append => {
             let Some(blob) = km.lazy_load_blob else {
-                return Err(VfsError::BadRequest {
-                    error: "blob needs to exist for Append".into(),
-                });
+                return Err(VfsError::NoBlob);
             };
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
@@ -451,7 +440,7 @@ async fn handle_request(
             file.read_to_end(&mut contents).await?;
             (VfsResponse::Read, Some(contents))
         }
-        VfsAction::ReadExact(length) => {
+        VfsAction::ReadExact { length } => {
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = vec![0; length as usize];
@@ -493,7 +482,7 @@ async fn handle_request(
             file.read_to_string(&mut contents).await?;
             (VfsResponse::ReadToString(contents), None)
         }
-        VfsAction::Seek { seek_from } => {
+        VfsAction::Seek(seek_from) => {
             let file = files.open_file(&path, false, false).await?;
             let mut file = file.lock().await;
             let seek_from = match seek_from {
@@ -502,7 +491,12 @@ async fn handle_request(
                 lib::types::core::SeekFrom::Current(offset) => std::io::SeekFrom::Current(offset),
             };
             let response = file.seek(seek_from).await?;
-            (VfsResponse::SeekFrom(response), None)
+            (
+                VfsResponse::SeekFrom {
+                    new_offset: response,
+                },
+                None,
+            )
         }
         VfsAction::RemoveFile => {
             fs::remove_file(&path).await?;
@@ -519,29 +513,16 @@ async fn handle_request(
         }
         VfsAction::Rename { new_path } => {
             let new_path = join_paths_safely(vfs_path, &new_path);
-            fs::rename(&path, new_path)
-                .await
-                .map_err(|e| VfsError::IOError {
-                    error: e.to_string(),
-                    path: request.path,
-                })?;
+            fs::rename(&path, new_path).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::CopyFile { new_path } => {
             let new_path = join_paths_safely(vfs_path, &new_path);
-            fs::copy(&path, new_path)
-                .await
-                .map_err(|e| VfsError::IOError {
-                    error: e.to_string(),
-                    path: request.path,
-                })?;
+            fs::copy(&path, new_path).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::Metadata => {
-            let metadata = fs::metadata(&path).await.map_err(|e| VfsError::IOError {
-                error: e.to_string(),
-                path: request.path,
-            })?;
+            let metadata = fs::metadata(&path).await?;
             let file_type = get_file_type(&metadata);
             let meta = FileMetadata {
                 len: metadata.len(),
@@ -552,23 +533,13 @@ async fn handle_request(
         VfsAction::Len => {
             let file = files.open_file(&path, false, false).await?;
             let file = file.lock().await;
-            let len = file
-                .metadata()
-                .await
-                .map_err(|e| VfsError::IOError {
-                    error: e.to_string(),
-                    path: request.path,
-                })?
-                .len();
+            let len = file.metadata().await?.len();
             (VfsResponse::Len(len), None)
         }
         VfsAction::SetLen(len) => {
             let file = files.open_file(&path, false, false).await?;
             let file = file.lock().await;
-            file.set_len(len).await.map_err(|e| VfsError::IOError {
-                error: e.to_string(),
-                path: request.path,
-            })?;
+            file.set_len(len).await?;
             (VfsResponse::Ok, None)
         }
         VfsAction::Hash => {
@@ -590,9 +561,7 @@ async fn handle_request(
         }
         VfsAction::AddZip => {
             let Some(blob) = km.lazy_load_blob else {
-                return Err(VfsError::BadRequest {
-                    error: "blob needs to exist for AddZip".into(),
-                });
+                return Err(VfsError::NoBlob);
             };
             let file = std::io::Cursor::new(&blob.bytes);
             let mut zip = match zip::ZipArchive::new(file) {
@@ -613,10 +582,7 @@ async fn handle_request(
                 //  Before any `.await`s are called since ZipFile is not
                 //  Send and so does not play nicely with await
                 let (is_file, is_dir, local_path, file_contents) = {
-                    let mut file = zip.by_index(i).map_err(|e| VfsError::IOError {
-                        error: e.to_string(),
-                        path: request.path.clone(),
-                    })?;
+                    let mut file = zip.by_index(i).map_err(|_| VfsError::UnzipError)?;
                     let is_file = file.is_file();
                     let is_dir = file.is_dir();
                     let mut file_contents = Vec::new();
@@ -631,10 +597,7 @@ async fn handle_request(
                 } else if is_dir {
                     fs::create_dir_all(&local_path).await?;
                 } else {
-                    return Err(VfsError::CreateDirError {
-                        path: path.display().to_string(),
-                        error: "vfs: zip with non-file non-dir".into(),
-                    });
+                    return Err(VfsError::UnzipError);
                 };
             }
             (VfsResponse::Ok, None)
@@ -677,17 +640,13 @@ fn parse_package_and_drive(
     // sanitize path..
     let normalized_path = normalize_path(&joined_path);
     if !normalized_path.starts_with(vfs_path) {
-        return Err(VfsError::BadRequest {
-            error: format!("input path tries to escape parent vfs directory: {path}"),
-        })?;
+        return Err(VfsError::MalformedRequest);
     }
 
     // extract original path.
     let path = normalized_path
         .strip_prefix(vfs_path)
-        .map_err(|_| VfsError::BadRequest {
-            error: format!("input path tries to escape parent vfs directory: {path}"),
-        })?
+        .map_err(|_| VfsError::MalformedRequest)?
         .display()
         .to_string();
 
@@ -700,19 +659,13 @@ fn parse_package_and_drive(
         parts.remove(0);
     }
     if parts.len() < 2 {
-        return Err(VfsError::ParseError {
-            error: "malformed path".into(),
-            path,
-        });
+        return Err(VfsError::MalformedRequest);
     }
 
     let package_id = match parts[0].parse::<PackageId>() {
         Ok(id) => id,
-        Err(e) => {
-            return Err(VfsError::ParseError {
-                error: e.to_string(),
-                path,
-            })
+        Err(_) => {
+            return Err(VfsError::MalformedRequest);
         }
     };
 
@@ -767,7 +720,6 @@ async fn check_caps(
     source: &Address,
     send_to_caps_oracle: &CapMessageSender,
     action: &VfsAction,
-    path: &PathBuf,
     drive: &str,
     package_id: &PackageId,
     vfs_path: &PathBuf,
@@ -802,19 +754,16 @@ async fn check_caps(
                 if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
                     return Ok(());
                 }
-                return Err(VfsError::NoCap {
-                    action: action.to_string(),
-                    path: path.display().to_string(),
-                });
+                return Err(VfsError::NoWriteCap);
             }
             Ok(())
         }
         VfsAction::Read
         | VfsAction::ReadDir
-        | VfsAction::ReadExact(_)
+        | VfsAction::ReadExact { .. }
         | VfsAction::ReadToEnd
         | VfsAction::ReadToString
-        | VfsAction::Seek { .. }
+        | VfsAction::Seek(_)
         | VfsAction::Hash
         | VfsAction::Metadata
         | VfsAction::Len => {
@@ -828,10 +777,7 @@ async fn check_caps(
                 if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
                     return Ok(());
                 }
-                return Err(VfsError::NoCap {
-                    action: action.to_string(),
-                    path: path.display().to_string(),
-                });
+                return Err(VfsError::NoReadCap);
             }
             Ok(())
         }
@@ -860,10 +806,7 @@ async fn check_caps(
                 if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
                     return Ok(());
                 }
-                return Err(VfsError::NoCap {
-                    action: action.to_string(),
-                    path: path.display().to_string(),
-                });
+                return Err(VfsError::NoWriteCap);
             }
 
             // if they're within the same drive, no need for 2 caps checks
@@ -885,10 +828,7 @@ async fn check_caps(
                 if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
                     return Ok(());
                 }
-                return Err(VfsError::NoCap {
-                    action: action.to_string(),
-                    path: path.display().to_string(),
-                });
+                return Err(VfsError::NoWriteCap);
             }
             Ok(())
         }
@@ -896,10 +836,7 @@ async fn check_caps(
             if &src_package_id != package_id {
                 // check for root cap
                 if !read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
-                    return Err(VfsError::NoCap {
-                        action: action.to_string(),
-                        path: path.display().to_string(),
-                    });
+                    return Err(VfsError::NoWriteCap);
                 }
             }
             add_capability("read", &drive, &our_node, &source, send_to_caps_oracle).await?;
@@ -951,20 +888,20 @@ async fn add_capability(
         format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}"),
     );
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    send_to_caps_oracle
+    let Ok(()) = send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
             caps: vec![cap],
             responder: Some(send_cap_bool),
         })
-        .await?;
-    match recv_cap_bool.await? {
-        true => Ok(()),
-        false => Err(VfsError::NoCap {
-            action: "add_capability".to_string(),
-            path: drive.to_string(),
-        }),
-    }
+        .await
+    else {
+        return Err(VfsError::AddCapFailed);
+    };
+    let Ok(true) = recv_cap_bool.await else {
+        return Err(VfsError::AddCapFailed);
+    };
+    Ok(())
 }
 
 fn get_file_type(metadata: &std::fs::Metadata) -> FileType {

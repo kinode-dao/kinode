@@ -2,9 +2,10 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
 import { useNavigate } from "react-router-dom";
-import { sha256, toBytes } from "viem";
 import { Tooltip } from "../components/Tooltip";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
+// REMOVE IN 1.0.0
+import { sha256, toBytes } from "viem";
 
 interface LoginProps extends PageProps { }
 
@@ -40,9 +41,9 @@ function Login({
       e?.preventDefault();
       e?.stopPropagation();
 
-      try {
-        setLoading("Logging in...");
-        let hashed_password = sha256(toBytes(pw));
+      setLoading("Logging in...");
+      argon2.hash({ pass: pw, salt: knsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
+        const hashed_password_hex = `0x${h.hashHex}`;
 
         const result = await fetch(
           "/login",
@@ -50,19 +51,38 @@ function Login({
             method: "POST",
             credentials: 'include',
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password_hash: hashed_password }),
+            body: JSON.stringify({ password_hash: hashed_password_hex }),
           }
         );
 
         if (result.status > 399) {
-          throw new Error(await result.text());
+
+          // REMOVE IN 1.0.0
+          let hashed_password = sha256(toBytes(pw));
+          const result = await fetch(
+            "/login",
+            {
+              method: "POST",
+              credentials: 'include',
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password_hash: hashed_password }),
+            }
+          );
+          if (result.status > 399) {
+            throw new Error(await result.text());
+          } else {
+            redirectToHomepage();
+          }
+          // END REMOVE IN 1.0.0
+
+          // BRING BACK IN 1.0.0
+          // throw new Error(await result.text());
         }
         redirectToHomepage();
-
-      } catch (err: any) {
+      }).catch(err => {
         setKeyErrs([String(err)]);
         setLoading("");
-      }
+      });
     },
     [pw]
   );

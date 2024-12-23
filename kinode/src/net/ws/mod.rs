@@ -187,17 +187,17 @@ pub async fn recv_via_router(
     };
     match connect_with_handshake_via_router(&ext, &peer_id, &router_id, socket).await {
         Ok(connection) => {
-            let (peer, peer_rx) = Peer::new(peer_id.clone(), false);
-            data.peers.insert(peer_id.name.clone(), peer).await;
             // maintain direct connection
-            tokio::spawn(utils::maintain_connection(
-                peer_id.name,
+            let (mut peer, peer_rx) = Peer::new(peer_id.clone(), false);
+            peer.handle = Some(tokio::spawn(utils::maintain_connection(
+                peer_id.name.clone(),
                 data.peers.clone(),
                 connection,
                 peer_rx,
                 ext.kernel_message_tx,
                 ext.print_tx,
-            ));
+            )));
+            data.peers.insert(peer_id.name, peer).await;
         }
         Err(e) => {
             print_debug(&ext.print_tx, &format!("net: error getting routed: {e}")).await;
@@ -263,12 +263,16 @@ async fn recv_connection(
         &their_id,
     )?;
 
-    let (peer, peer_rx) = Peer::new(their_id.clone(), their_handshake.proxy_request);
-    data.peers.insert(their_id.name.clone(), peer).await;
+    // if we already have a connection to this peer, kill it so we
+    // don't build a duplicate connection
+    if let Some(mut peer) = data.peers.get_mut(&their_handshake.name) {
+        peer.kill();
+    }
 
-    tokio::spawn(utils::maintain_connection(
+    let (mut peer, peer_rx) = Peer::new(their_id.clone(), their_handshake.proxy_request);
+    peer.handle = Some(tokio::spawn(utils::maintain_connection(
         their_handshake.name,
-        data.peers,
+        data.peers.clone(),
         PeerConnection {
             noise: noise.into_transport_mode()?,
             buf,
@@ -277,7 +281,8 @@ async fn recv_connection(
         peer_rx,
         ext.kernel_message_tx,
         ext.print_tx,
-    ));
+    )));
+    data.peers.insert(their_id.name.clone(), peer).await;
     Ok(())
 }
 

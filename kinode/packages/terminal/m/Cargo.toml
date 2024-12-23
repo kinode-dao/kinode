@@ -9,11 +9,11 @@ simulation-mode = []
 [dependencies]
 anyhow = "1.0"
 clap = "4.4"
-kinode_process_lib = "0.9.4"
+kinode_process_lib = "0.10.0"
 regex = "1.10.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-wit-bindgen = "0.24.0"
+wit-bindgen = "0.36.0"
 
 [lib]
 crate-type = ["cdylib"]

@@ -1,6 +1,7 @@
-use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
+use crate::kinode::process::homepage;
 use kinode_process_lib::{
-    await_message, call_init, get_blob, http, http::server, println, Address, LazyLoadBlob,
+    await_message, call_init, get_blob, http, http::server, println, Address, Capability,
+    LazyLoadBlob,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -10,7 +11,7 @@ const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
 
 const DEFAULT_FAVES: &[&str] = &[
     "chess:chess:sys",
-    "main:app_store:sys",
+    "main:app-store:sys",
     "settings:settings:sys",
 ];
 
@@ -32,13 +33,15 @@ type PersistedAppOrder = HashMap<String, u32>;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "homepage-sys-v0",
+    world: "homepage-sys-v1",
     generate_unused_types: true,
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
 call_init!(init);
 fn init(our: Address) {
+    println!("started");
+
     let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 
     let mut http_server = server::HttpServer::new(5);
@@ -173,7 +176,7 @@ fn init(our: Address) {
             // we never send requests, so this will never happen
             continue;
         };
-        if message.source().process == "http_server:distro:sys" {
+        if message.source().process == "http-server:distro:sys" {
             if message.is_request() {
                 let Ok(request) = http_server.parse_request(message.body()) else {
                     continue;
@@ -266,9 +269,9 @@ fn init(our: Address) {
         } else {
             // handle messages to add or remove an app from the homepage.
             // they must have messaging access to us in order to perform this.
-            if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
+            if let Ok(request) = serde_json::from_slice::<homepage::Request>(message.body()) {
                 match request {
-                    HomepageRequest::Add(AddRequest {
+                    homepage::Request::Add(homepage::AddRequest {
                         label,
                         icon,
                         path,
@@ -302,16 +305,34 @@ fn init(our: Address) {
                             },
                         );
                     }
-                    HomepageRequest::Remove => {
+                    homepage::Request::Remove => {
                         let id = message.source().process.to_string();
                         app_data.remove(&id);
                         persisted_app_order.remove(&id);
                     }
-                    HomepageRequest::SetStylesheet(new_stylesheet_string) => {
-                        // ONLY settings:settings:sys may call this request
-                        if message.source().process != "settings:settings:sys" {
+                    homepage::Request::RemoveOther(id) => {
+                        // caps check
+                        let required_capability = Capability::new(
+                            &our,
+                            serde_json::to_string(&homepage::Capability::RemoveOther).unwrap(),
+                        );
+                        if !message.capabilities().contains(&required_capability) {
                             continue;
                         }
+                        // end caps check
+                        app_data.remove(&id);
+                        persisted_app_order.remove(&id);
+                    }
+                    homepage::Request::SetStylesheet(new_stylesheet_string) => {
+                        // caps check
+                        let required_capability = Capability::new(
+                            &our,
+                            serde_json::to_string(&homepage::Capability::SetStylesheet).unwrap(),
+                        );
+                        if !message.capabilities().contains(&required_capability) {
+                            continue;
+                        }
+                        // end caps check
                         kinode_process_lib::vfs::File {
                             path: "/homepage:sys/pkg/persisted-kinode.css".to_string(),
                             timeout: 5,

@@ -9,12 +9,12 @@ simulation-mode = []
 [dependencies]
 anyhow = "1.0"
 bincode = "1.3.3"
-kinode_process_lib = "0.9.4"
-process_macros = { git = "https://github.com/kinode-dao/process_macros", rev = "626e501" }
+kinode_process_lib = "0.10.0"
+process_macros = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-wit-bindgen = "0.24.0"
+wit-bindgen = "0.36.0"
 
 [lib]
 crate-type = ["cdylib"]
