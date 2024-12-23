@@ -104,9 +104,7 @@ async fn send_push(
                     id,
                     source,
                     send_to_loop,
-                    Err(HttpServerError::WebSocketPushError {
-                        error: "Ping and Pong messages must be 125 bytes or less".to_string(),
-                    }),
+                    Err(HttpServerError::WsPingPongTooLong),
                 )
                 .await;
                 return true;
@@ -130,9 +128,7 @@ async fn send_push(
                 id,
                 source,
                 send_to_loop,
-                Err(HttpServerError::WebSocketPushError {
-                    error: "WebSocket channel not owned by this process".to_string(),
-                }),
+                Err(HttpServerError::WsChannelNotFound),
             )
             .await;
             return true;
@@ -144,9 +140,7 @@ async fn send_push(
                     id,
                     source.clone(),
                     send_to_loop,
-                    Err(HttpServerError::WebSocketPushError {
-                        error: "WebSocket channel closed".to_string(),
-                    }),
+                    Err(HttpServerError::WsChannelNotFound),
                 )
                 .await;
                 return true;
@@ -157,9 +151,7 @@ async fn send_push(
             id,
             source.clone(),
             send_to_loop,
-            Err(HttpServerError::WebSocketPushError {
-                error: "WebSocket channel not found".to_string(),
-            }),
+            Err(HttpServerError::WsChannelNotFound),
         )
         .await;
         return true;
@@ -1180,9 +1172,7 @@ async fn handle_app_message(
                     km.id,
                     km.source,
                     &send_to_loop,
-                    Err(HttpServerError::BadRequest {
-                        req: String::from_utf8_lossy(body).to_string(),
-                    }),
+                    Err(HttpServerError::MalformedRequest),
                 )
                 .await;
                 return;
@@ -1200,12 +1190,7 @@ async fn handle_app_message(
                             km.id,
                             km.source,
                             &send_to_loop,
-                            Err(HttpServerError::PathBindError {
-                                error: format!(
-                                    "invalid source process (not Kimap safe): {}",
-                                    source
-                                ),
-                            }),
+                            Err(HttpServerError::InvalidSourceProcess),
                         )
                         .await;
                         return;
@@ -1271,12 +1256,7 @@ async fn handle_app_message(
                             km.id,
                             km.source,
                             &send_to_loop,
-                            Err(HttpServerError::PathBindError {
-                                error: format!(
-                                    "invalid source process (not Kimap safe): {}",
-                                    source
-                                ),
-                            }),
+                            Err(HttpServerError::InvalidSourceProcess),
                         )
                         .await;
                         return;
@@ -1356,12 +1336,7 @@ async fn handle_app_message(
                             km.id,
                             km.source,
                             &send_to_loop,
-                            Err(HttpServerError::PathBindError {
-                                error: format!(
-                                    "invalid source process (not Kimap safe): {}",
-                                    source
-                                ),
-                            }),
+                            Err(HttpServerError::InvalidSourceProcess),
                         )
                         .await;
                         return;
@@ -1385,12 +1360,7 @@ async fn handle_app_message(
                             km.id,
                             km.source,
                             &send_to_loop,
-                            Err(HttpServerError::PathBindError {
-                                error: format!(
-                                    "invalid source process (not Kimap safe): {}",
-                                    source
-                                ),
-                            }),
+                            Err(HttpServerError::InvalidSourceProcess),
                         )
                         .await;
                         return;
@@ -1427,9 +1397,7 @@ async fn handle_app_message(
                         km.id,
                         km.source.clone(),
                         &send_to_loop,
-                        Err(HttpServerError::WebSocketPushError {
-                            error: "WebSocketOpen is not a valid request".to_string(),
-                        }),
+                        Err(HttpServerError::MalformedRequest),
                     )
                     .await;
                 }
@@ -1475,10 +1443,7 @@ async fn handle_app_message(
                         km.id,
                         km.source,
                         &send_to_loop,
-                        Err(HttpServerError::WebSocketPushError {
-                            error: "Use WebSocketExtPushOutgoing, not WebSocketExtPushData"
-                                .to_string(),
-                        }),
+                        Err(HttpServerError::MalformedRequest),
                     )
                     .await;
                     return;
@@ -1490,10 +1455,7 @@ async fn handle_app_message(
                                 km.id,
                                 km.source,
                                 &send_to_loop,
-                                Err(HttpServerError::WebSocketPushError {
-                                    error: "WebSocket channel not owned by this process"
-                                        .to_string(),
-                                }),
+                                Err(HttpServerError::WsChannelNotFound),
                             )
                             .await;
                             return;
