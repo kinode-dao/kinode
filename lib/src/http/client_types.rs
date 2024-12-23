@@ -23,12 +23,11 @@ pub enum HttpClientAction {
     },
 }
 
-/// HTTP Request type that can be shared over Wasm boundary to apps.
-/// This is the one you send to the `http-client:distro:sys` service.
+/// HTTP Request type contained in [`HttpClientAction::Http`].
 ///
 /// BODY is stored in the lazy_load_blob, as bytes
 ///
-/// TIMEOUT is stored in the message expect_response value
+/// TIMEOUT is stored in the message's `expects_response` value
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OutgoingHttpRequest {
     /// must parse to [`http::Method`]
@@ -56,31 +55,37 @@ pub enum HttpClientRequest {
 
 /// Response type received from the `http-client:distro:sys` service after
 /// sending a successful [`HttpClientAction`] to it.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HttpClientResponse {
     Http(HttpResponse),
     WebSocketAck,
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Error, Serialize, Deserialize)]
 pub enum HttpClientError {
     // HTTP errors
-    #[error("http-client: request is not valid HttpClientRequest: {req}.")]
-    BadRequest { req: String },
-    #[error("http-client: http method not supported: {method}.")]
+    #[error("request could not be deserialized to valid HttpClientRequest")]
+    MalformedRequest,
+    #[error("http method not supported: {method}")]
     BadMethod { method: String },
-    #[error("http-client: url could not be parsed: {url}.")]
+    #[error("url could not be parsed: {url}")]
     BadUrl { url: String },
-    #[error("http-client: http version not supported: {version}.")]
+    #[error("http version not supported: {version}")]
     BadVersion { version: String },
-    #[error("http-client: failed to execute request {error}.")]
-    RequestFailed { error: String },
+    #[error("client failed to build request: {0}")]
+    BuildRequestFailed(String),
+    #[error("client failed to execute request: {0}")]
+    ExecuteRequestFailed(String),
 
     // WebSocket errors
-    #[error("http-client: failed to open connection {url}.")]
+    #[error("could not open connection to {url}")]
     WsOpenFailed { url: String },
-    #[error("http-client: failed to send message {req}.")]
-    WsPushFailed { req: String },
-    #[error("http-client: failed to close connection {channel_id}.")]
+    #[error("sent WebSocket push to unknown channel {channel_id}")]
+    WsPushUnknownChannel { channel_id: u32 },
+    #[error("WebSocket push failed because message had no blob attached")]
+    WsPushNoBlob,
+    #[error("WebSocket push failed because message type was Text, but blob was not a valid UTF-8 string")]
+    WsPushBadText,
+    #[error("failed to close connection {channel_id} because it was not open")]
     WsCloseFailed { channel_id: u32 },
 }

@@ -48,11 +48,12 @@ pub struct IncomingHttpRequest {
 
 /// HTTP Response type that can be shared over Wasm boundary to apps.
 /// Respond to [`IncomingHttpRequest`] with this type.
-#[derive(Debug, Serialize, Deserialize)]
+///
+/// BODY is stored in the lazy_load_blob, as bytes
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HttpResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
-    // BODY is stored in the lazy_load_blob, as bytes
 }
 
 #[derive(Debug, Serialize, Deserialize)]
