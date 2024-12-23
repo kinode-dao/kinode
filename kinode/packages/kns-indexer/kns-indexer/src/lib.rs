@@ -309,7 +309,31 @@ fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
                     IndexerResponse::Name(state.names.get(hash).cloned())
                 }
                 IndexerRequest::NodeInfo(NodeInfoRequest { ref name, .. }) => {
-                    IndexerResponse::NodeInfo(state.nodes.get(name).map(|n| n.clone().into()))
+                    // if we don't have the node in our state, before sending a response,
+                    // try a kimap get to see if it exists onchain and the indexer missed it.
+                    match state.nodes.get(name) {
+                        Some(node) => IndexerResponse::NodeInfo(Some(node.clone().into())),
+                        None => {
+                            let mut response = IndexerResponse::NodeInfo(None);
+                            if let Some(timeout) = expects_response {
+                                if let Some(kns_update) = fetch_node(timeout, name, state) {
+                                    response =
+                                        IndexerResponse::NodeInfo(Some(kns_update.clone().into()));
+                                    // save the node to state
+                                    state.nodes.insert(name.clone(), kns_update.clone());
+                                    // produce namehash and save in names map
+                                    state.names.insert(kimap::namehash(name), name.clone());
+                                    // send the node to net
+                                    Request::to(("our", "net", "distro", "sys"))
+                                        .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
+                                            kns_update,
+                                        ))?)
+                                        .send()?;
+                                }
+                            }
+                            response
+                        }
+                    }
                 }
                 IndexerRequest::Reset => {
                     // check for root capability
@@ -410,10 +434,6 @@ fn handle_pending_notes(
             for (note, attempt) in notes.drain(..) {
                 if attempt >= MAX_PENDING_ATTEMPTS {
                     // skip notes that have exceeded max attempts
-                    // print_to_terminal(
-                    //     1,
-                    //     &format!("dropping note from block {block} after {attempt} attempts"),
-                    // );
                     continue;
                 }
                 if let Err(e) = handle_note(state, &note) {
@@ -613,6 +633,60 @@ fn fetch_and_process_logs(
                 std::thread::sleep(std::time::Duration::from_secs(5));
             }
         }
+    }
+}
+
+fn fetch_node(timeout: u64, name: &str, state: &State) -> Option<net::KnsUpdate> {
+    let kimap = kimap::Kimap::default(timeout - 1);
+    if let Ok((_tba, _owner, _data)) = kimap.get(name) {
+        let Ok(Some(public_key_bytes)) = kimap
+            .get(&format!("~net-key.{name}"))
+            .map(|(_, _, data)| data)
+        else {
+            return None;
+        };
+
+        let maybe_ip = kimap
+            .get(&format!("~ip.{name}"))
+            .map(|(_, _, data)| data.map(|b| bytes_to_ip(&b)));
+
+        let maybe_tcp_port = kimap
+            .get(&format!("~tcp-port.{name}"))
+            .map(|(_, _, data)| data.map(|b| bytes_to_port(&b)));
+
+        let maybe_ws_port = kimap
+            .get(&format!("~ws-port.{name}"))
+            .map(|(_, _, data)| data.map(|b| bytes_to_port(&b)));
+
+        let maybe_routers = kimap
+            .get(&format!("~routers.{name}"))
+            .map(|(_, _, data)| data.map(|b| decode_routers(&b, state)));
+
+        let mut ports = BTreeMap::new();
+        if let Ok(Some(Ok(tcp_port))) = maybe_tcp_port {
+            ports.insert("tcp".to_string(), tcp_port);
+        }
+        if let Ok(Some(Ok(ws_port))) = maybe_ws_port {
+            ports.insert("ws".to_string(), ws_port);
+        }
+
+        Some(net::KnsUpdate {
+            name: name.to_string(),
+            public_key: hex::encode(public_key_bytes),
+            ips: if let Ok(Some(Ok(ip))) = maybe_ip {
+                vec![ip.to_string()]
+            } else {
+                vec![]
+            },
+            ports,
+            routers: if let Ok(Some(routers)) = maybe_routers {
+                routers
+            } else {
+                vec![]
+            },
+        })
+    } else {
+        None
     }
 }
 
