@@ -461,6 +461,9 @@ async fn handle_message(
                     if let Some(sub_map) = state.active_subscriptions.get(&km.source) {
                         if sub_map.contains_key(&sub_id) {
                             return Ok(());
+                        } else if sub_map.is_empty() {
+                            drop(sub_map);
+                            state.active_subscriptions.remove(&km.source);
                         }
                     }
                     verbose_print(
@@ -580,7 +583,7 @@ async fn handle_eth_action(
                 kernel_message(
                     &state.our,
                     km.id,
-                    km.rsvp.unwrap_or(km.source),
+                    km.rsvp.unwrap_or(km.source.clone()),
                     None,
                     false,
                     None,
@@ -600,11 +603,16 @@ async fn handle_eth_action(
                 error_message(
                     &state.our,
                     km.id,
-                    km.source,
+                    km.source.clone(),
                     EthError::MalformedRequest,
                     &state.send_to_loop,
                 )
                 .await;
+            }
+            // if sub_map is now empty, remove the source from the active_subscriptions map
+            if sub_map.is_empty() {
+                drop(sub_map);
+                state.active_subscriptions.remove(&km.source);
             }
         }
         EthAction::Request { .. } => {
