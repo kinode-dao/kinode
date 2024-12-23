@@ -47,6 +47,7 @@ cargo install cargo-wasi
 
 cd kinode
 cargo run -p build-packages
+# OPTIONAL: --release flag
 cargo build -p kinode
 ```
 
@@ -54,15 +55,17 @@ cargo build -p kinode
 
 ## Security Status
 
-No security audits of this crate have ever been performed. This software is under active development and should be **used at your own risk**.
+This software is under active development and should be **used at your own risk**.
+
+A security audit targeting the networking protocol, web interface, and kernel architecture was performed by [Enigma Dark](https://www.enigmadark.com/).
+That report can be found [here](https://github.com/Enigma-Dark/security-review-reports/blob/main/2024-11-18_Architecture_Review_Report_Kinode.pdf).
 
 ## Boot
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
 ```bash
-# OPTIONAL: --release flag
-cargo +nightly run -p kinode -- home
+cargo run -p kinode -- home
 ```
 
 On boot you will be prompted to navigate to `localhost:8080` or whatever HTTP port your node bound to: it will try 8080 and go up from there, or use the port passed with the `--port` boot flag. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
