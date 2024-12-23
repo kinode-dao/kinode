@@ -64,9 +64,7 @@ pub async fn http_client(
                 id,
                 rsvp.unwrap_or(source),
                 expects_response,
-                HttpClientError::BadRequest {
-                    req: String::from_utf8(body).unwrap_or_default(),
-                },
+                HttpClientError::MalformedRequest,
                 send_to_loop.clone(),
             )
             .await;
@@ -197,8 +195,8 @@ async fn connect_websocket(
     };
 
     let Ok(mut req) = url.clone().into_client_request() else {
-        return Err(HttpClientError::BadRequest {
-            req: "failed to parse url into client request".into(),
+        return Err(HttpClientError::WsOpenFailed {
+            url: url.to_string(),
         });
     };
 
@@ -443,18 +441,16 @@ async fn handle_http_request(
     }
 
     // Add the headers
-    let Ok(request) = request_builder
+    let build = request_builder
         .headers(deserialize_headers(req.headers))
-        .build()
-    else {
+        .build();
+    if let Err(e) = build {
         http_error_message(
             our,
             id,
             target,
             expects_response,
-            HttpClientError::RequestFailed {
-                error: "failed to build request".into(),
-            },
+            HttpClientError::BuildRequestFailed(e.to_string()),
             send_to_loop,
         )
         .await;
@@ -462,7 +458,7 @@ async fn handle_http_request(
     };
 
     // Send the HTTP request
-    match client.execute(request).await {
+    match client.execute(build.unwrap()).await {
         Ok(response) => {
             // Handle the response and forward to the target process
             let Ok(body) = serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(&Ok(
@@ -512,9 +508,7 @@ async fn handle_http_request(
                 id,
                 target,
                 expects_response,
-                HttpClientError::RequestFailed {
-                    error: e.to_string(),
-                },
+                HttpClientError::ExecuteRequestFailed(e.to_string()),
                 send_to_loop,
             )
             .await;
@@ -612,32 +606,24 @@ async fn send_ws_push(
     ws_streams: WebSocketStreams,
 ) -> Result<HttpClientResponse, HttpClientError> {
     let Some(mut ws_stream) = ws_streams.get_mut(&(target.process.clone(), channel_id)) else {
-        return Err(HttpClientError::WsPushFailed {
-            req: format!("channel_id {} not found", channel_id),
-        });
+        return Err(HttpClientError::WsPushUnknownChannel { channel_id });
     };
 
     let _ = match message_type {
         WsMessageType::Text => {
             let Some(blob) = blob else {
-                return Err(HttpClientError::WsPushFailed {
-                    req: "no blob".into(),
-                });
+                return Err(HttpClientError::WsPushNoBlob);
             };
 
             let Ok(text) = String::from_utf8(blob.bytes) else {
-                return Err(HttpClientError::WsPushFailed {
-                    req: "failed to convert blob to string".into(),
-                });
+                return Err(HttpClientError::WsPushBadText);
             };
 
             ws_stream.send(TungsteniteMessage::Text(text)).await
         }
         WsMessageType::Binary => {
             let Some(blob) = blob else {
-                return Err(HttpClientError::WsPushFailed {
-                    req: "no blob".into(),
-                });
+                return Err(HttpClientError::WsPushNoBlob);
             };
 
             ws_stream.send(TungsteniteMessage::Binary(blob.bytes)).await

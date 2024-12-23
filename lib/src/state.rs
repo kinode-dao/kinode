@@ -2,6 +2,8 @@ use crate::types::core::ProcessId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// state:distro:sys is INTERNAL -- this interface is NEVER EXPOSED TO USERSPACE
+
 /// IPC Requests for the state:distro:sys runtime module.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum StateAction {

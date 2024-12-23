@@ -48,11 +48,12 @@ pub struct IncomingHttpRequest {
 
 /// HTTP Response type that can be shared over Wasm boundary to apps.
 /// Respond to [`IncomingHttpRequest`] with this type.
-#[derive(Debug, Serialize, Deserialize)]
+///
+/// BODY is stored in the lazy_load_blob, as bytes
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HttpResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
-    // BODY is stored in the lazy_load_blob, as bytes
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -168,14 +169,16 @@ pub enum WsMessageType {
 /// Part of the Response type issued by `http-server:distro:sys`
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum HttpServerError {
-    #[error("request could not be parsed to HttpServerAction: {req}.")]
-    BadRequest { req: String },
+    #[error("request could not be deserialized to valid HttpServerRequest")]
+    MalformedRequest,
     #[error("action expected blob")]
     NoBlob,
-    #[error("path binding error: {error}")]
-    PathBindError { error: String },
-    #[error("WebSocket error: {error}")]
-    WebSocketPushError { error: String },
+    #[error("path binding error: invalid source process")]
+    InvalidSourceProcess,
+    #[error("WebSocket error: ping/pong message too long")]
+    WsPingPongTooLong,
+    #[error("WebSocket error: channel not found")]
+    WsChannelNotFound,
 }
 
 /// Structure sent from client websocket to this server upon opening a new connection.
