@@ -393,7 +393,7 @@ fn serve_paths(
             let package_id = crate::kinode::process::main::PackageId::from_process_lib(package_id);
 
             // get the file corresponding to the version hash, extract manifest and return.
-            let resp = Request::to(("our", "downloads", "app_store", "sys"))
+            let resp = Request::to(("our", "downloads", "app-store", "sys"))
                 .body(serde_json::to_vec(&DownloadRequests::GetFiles(Some(
                     package_id.clone(),
                 )))?)

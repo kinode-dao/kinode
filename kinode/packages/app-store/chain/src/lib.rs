@@ -109,7 +109,7 @@ impl DB {
 
     pub fn reset(&self, our: &Address) {
         if let Err(e) = sqlite::remove_db(our.package_id(), "app_store_chain.sqlite", None) {
-            println!("failed to reset app_store DB: {e}");
+            println!("failed to reset app-store DB: {e}");
         }
     }
 
@@ -608,7 +608,7 @@ fn handle_eth_log(
 
     if !startup && listing.auto_update {
         println!("kicking off auto-update for: {}", package_id);
-        Request::to(("our", "downloads", "app_store", "sys"))
+        Request::to(("our", "downloads", "app-store", "sys"))
             .body(&DownloadRequests::AutoUpdate(AutoUpdateRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(
                     package_id.clone(),
@@ -725,7 +725,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
         if listing.auto_update {
             if let Some(md) = metadata {
                 print_to_terminal(0, &format!("kicking off auto-update for: {}", pid));
-                if let Err(e) = Request::to(("our", "downloads", "app_store", "sys"))
+                if let Err(e) = Request::to(("our", "downloads", "app-store", "sys"))
                     .body(&DownloadRequests::AutoUpdate(AutoUpdateRequest {
                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
                             pid.clone(),

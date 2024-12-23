@@ -8,12 +8,12 @@ interface ManifestDisplayProps {
 
 const capabilityMap: Record<string, string> = {
     'vfs:distro:sys': 'Virtual Filesystem',
-    'http_client:distro:sys': 'HTTP Client',
-    'http_server:distro:sys': 'HTTP Server',
+    'http-client:distro:sys': 'HTTP Client',
+    'http-server:distro:sys': 'HTTP Server',
     'eth:distro:sys': 'Ethereum RPC access',
     'homepage:homepage:sys': 'Ability to add itself to homepage',
-    'main:app_store:sys': 'App Store',
-    'chain:app_store:sys': 'Chain',
+    'main:app-store:sys': 'App Store',
+    'chain:app-store:sys': 'Chain',
     'terminal:terminal:sys': 'Terminal',
 };
 

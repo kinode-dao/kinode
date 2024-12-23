@@ -5,14 +5,13 @@ import { DownloadItem, PackageManifest, PackageState } from "../types/Apps";
 
 // Core packages that cannot be uninstalled
 const CORE_PACKAGES = [
-    "app_store:sys",
-    "contacts:sys",
-    "kino_updates:sys",
-    "terminal:sys",
+    "app-store:sys",
     "chess:sys",
-    "kns_indexer:sys",
+    "contacts:sys",
+    "homepage:sys",
+    "kns-indexer:sys",
     "settings:sys",
-    "homepage:sys"
+    "terminal:sys",
 ];
 
 export default function MyAppsPage() {

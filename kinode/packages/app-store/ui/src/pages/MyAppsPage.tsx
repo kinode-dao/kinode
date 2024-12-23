@@ -2,19 +2,18 @@ import React, { useState, useEffect } from "react";
 import { FaFolder, FaFile, FaChevronLeft, FaSync, FaRocket, FaSpinner, FaCheck, FaTrash, FaExclamationTriangle, FaTimesCircle, FaChevronDown, FaChevronRight } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import useAppsStore from "../store";
-import { ResetButton} from "../components";
+import { ResetButton } from "../components";
 import { DownloadItem, PackageManifestEntry, PackageState, Updates, DownloadError, UpdateInfo } from "../types/Apps";
 
 // Core packages that cannot be uninstalled
 const CORE_PACKAGES = [
-    "app_store:sys",
-    "contacts:sys",
-    "kino_updates:sys",
-    "terminal:sys",
+    "app-store:sys",
     "chess:sys",
-    "kns_indexer:sys",
+    "contacts:sys",
+    "homepage:sys",
+    "kns-indexer:sys",
     "settings:sys",
-    "homepage:sys"
+    "terminal:sys",
 ];
 
 export default function MyAppsPage() {
@@ -113,9 +112,9 @@ export default function MyAppsPage() {
                 {Object.keys(updates).length > 0 ? (
                     <div className="updates-list">
                         {Object.entries(updates).map(([packageId, versionMap]) => {
-                            const totalErrors = Object.values(versionMap).reduce((sum, info) => 
+                            const totalErrors = Object.values(versionMap).reduce((sum, info) =>
                                 sum + (info.errors?.length || 0), 0);
-                            const hasManifestChanges = Object.values(versionMap).some(info => 
+                            const hasManifestChanges = Object.values(versionMap).some(info =>
                                 info.pending_manifest_hash);
 
                             return (
@@ -135,7 +134,7 @@ export default function MyAppsPage() {
                                             </div>
                                         </div>
                                         <div className="update-actions">
-                                            <button 
+                                            <button
                                                 className="action-button retry"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -146,7 +145,7 @@ export default function MyAppsPage() {
                                                 <FaSync />
                                                 <span>Retry</span>
                                             </button>
-                                            <button 
+                                            <button
                                                 className="action-button clear"
                                                 onClick={(e) => {
                                                     e.stopPropagation();

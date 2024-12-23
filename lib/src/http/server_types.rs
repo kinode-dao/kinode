@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// HTTP Request received from the `http_server:distro:sys` service as a
+/// HTTP Request received from the `http-server:distro:sys` service as a
 /// result of either an HTTP or WebSocket binding, created via [`HttpServerAction`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HttpServerRequest {
@@ -61,7 +61,7 @@ pub struct RpcResponseBody {
     pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
-/// Request type sent to `http_server:distro:sys` in order to configure it.
+/// Request type sent to `http-server:distro:sys` in order to configure it.
 ///
 /// If a response is expected, all actions will return a Response
 /// with the shape `Result<(), HttpServerActionError>` serialized to JSON.
@@ -129,8 +129,8 @@ pub enum HttpServerAction {
         desired_reply_type: MessageType,
     },
     /// For communicating with the ext.
-    /// Kinode's http_server sends this to the ext after receiving `WebSocketExtPushOutgoing`.
-    /// Upon receiving reply with this type from ext, http_server parses, setting:
+    /// Kinode's http-server sends this to the ext after receiving `WebSocketExtPushOutgoing`.
+    /// Upon receiving reply with this type from ext, http-server parses, setting:
     /// * id as given,
     /// * message type as given (Request or Response),
     /// * body as HttpServerRequest::WebSocketPush,
@@ -165,7 +165,7 @@ pub enum WsMessageType {
     Close,
 }
 
-/// Part of the Response type issued by http_server
+/// Part of the Response type issued by `http-server:distro:sys`
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum HttpServerError {
     #[error("request could not be parsed to HttpServerAction: {req}.")]

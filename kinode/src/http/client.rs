@@ -12,10 +12,10 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use lib::types::{core::*, http_client::*, http_server::*};
 
-// Test http_client with these commands in the terminal
-// !message our http_client {"method": "GET", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {}}
-// !message our http_client {"method": "POST", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
-// !message our http_client {"method": "PUT", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
+// Test http-client with these commands in the terminal
+// m our@http-client:distro:sys '{"method": "GET", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {}}'
+// m our@http-client:distro:sys '{"method": "POST", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}'
+// m our@http-client:distro:sys '{"method": "PUT", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}'
 
 /// WebSocket client connections are mapped by a tuple of ProcessId and
 /// a process-supplied channel_id (u32)

@@ -210,12 +210,12 @@ fn handle_message(
                 } = download_request.clone();
 
                 if download_from.starts_with("http") {
-                    // use http_client to GET it
+                    // use http-client to GET it
                     print_to_terminal(
                         1,
                         "kicking off http download for {package_id:?} and {version_hash:?}",
                     );
-                    Request::to(("our", "http_client", "distro", "sys"))
+                    Request::to(("our", "http-client", "distro", "sys"))
                         .body(
                             serde_json::to_vec(&client::HttpClientAction::Http(
                                 client::OutgoingHttpRequest {
@@ -292,8 +292,8 @@ fn handle_message(
                     return Err(anyhow::anyhow!("got non local download complete"));
                 }
 
-                // forward to main:app_store:sys, pushed to UI via websockets
-                Request::to(("our", "main", "app_store", "sys"))
+                // forward to main:app-store:sys, pushed to UI via websockets
+                Request::to(("our", "main", "app-store", "sys"))
                     .body(serde_json::to_vec(&req)?)
                     .send()?;
 
@@ -480,7 +480,7 @@ fn handle_message(
                 );
 
                 // kick off local download to ourselves
-                Request::to(("our", "downloads", "app_store", "sys"))
+                Request::to(("our", "downloads", "app-store", "sys"))
                     .body(DownloadRequests::LocalDownload(download_request))
                     .send()?;
             }
@@ -507,7 +507,7 @@ fn handle_message(
                                 try_next_mirror(metadata, key, auto_updates, e);
                             } else {
                                 // If not an auto-update, forward error normally
-                                Request::to(("our", "main", "app_store", "sys"))
+                                Request::to(("our", "main", "app-store", "sys"))
                                     .body(DownloadCompleteRequest {
                                         package_id: download_request.package_id,
                                         version_hash: download_request.desired_version_hash,
@@ -582,7 +582,7 @@ fn handle_message(
 
                 // Handle successful download
                 if let Err(e) = handle_receive_http_download(&download_request) {
-                    print_to_terminal(1, &format!("error handling http_client response: {:?}", e));
+                    print_to_terminal(1, &format!("error handling http-client response: {:?}", e));
                     handle_download_error(
                         is_auto_update,
                         metadata,
@@ -649,7 +649,7 @@ fn try_next_mirror(
         Some(next_mirror) => {
             metadata.active_mirror = next_mirror.clone();
             auto_updates.insert(key, metadata);
-            Request::to(("our", "downloads", "app_store", "sys"))
+            Request::to(("our", "downloads", "app-store", "sys"))
                 .body(
                     serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
@@ -676,7 +676,7 @@ fn try_next_mirror(
                 tries: node_tries,
             });
 
-            Request::to(("our", "main", "app_store", "sys"))
+            Request::to(("our", "main", "app-store", "sys"))
                 .body(auto_download_error)
                 .send()
                 .unwrap();
@@ -750,7 +750,7 @@ fn handle_download_error(
             try_next_mirror(meta, key, auto_updates, error);
         }
     } else {
-        Request::to(("our", "main", "app_store", "sys"))
+        Request::to(("our", "main", "app-store", "sys"))
             .body(DownloadCompleteRequest {
                 package_id: download_request.package_id.clone(),
                 version_hash: download_request.desired_version_hash.clone(),
@@ -765,7 +765,7 @@ fn handle_download_error(
 fn handle_auto_update_success(package_id: PackageId, version_hash: String) -> anyhow::Result<()> {
     let manifest_hash = get_manifest_hash(package_id.clone(), version_hash.clone())?;
 
-    Request::to(("our", "main", "app_store", "sys"))
+    Request::to(("our", "main", "app-store", "sys"))
         .body(AutoDownloadCompleteRequest::Success(AutoDownloadSuccess {
             package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
             version_hash,
@@ -835,7 +835,7 @@ fn extract_and_write_manifest(file_contents: &[u8], manifest_path: &str) -> anyh
 /// Used to check if we can share a package or not!
 fn download_zip_exists(package_id: &PackageId, version_hash: &str) -> bool {
     let filename = format!(
-        "/app_store:sys/downloads/{}:{}/{}.zip",
+        "/app-store:sys/downloads/{}:{}/{}.zip",
         package_id.package_name,
         package_id.publisher(),
         version_hash
