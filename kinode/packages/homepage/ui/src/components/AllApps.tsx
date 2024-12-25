@@ -25,14 +25,12 @@ const AllApps: React.FC = () => {
 
   // Sort apps based on persisted order
   const sortedApps = useMemo(() => {
-    if (!orderedApps.length) {
-      setOrderedApps(apps);
-    }
-    const o = [...orderedApps].sort((a, b) => {
-      return a.order - b.order;
-    });
-    return o.filter(app => app.path !== null);
-  }, [orderedApps, apps]);
+    // Use orderedApps if we have them, otherwise fall back to apps
+    const appsToSort = orderedApps.length ? orderedApps : apps;
+    return [...appsToSort]
+      .sort((a, b) => a.order - b.order)
+      .filter(app => app.path !== null);
+  }, [apps, orderedApps]);
 
   const displayedApps = expanded
     ? sortedApps
@@ -74,6 +72,8 @@ const AllApps: React.FC = () => {
 
     setOrderedApps(updatedApps);
 
+    handleDragEnd();
+
     // Sync the order with the backend
     fetch('/order', {
       method: 'POST',
@@ -83,8 +83,6 @@ const AllApps: React.FC = () => {
       credentials: 'include',
       body: JSON.stringify(newSortedApps.map((app, index) => [app.id, index]))
     });
-
-    handleDragEnd();
   };
 
   return (

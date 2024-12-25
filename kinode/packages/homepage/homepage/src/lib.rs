@@ -146,14 +146,11 @@ fn init(our: Address) {
         )
         .expect("failed to bind /bird-plain.svg");
 
+    // because boot uses this path to check if homepage is served yet,
+    // it's best to respond dynamically and only serve this path once
+    // all of the apps/widgets have populated.
     http_server
-        .bind_http_static_path(
-            "/version",
-            true,
-            false,
-            Some("text/plain".to_string()),
-            version_from_cargo_toml().into(),
-        )
+        .bind_http_path("/version", http_config.clone())
         .expect("failed to bind /version");
 
     http_server
@@ -196,6 +193,19 @@ fn init(our: Address) {
                                     .unwrap(),
                                 )),
                             ),
+                            "/version" => {
+                                if app_data.len() >= 4 {
+                                    (
+                                        server::HttpResponse::new(http::StatusCode::OK),
+                                        Some(LazyLoadBlob::new(
+                                            Some("text/plain"),
+                                            version_from_cargo_toml().as_bytes().to_vec(),
+                                        )),
+                                    )
+                                } else {
+                                    (server::HttpResponse::new(http::StatusCode::TOO_EARLY), None)
+                                }
+                            }
                             "/favorite" => {
                                 let Ok(http::Method::POST) = incoming.method() else {
                                     return (
