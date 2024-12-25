@@ -88,7 +88,6 @@ fn make_widget() -> String {
 
         body {
             overflow: hidden;
-            background: transparent;
         }
 
         #latest-apps {

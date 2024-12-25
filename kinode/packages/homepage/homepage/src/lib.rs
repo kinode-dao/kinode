@@ -163,6 +163,8 @@ fn init(our: Address) {
         .bind_http_path("/order", http_config)
         .expect("failed to bind /order");
 
+    kinode_process_lib::homepage::add_to_homepage("Clock", None, None, Some(&make_clock_widget()));
+
     // load persisted app order
     let mut persisted_app_order =
         kinode_process_lib::get_typed_state(|bytes| serde_json::from_slice(bytes))
@@ -194,7 +196,12 @@ fn init(our: Address) {
                                 )),
                             ),
                             "/version" => {
-                                if app_data.len() >= 4 {
+                                // hacky way to ensure that the homepage has populated itself before
+                                // loading in after boot
+                                if app_data.len() >= 4
+                                    && app_data.values().filter(|app| app.widget.is_some()).count()
+                                        >= 3
+                                {
                                     (
                                         server::HttpResponse::new(http::StatusCode::OK),
                                         Some(LazyLoadBlob::new(
@@ -380,4 +387,127 @@ fn version_from_cargo_toml() -> String {
         .trim()
         .trim_matches('"')
         .to_string()
+}
+
+fn make_clock_widget() -> String {
+    return format!(
+        r#"<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/kinode.css">
+        <style>
+            .clock {{
+                width: 200px;
+                height: 200px;
+                border: 8px solid var(--text);
+                border-radius: 50%;
+                position: relative;
+                margin: 20px auto;
+            }}
+            .hand {{
+                position: absolute;
+                bottom: 50%;
+                left: 50%;
+                transform-origin: bottom;
+                background-color: light-dark(var(--off-black), var(--off-white));
+            }}
+            .hour {{
+                width: 4px;
+                height: 60px;
+                margin-left: -2px;
+            }}
+            .minute {{
+                width: 3px;
+                height: 80px;
+                margin-left: -1.5px;
+            }}
+            .second {{
+                width: 2px;
+                height: 90px;
+                margin-left: -1px;
+                background-color: var(--orange);
+            }}
+            .center {{
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }}
+            .marker {{
+                position: absolute;
+                width: 2px;
+                height: 4px;
+                background: light-dark(var(--off-black), var(--off-white));
+                left: 50%;
+                margin-left: -1px;
+                transform-origin: 50% 100px;
+            }}
+            .marker.primary {{
+                width: 3px;
+                height: 8px;
+                margin-left: -1.5px;
+            }}
+            .digital-time {{
+                font-family: var(--font-family-main);
+                margin-top: 1em;
+                font-size: 0.7em;
+                color: light-dark(var(--off-black), var(--off-white));
+                position: absolute;
+                width:100%;
+                text-align: center;
+                bottom: 40px;
+            }}
+        </style>
+    </head>
+    <body style="margin: 0;">
+        <div class="clock">
+            <div class="marker primary" style="transform: rotate(0deg)"></div>
+            <div class="marker" style="transform: rotate(30deg)"></div>
+            <div class="marker" style="transform: rotate(60deg)"></div>
+            <div class="marker primary" style="transform: rotate(90deg)"></div>
+            <div class="marker" style="transform: rotate(120deg)"></div>
+            <div class="marker" style="transform: rotate(150deg)"></div>
+            <div class="marker primary" style="transform: rotate(180deg)"></div>
+            <div class="marker" style="transform: rotate(210deg)"></div>
+            <div class="marker" style="transform: rotate(240deg)"></div>
+            <div class="marker primary" style="transform: rotate(270deg)"></div>
+            <div class="marker" style="transform: rotate(300deg)"></div>
+            <div class="marker" style="transform: rotate(330deg)"></div>
+            <div class="hand hour" id="hour"></div>
+            <div class="hand minute" id="minute"></div>
+            <div class="hand second" id="second"></div>
+            <div class="center"></div>
+        </div>
+        <div class="digital-time" id="digital"></div>
+
+        <script>
+            function updateClock() {{
+                const now = new Date();
+                const hours = now.getHours() % 12;
+                const minutes = now.getMinutes();
+                const seconds = now.getSeconds();
+
+                const hourDeg = (hours * 30) + (minutes * 0.5);
+                const minuteDeg = minutes * 6;
+                const secondDeg = seconds * 6;
+
+                document.getElementById('hour').style.transform = `rotate(${{hourDeg}}deg)`;
+                document.getElementById('minute').style.transform = `rotate(${{minuteDeg}}deg)`;
+                document.getElementById('second').style.transform = `rotate(${{secondDeg}}deg)`;
+
+                // Update digital display
+                const displayHours = hours === 0 ? 12 : hours;
+                const displayMinutes = minutes.toString().padStart(2, '0');
+                document.getElementById('digital').textContent = `${{displayHours}}:${{displayMinutes}}`;
+            }}
+
+            setInterval(updateClock, 1000);
+            updateClock();
+        </script>
+    </body>
+</html>"#
+    );
 }
