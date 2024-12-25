@@ -109,7 +109,10 @@ function CommitDotOsName({
                                     </Tooltip>
                                 </h3>
                                 <EnterKnsName {...enterOsNameProps} />
-                                <DirectCheckbox {...{ direct, setDirect }} />
+                                <details>
+                                    <summary>Advanced Options</summary>
+                                    <DirectCheckbox {...{ direct, setDirect }} />
+                                </details>
                                 <div className="button-group">
                                     <button
                                         disabled={nameValidities.length !== 0 || isPending || isConfirming}
@@ -118,7 +121,6 @@ function CommitDotOsName({
                                     >
                                         Register name
                                     </button>
-                                    <p>This will confirm availability of the name and reserve it, then on the next screen you will be prompted to mint.</p>
                                     <Link to="/reset" className="button secondary">
                                         Already have a node?
                                     </Link>

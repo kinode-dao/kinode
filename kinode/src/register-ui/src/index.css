@@ -7,6 +7,7 @@
 .form-label {
   margin-bottom: 0.5rem;
   font-weight: bold;
+  text-align: center;
 }
 
 .form-input {
@@ -241,6 +242,12 @@
   color: var(--off-white);
 }
 
+summary {
+  font-family: var(--font-family-main);
+  color: light-dark(var(--off-black), var(--off-white));
+  margin-bottom: 10px;
+}
+
 button.secondary {
   width: 100%;
 }
@@ -250,6 +257,7 @@ button.back {
   width: auto !important;
   padding: 5px !important;
   border: none !important;
+  background-color: var(--orange) !important;
 }
 
 /* Progress Bar Styles */

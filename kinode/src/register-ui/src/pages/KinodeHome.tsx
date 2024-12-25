@@ -32,7 +32,7 @@ function KinodeHome({ knsName }: OsHomeProps) {
                         ) : (
                             <>
                                 <h2 className="text-center mb-2">Welcome to Kinode</h2>
-                                <h4 className="text-center mb-2">New here? Register a name to get started</h4>
+                                <h4 className="text-center mb-2">New here? Register a node to get started:</h4>
                                 <div className="button-group">
                                     <button onClick={registerRedir} className="button">
                                         Register .os Name
