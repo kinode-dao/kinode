@@ -122,6 +122,8 @@ export default function AppPage() {
     return <div className="app-page"><h4>App details not found for {id}</h4></div>;
   }
 
+  const valid_wit_version = app.metadata?.properties?.wit_version === 1
+
   return (
     <section className="app-page">
       <div className="app-header">
@@ -132,6 +134,10 @@ export default function AppPage() {
           <h2>{app.metadata?.name || app.package_id.package_name}</h2>
           <p className="app-id">{`${app.package_id.package_name}.${app.package_id.publisher_node}`}</p>
         </div>
+      </div>
+
+      <div className="app-warning">
+        {valid_wit_version ? <></> : "THIS APP MUST BE UPDATED TO 1.0"}
       </div>
 
       <div className="app-description">{app.metadata?.description || "No description available"}</div>
@@ -155,7 +161,7 @@ export default function AppPage() {
             </li>
           )}
           <li><span>Publisher:</span> <span>{app.package_id.publisher_node}</span></li>
-          <li><span>License:</span> <span>{app.metadata?.properties?.license || "Not specified"}</span></li>
+          {app.metadata?.properties?.license ? <li><span>License:</span> <span>app.metadata?.properties?.license</span></li> : <></>}
           <li>
             <span>Auto Update:</span>
             <span className="status-icon">

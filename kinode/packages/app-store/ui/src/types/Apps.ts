@@ -45,7 +45,7 @@ export interface Erc721Properties {
     code_hashes: [string, string][];
     license?: string;
     screenshots?: string[];
-    wit_version?: [number, number, number];
+    wit_version?: number;
 }
 
 export interface OnchainPackageMetadata {
@@ -99,7 +99,7 @@ export interface HashMismatch {
     actual: string;
 }
 
-export type DownloadError = 
+export type DownloadError =
     | "NoPackage"
     | "NotMirroring"
     | { HashMismatch: HashMismatch }
