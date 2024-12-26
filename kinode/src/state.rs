@@ -75,10 +75,7 @@ pub async fn load_state(
         }
     }
 
-    // bootstrap the distro processes into the node. TODO:
-    // once we manage userspace sys packages onchain, stop
-    // doing this and allow node operator to manually or auto-update
-    // all their own userspace packages.
+    // bootstrap the distro processes into the node
     bootstrap(
         &our_name,
         keypair,

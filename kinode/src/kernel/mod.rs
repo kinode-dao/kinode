@@ -369,6 +369,14 @@ async fn handle_kernel_request(
                 .expect("event loop: fatal: sender died");
             None
         }
+        t::KernelCommand::SetOnExit { target, on_exit } => {
+            if let Some(process) = process_map.get_mut(&target) {
+                process.on_exit = on_exit;
+            }
+            // persist state because it changed
+            persist_state(&send_to_loop, process_map).await;
+            None
+        }
         //
         // send 'run' message to a process that's already been initialized
         //
