@@ -497,11 +497,42 @@ impl StandardHost for process::ProcessWasiV1 {
     // process management:
     //
 
-    /// TODO critical: move to kernel logic to enable persistence of choice made here
     async fn set_on_exit(&mut self, on_exit: wit::OnExit) -> Result<()> {
-        self.process.metadata.on_exit = t::OnExit::de_wit_v1(on_exit);
-        print_debug(&self.process, "set new on-exit behavior").await;
-        Ok(())
+        let on_exit = t::OnExit::de_wit_v1(on_exit);
+        self.process.metadata.on_exit = on_exit.clone();
+        match self
+            .process
+            .send_request_v1(
+                Some(t::Address {
+                    node: self.process.metadata.our.node.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
+                }),
+                wit::Address {
+                    node: self.process.metadata.our.node.clone(),
+                    process: KERNEL_PROCESS_ID.en_wit_v1(),
+                },
+                wit::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::SetOnExit {
+                        target: self.process.metadata.our.process.clone(),
+                        on_exit,
+                    })
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                },
+                None,
+                None,
+            )
+            .await
+        {
+            Ok(_) => {
+                print_debug(&self.process, "set new on-exit behavior").await;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     async fn get_on_exit(&mut self) -> Result<wit::OnExit> {

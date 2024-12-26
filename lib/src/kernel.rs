@@ -429,6 +429,8 @@ pub enum KernelCommand {
         target: ProcessId,
         capabilities: Vec<Capability>,
     },
+    /// Set the on-exit behavior for a process.
+    SetOnExit { target: ProcessId, on_exit: OnExit },
     /// Tell the kernel to run a process that has already been installed.
     /// TODO: in the future, this command could be extended to allow for
     /// resource provision.
