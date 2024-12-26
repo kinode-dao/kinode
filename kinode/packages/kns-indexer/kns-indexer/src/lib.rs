@@ -109,15 +109,11 @@ impl State {
 impl From<net::KnsUpdate> for WitKnsUpdate {
     fn from(k: net::KnsUpdate) -> Self {
         WitKnsUpdate {
-            name: k.name.clone(),
-            public_key: k.public_key.clone(),
-            ips: k.ips.clone(),
-            ports: k
-                .ports
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect::<Vec<_>>(),
-            routers: k.routers.clone(),
+            name: k.name,
+            public_key: k.public_key,
+            ips: k.ips,
+            ports: k.ports.into_iter().map(|(k, v)| (k, v)).collect::<Vec<_>>(),
+            routers: k.routers,
         }
     }
 }
@@ -125,11 +121,11 @@ impl From<net::KnsUpdate> for WitKnsUpdate {
 impl From<WitKnsUpdate> for net::KnsUpdate {
     fn from(k: WitKnsUpdate) -> Self {
         net::KnsUpdate {
-            name: k.name.clone(),
-            public_key: k.public_key.clone(),
-            ips: k.ips.clone(),
+            name: k.name,
+            public_key: k.public_key,
+            ips: k.ips,
             ports: BTreeMap::from_iter(k.ports),
-            routers: k.routers.clone(),
+            routers: k.routers,
         }
     }
 }
@@ -138,19 +134,15 @@ impl From<State> for WitState {
     fn from(s: State) -> Self {
         let contract_address: [u8; 20] = s.contract_address.into();
         WitState {
-            chain_id: s.chain_id.clone(),
+            chain_id: s.chain_id,
             contract_address: contract_address.to_vec(),
-            names: s
-                .names
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect::<Vec<_>>(),
+            names: s.names.into_iter().map(|(k, v)| (k, v)).collect::<Vec<_>>(),
             nodes: s
                 .nodes
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone().into()))
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
                 .collect::<Vec<_>>(),
-            last_block: s.last_checkpoint_block.clone(),
+            last_block: s.last_checkpoint_block,
         }
     }
 }
