@@ -108,7 +108,6 @@ export type DownloadError =
     | "HttpClientError"
     | "BlobNotFound"
     | "VfsError"
-    | { HandlingError: string }
     | "Timeout"
     | "InvalidManifest"
     | "Offline";

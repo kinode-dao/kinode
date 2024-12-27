@@ -43,15 +43,9 @@
 //!
 use crate::kinode::process::downloads::{
     AutoDownloadCompleteRequest, AutoDownloadError, AutoUpdateRequest, DirEntry,
-    DownloadCompleteRequest, DownloadError, DownloadRequests, DownloadResponses, Entry, FileEntry,
+    DownloadCompleteRequest, DownloadError, DownloadRequest, DownloadResponse, Entry, FileEntry,
     HashMismatch, LocalDownloadRequest, RemoteDownloadRequest, RemoveFileRequest,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    io::Read,
-    str::FromStr,
-};
-
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
 use kinode::process::downloads::AutoDownloadSuccess;
 use kinode_process_lib::{
@@ -59,10 +53,15 @@ use kinode_process_lib::{
     http::client,
     print_to_terminal, println, set_state,
     vfs::{self, Directory},
-    Address, Message, PackageId, ProcessId, Request, Response,
+    Address, Message, PackageId, ProcessId, Request, Response, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Read,
+    str::FromStr,
+};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -78,7 +77,7 @@ pub const VFS_TIMEOUT: u64 = 5; // 5s
 #[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
-    Download(DownloadResponses),
+    Download(DownloadResponse),
     HttpClient(Result<client::HttpClientResponse, client::HttpClientError>),
 }
 
@@ -142,14 +141,7 @@ fn init(our: Address) {
                     &mut tmp,
                     &mut auto_updates,
                 ) {
-                    let error_message = format!("error handling message: {e:?}");
-                    print_to_terminal(1, &error_message);
-                    Response::new()
-                        .body(DownloadResponses::Err(DownloadError::HandlingError(
-                            error_message,
-                        )))
-                        .send()
-                        .unwrap();
+                    print_to_terminal(1, &format!("error handling message: {e:?}"));
                 }
             }
             Err(send_error) => {
@@ -164,12 +156,9 @@ fn init(our: Address) {
                         );
 
                         // Get the error first
-                        let error = if send_error.kind.is_timeout() {
-                            DownloadError::Timeout
-                        } else if send_error.kind.is_offline() {
-                            DownloadError::Offline
-                        } else {
-                            DownloadError::HandlingError(send_error.to_string())
+                        let error = match send_error.kind {
+                            SendErrorKind::Timeout => DownloadError::Timeout,
+                            SendErrorKind::Offline => DownloadError::Offline,
                         };
 
                         // Then remove and get metadata
@@ -197,7 +186,7 @@ fn handle_message(
 ) -> anyhow::Result<()> {
     if message.is_request() {
         match message.body().try_into()? {
-            DownloadRequests::LocalDownload(download_request) => {
+            DownloadRequest::LocalDownload(download_request) => {
                 // we want to download a package.
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("not local"));
@@ -243,7 +232,7 @@ fn handle_message(
                 )?;
 
                 Request::to((&download_from, "downloads", "app-store", "sys"))
-                    .body(DownloadRequests::RemoteDownload(RemoteDownloadRequest {
+                    .body(DownloadRequest::RemoteDownload(RemoteDownloadRequest {
                         package_id,
                         desired_version_hash,
                         worker_address: our_worker.to_string(),
@@ -252,7 +241,7 @@ fn handle_message(
                     .context(&download_request)
                     .send()?;
             }
-            DownloadRequests::RemoteDownload(download_request) => {
+            DownloadRequest::RemoteDownload(download_request) => {
                 let RemoteDownloadRequest {
                     package_id,
                     desired_version_hash,
@@ -263,13 +252,13 @@ fn handle_message(
 
                 // check if we are mirroring, if not send back an error.
                 if !state.mirroring.contains(&process_lib_package_id) {
-                    let resp = DownloadResponses::Err(DownloadError::NotMirroring);
+                    let resp = DownloadResponse::Err(DownloadError::NotMirroring);
                     Response::new().body(&resp).send()?;
                     return Ok(()); // return here, todo unify remote and local responses?
                 }
 
                 if !download_zip_exists(&process_lib_package_id, &desired_version_hash) {
-                    let resp = DownloadResponses::Err(DownloadError::FileNotFound);
+                    let resp = DownloadResponse::Err(DownloadError::FileNotFound);
                     Response::new().body(&resp).send()?;
                     return Ok(()); // return here, todo unify remote and local responses?
                 }
@@ -277,17 +266,17 @@ fn handle_message(
                 let target_worker = Address::from_str(&worker_address)?;
                 let _ =
                     spawn_send_transfer(our, &package_id, &desired_version_hash, &target_worker)?;
-                let resp = DownloadResponses::Success;
+                let resp = DownloadResponse::Success;
                 Response::new().body(&resp).send()?;
             }
-            DownloadRequests::Progress(ref progress) => {
+            DownloadRequest::Progress(ref progress) => {
                 // forward progress to main:app-store:sys,
                 // pushed to UI via websockets
                 let _ = Request::to(("our", "main", "app-store", "sys"))
                     .body(progress)
                     .send();
             }
-            DownloadRequests::DownloadComplete(req) => {
+            DownloadRequest::DownloadComplete(req) => {
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("got non local download complete"));
                 }
@@ -317,7 +306,7 @@ fn handle_message(
                     }
                 }
             }
-            DownloadRequests::GetFiles(maybe_id) => {
+            DownloadRequest::GetFiles(maybe_id) => {
                 // if not local, throw to the boonies.
                 // note, can also implement a discovery protocol here in the future
                 if !message.is_local(our) {
@@ -337,11 +326,11 @@ fn handle_message(
                     }
                 };
 
-                let resp = DownloadResponses::GetFiles(files);
+                let resp = DownloadResponse::GetFiles(files);
 
                 Response::new().body(&resp).send()?;
             }
-            DownloadRequests::RemoveFile(remove_req) => {
+            DownloadRequest::RemoveFile(remove_req) => {
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("not local"));
                 }
@@ -359,10 +348,10 @@ fn handle_message(
                 let manifest_path = format!("{}/{}.json", package_dir, version_hash);
                 let _ = vfs::remove_file(&manifest_path, None);
                 Response::new()
-                    .body(Resp::Download(DownloadResponses::Success))
+                    .body(Resp::Download(DownloadResponse::Success))
                     .send()?;
             }
-            DownloadRequests::AddDownload(add_req) => {
+            DownloadRequest::AddDownload(add_req) => {
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("not local"));
                 }
@@ -394,26 +383,26 @@ fn handle_message(
                 }
 
                 Response::new()
-                    .body(Resp::Download(DownloadResponses::Success))
+                    .body(Resp::Download(DownloadResponse::Success))
                     .send()?;
             }
-            DownloadRequests::StartMirroring(package_id) => {
+            DownloadRequest::StartMirroring(package_id) => {
                 let package_id = package_id.to_process_lib();
                 state.mirroring.insert(package_id);
                 set_state(&serde_json::to_vec(&state)?);
                 Response::new()
-                    .body(Resp::Download(DownloadResponses::Success))
+                    .body(Resp::Download(DownloadResponse::Success))
                     .send()?;
             }
-            DownloadRequests::StopMirroring(package_id) => {
+            DownloadRequest::StopMirroring(package_id) => {
                 let package_id = package_id.to_process_lib();
                 state.mirroring.remove(&package_id);
                 set_state(&serde_json::to_vec(&state)?);
                 Response::new()
-                    .body(Resp::Download(DownloadResponses::Success))
+                    .body(Resp::Download(DownloadResponse::Success))
                     .send()?;
             }
-            DownloadRequests::AutoUpdate(auto_update_request) => {
+            DownloadRequest::AutoUpdate(auto_update_request) => {
                 if !message.is_local(&our)
                     && message.source().process != ProcessId::new(Some("chain"), "app-store", "sys")
                 {
@@ -481,7 +470,7 @@ fn handle_message(
 
                 // kick off local download to ourselves
                 Request::to(("our", "downloads", "app-store", "sys"))
-                    .body(DownloadRequests::LocalDownload(download_request))
+                    .body(DownloadRequest::LocalDownload(download_request))
                     .send()?;
             }
             _ => {}
@@ -496,7 +485,7 @@ fn handle_message(
                 if let Some(context) = message.context() {
                     let download_request = serde_json::from_slice::<LocalDownloadRequest>(context)?;
                     match download_response {
-                        DownloadResponses::Err(e) => {
+                        DownloadResponse::Err(e) => {
                             print_to_terminal(1, &format!("downloads: got error response: {e:?}"));
                             let key = (
                                 download_request.package_id.clone().to_process_lib(),
@@ -516,7 +505,7 @@ fn handle_message(
                                     .send()?;
                             }
                         }
-                        DownloadResponses::Success => {
+                        DownloadResponse::Success => {
                             // todo: maybe we do something here.
                             print_to_terminal(
                                 1,
@@ -551,30 +540,18 @@ fn handle_message(
                 // Handle any non-200 response or client error
                 let Ok(client::HttpClientResponse::Http(resp)) = resp else {
                     if let Some(meta) = metadata {
-                        let error = if let Err(e) = resp {
-                            format!("HTTP client error: {e:?}")
-                        } else {
-                            "unexpected response type".to_string()
-                        };
-                        try_next_mirror(
-                            meta,
-                            key,
-                            auto_updates,
-                            DownloadError::HandlingError(error),
-                        );
+                        try_next_mirror(meta, key, auto_updates, DownloadError::HttpClientError);
                     }
                     return Ok(());
                 };
 
                 if resp.status != 200 {
-                    let error =
-                        DownloadError::HandlingError(format!("HTTP status {}", resp.status));
                     handle_download_error(
                         is_auto_update,
                         metadata,
                         key,
                         auto_updates,
-                        error,
+                        DownloadError::HttpClientError,
                         &download_request,
                     )?;
                     return Ok(());
@@ -607,9 +584,7 @@ fn handle_message(
                                     meta,
                                     key,
                                     auto_updates,
-                                    DownloadError::HandlingError(
-                                        "could not get manifest hash".to_string(),
-                                    ),
+                                    DownloadError::InvalidManifest,
                                 );
                             }
                         }
@@ -651,7 +626,7 @@ fn try_next_mirror(
             auto_updates.insert(key, metadata);
             Request::to(("our", "downloads", "app-store", "sys"))
                 .body(
-                    serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
+                    serde_json::to_vec(&DownloadRequest::LocalDownload(LocalDownloadRequest {
                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
                             package_id,
                         ),

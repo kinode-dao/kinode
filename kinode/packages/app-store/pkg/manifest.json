@@ -73,7 +73,6 @@
                 "process": "homepage:homepage:sys",
                 "params": "RemoveOther"
             },
-            "net:distro:sys",
             "downloads:app-store:sys",
             "chain:app-store:sys",
             "vfs:distro:sys",
@@ -98,7 +97,6 @@
         ],
         "grant_capabilities": [
             "eth:distro:sys",
-            "net:distro:sys",
             "http-client:distro:sys",
             "http-server:distro:sys",
             "kns-indexer:kns-indexer:sys",

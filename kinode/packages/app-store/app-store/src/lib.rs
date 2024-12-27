@@ -30,12 +30,11 @@
 //! It delegates these responsibilities to the downloads and chain processes respectively.
 //!
 use crate::kinode::process::downloads::{
-    AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
+    AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponse, ProgressUpdate,
 };
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
-    LocalResponse, NewPackageRequest, NewPackageResponse, Response as AppStoreResponse,
-    UninstallResponse,
+    LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
@@ -73,7 +72,7 @@ pub enum Req {
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     LocalResponse(LocalResponse),
-    Download(DownloadResponses),
+    Download(DownloadResponse),
 }
 
 call_init!(init);
@@ -94,12 +93,7 @@ fn init(our: Address) {
                 if let Err(e) =
                     handle_message(&our, &mut state, &mut updates, &mut http_server, &message)
                 {
-                    let error_message = format!("error handling message: {e:?}");
-                    print_to_terminal(1, &error_message);
-                    Response::new()
-                        .body(AppStoreResponse::HandlingError(error_message))
-                        .send()
-                        .unwrap();
+                    print_to_terminal(1, &format!("error handling message: {e:?}"));
                 }
             }
         }

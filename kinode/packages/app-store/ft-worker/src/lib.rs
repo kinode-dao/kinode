@@ -34,13 +34,13 @@
 //! ## Integration with App Store:
 //!
 //! This worker process is spawned by the main downloads process of the App Store system.
-//! It uses the `DownloadRequests` and related types from the app store's API to communicate
+//! It uses the `DownloadRequest` and related types from the app store's API to communicate
 //! with other components of the system.
 //!
 //! Note: This implementation uses a fixed chunk size of 256KB for file transfers.
 //!
 use crate::kinode::process::downloads::{
-    ChunkRequest, DownloadCompleteRequest, DownloadError, DownloadRequests, HashMismatch,
+    ChunkRequest, DownloadCompleteRequest, DownloadError, DownloadRequest, HashMismatch,
     LocalDownloadRequest, ProgressUpdate, RemoteDownloadRequest, SizeUpdate,
 };
 use kinode_process_lib::*;
@@ -88,7 +88,7 @@ fn init(our: Address) {
         .try_into()
         .expect("ft_worker: got unparseable init message")
     {
-        DownloadRequests::LocalDownload(local_request) => {
+        DownloadRequest::LocalDownload(local_request) => {
             let LocalDownloadRequest {
                 package_id,
                 desired_version_hash,
@@ -102,30 +102,26 @@ fn init(our: Address) {
                 Ok(_) => print_to_terminal(
                     1,
                     &format!(
-                        "ft_worker: receive downloaded package in {}ms",
+                        "ft_worker: received downloaded package in {}ms",
                         start.elapsed().as_millis()
                     ),
                 ),
                 Err(e) => {
                     print_to_terminal(1, &format!("ft_worker: receive error: {}", e));
-                    // bubble up to parent.
-                    // TODO: doublecheck this.
-                    // if this fires on a basic timeout, that's bad.
+                    // fallback bubble up to parent.
                     Request::new()
-                        .body(DownloadRequests::DownloadComplete(
-                            DownloadCompleteRequest {
-                                package_id: package_id.clone().into(),
-                                version_hash: desired_version_hash.to_string(),
-                                err: Some(DownloadError::HandlingError(e.to_string())),
-                            },
-                        ))
+                        .body(DownloadRequest::DownloadComplete(DownloadCompleteRequest {
+                            package_id: package_id.clone().into(),
+                            version_hash: desired_version_hash.to_string(),
+                            err: Some(DownloadError::WorkerSpawnFailed),
+                        }))
                         .target(parent_process)
                         .send()
                         .unwrap();
                 }
             }
         }
-        DownloadRequests::RemoteDownload(remote_request) => {
+        DownloadRequest::RemoteDownload(remote_request) => {
             let RemoteDownloadRequest {
                 package_id,
                 desired_version_hash,
@@ -165,7 +161,7 @@ fn handle_sender(worker: &str, package_id: &PackageId, version_hash: &str) -> an
     let num_chunks = (size as f64 / CHUNK_SIZE as f64).ceil() as u64;
 
     Request::new()
-        .body(DownloadRequests::Size(SizeUpdate {
+        .body(DownloadRequest::Size(SizeUpdate {
             package_id: package_id.clone().into(),
             size,
         }))
@@ -206,13 +202,11 @@ fn handle_receiver(
         if *message.source() == timer_address {
             // send error message to downloads process
             Request::new()
-                .body(DownloadRequests::DownloadComplete(
-                    DownloadCompleteRequest {
-                        package_id: package_id.clone().into(),
-                        version_hash: version_hash.to_string(),
-                        err: Some(DownloadError::Timeout),
-                    },
-                ))
+                .body(DownloadRequest::DownloadComplete(DownloadCompleteRequest {
+                    package_id: package_id.clone().into(),
+                    version_hash: version_hash.to_string(),
+                    err: Some(DownloadError::Timeout),
+                }))
                 .target(parent_process.clone())
                 .send()?;
             return Ok(());
@@ -222,7 +216,7 @@ fn handle_receiver(
         }
 
         match message.body().try_into()? {
-            DownloadRequests::Chunk(chunk) => {
+            DownloadRequest::Chunk(chunk) => {
                 let bytes = if let Some(blob) = get_blob() {
                     blob.bytes
                 } else {
@@ -268,7 +262,7 @@ fn handle_receiver(
                                 })),
                             };
                             Request::new()
-                                .body(DownloadRequests::DownloadComplete(req))
+                                .body(DownloadRequest::DownloadComplete(req))
                                 .target(parent_process.clone())
                                 .send()?;
                         }
@@ -280,20 +274,18 @@ fn handle_receiver(
                         extract_and_write_manifest(&contents, &manifest_filename)?;
 
                         Request::new()
-                            .body(DownloadRequests::DownloadComplete(
-                                DownloadCompleteRequest {
-                                    package_id: package_id.clone().into(),
-                                    version_hash: version_hash.to_string(),
-                                    err: None,
-                                },
-                            ))
+                            .body(DownloadRequest::DownloadComplete(DownloadCompleteRequest {
+                                package_id: package_id.clone().into(),
+                                version_hash: version_hash.to_string(),
+                                err: None,
+                            }))
                             .target(parent_process.clone())
                             .send()?;
                         return Ok(());
                     }
                 }
             }
-            DownloadRequests::Size(update) => {
+            DownloadRequest::Size(update) => {
                 size = Some(update.size);
             }
             _ => println!("ft_worker: got unexpected message"),
@@ -318,7 +310,7 @@ fn send_chunk(
     file.read_at(&mut buffer)?;
 
     Request::new()
-        .body(DownloadRequests::Chunk(ChunkRequest {
+        .body(DownloadRequest::Chunk(ChunkRequest {
             package_id: package_id.clone().into(),
             version_hash: version_hash.to_string(),
             offset,
@@ -345,7 +337,7 @@ fn handle_chunk(
         // let progress = ((chunk.offset + chunk.length) as f64 / *total_size as f64 * 100.0) as u64;
 
         Request::new()
-            .body(DownloadRequests::Progress(ProgressUpdate {
+            .body(DownloadRequest::Progress(ProgressUpdate {
                 package_id: chunk.package_id.clone(),
                 downloaded: chunk.offset + chunk.length,
                 total: *total_size,

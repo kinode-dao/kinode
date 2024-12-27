@@ -12,7 +12,7 @@
 //! Example:
 //!     download:app-store:sys my-friend.os app:publisher.os f5d374ab50e66888a7c2332b22d0f909f2e3115040725cfab98dcae488916990
 //!
-use crate::kinode::process::downloads::{DownloadRequests, LocalDownloadRequest};
+use crate::kinode::process::downloads::{DownloadRequest, LocalDownloadRequest};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, PackageId, Request,
 };
@@ -51,7 +51,7 @@ fn init(our: Address) {
     let version_hash: String = arg3.to_string();
 
     let Ok(_) = Request::to((our.node(), ("downloads", "app-store", "sys")))
-        .body(DownloadRequests::LocalDownload(LocalDownloadRequest {
+        .body(DownloadRequest::LocalDownload(LocalDownloadRequest {
             package_id: crate::kinode::process::main::PackageId {
                 package_name: package_id.package_name.clone(),
                 publisher_node: package_id.publisher_node.clone(),

@@ -10,6 +10,7 @@ interface main {
     /// Represents various requests that can be made to the main App Store interface
     variant request {
         local(local-request),
+        /// remote requests possible in future--currently all handled by downloads process
     }
 
     /// Represents various responses from the main App Store interface
@@ -17,7 +18,6 @@ interface main {
         local(local-response),
         chain-error(chain-error),
         download-error(download-error),
-        handling-error(string),
     }
 
     /// Local requests that can be made to the App Store
@@ -69,7 +69,8 @@ interface main {
     /// Request to install a package
     record install-package-request {
         package-id: package-id,
-        metadata: option<onchain-metadata>, // if None, local sideloaded package.
+        /// if None, local sideloaded package.
+        metadata: option<onchain-metadata>,
         version-hash: string,
     }
 
@@ -113,7 +114,7 @@ interface chain {
     use standard.{package-id};
 
     /// Requests that can be made to the chain component
-    variant chain-requests {
+    variant chain-request {
         /// Get information about a specific app
         ///
         /// lazy-load-blob: none.
@@ -135,13 +136,13 @@ interface chain {
         /// lazy-load-blob: none.
         stop-auto-update(package-id),
         /// Reset app-store db
-        /// 
+        ///
         /// lazy-load-blob: none.
         reset,
     }
 
     /// Responses from the chain component
-    variant chain-responses {
+    variant chain-response {
         /// lazy-load-blob: none.
         get-app(option<onchain-app>),
         /// lazy-load-blob: none.
@@ -207,7 +208,13 @@ interface downloads {
     use chain.{onchain-metadata};
 
     /// Requests that can be made to the downloads component
-    variant download-requests {
+    variant download-request {
+        /// Check if a a node is mirroring a given package.
+        /// returns a success response if the node is mirroring the package,
+        /// otherwise an error response of type err(not-mirroring).
+        ///
+        /// lazy-load-blob: none.
+        mirror-check(package-id),
         /// Request a remote download
         ///
         /// lazy-load-blob: none.
@@ -263,13 +270,15 @@ interface downloads {
     }
 
     /// Responses from the downloads component
-    variant download-responses {
+    variant download-response {
+        /// catch-all success response
         /// lazy-load-blob: none.
         success,
         /// lazy-load-blob: none.
-        err(download-error),
-        /// lazy-load-blob: none.
         get-files(list<entry>),
+        /// catch-all error response
+        /// lazy-load-blob: none.
+        err(download-error),
     }
 
     /// Request for a local download
@@ -302,7 +311,6 @@ interface downloads {
         http-client-error,
         blob-not-found,
         vfs-error,
-        handling-error(string),
         timeout,
         invalid-manifest,
         offline,
@@ -332,7 +340,8 @@ interface downloads {
     record auto-download-error {
         package-id: package-id,
         version-hash: string,
-        tries: list<tuple<string, download-error>>, // (mirror, error)
+        /// list is of (mirror, error)
+        tries: list<tuple<string, download-error>>,
     }
 
     /// Represents a hash mismatch error

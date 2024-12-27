@@ -4,9 +4,9 @@
 //!
 use crate::{
     kinode::process::{
-        chain::{ChainRequests, ChainResponses},
+        chain::{ChainRequest, ChainResponse},
         downloads::{
-            DownloadRequests, DownloadResponses, Entry, LocalDownloadRequest, RemoveFileRequest,
+            DownloadRequest, DownloadResponse, Entry, LocalDownloadRequest, RemoveFileRequest,
         },
     },
     state::{MirrorCheck, PackageState, State, Updates},
@@ -36,14 +36,14 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/installed/:id", // detail about an installed app
         "/manifest",      // manifest of a downloaded app, id & version hash in query params
         // actions
-        "/apps/:id/download",    // download a listed app
-        "/apps/:id/install",     // install a downloaded app
-        "/downloads/:id/mirror", // start mirroring a version of a downloaded app
-        "/downloads/:id/remove", // remove a downloaded app
-        "/reset",                // reset chain state, re-index
-        "/apps/:id/auto-update", // set auto-updating a version of a downloaded app
-        "/updates/:id/clear",    // clear update info for an app.
-        "/mirrorcheck/:node",    // check if a node/mirror is online/offline
+        "/apps/:id/download",     // download a listed app
+        "/apps/:id/install",      // install a downloaded app
+        "/downloads/:id/mirror",  // start mirroring a version of a downloaded app
+        "/downloads/:id/remove",  // remove a downloaded app
+        "/reset",                 // reset chain state, re-index
+        "/apps/:id/auto-update",  // set auto-updating a version of a downloaded app
+        "/updates/:id/clear",     // clear update info for an app.
+        "/mirrorcheck/:id/:node", // check if a node/mirror is online/offline
     ] {
         http_server
             .bind_http_path(path, config.clone())
@@ -198,7 +198,7 @@ fn make_widget() -> String {
 /// - get manifest of a specific downloaded app: GET /manifest?id={id}&version_hash={version_hash}
 /// - remove a downloaded app: POST /downloads/:id/remove
 
-/// - get online/offline mirrors for a listed app: GET /mirrorcheck/:node
+/// - get online/offline mirrors for a listed app: GET /mirrorcheck/:id/:node
 /// - download a listed app: POST /apps/:id/download
 /// - install a downloaded app: POST /apps/:id/install
 /// - uninstall/delete a downloaded app: DELETE /apps/:id
@@ -272,11 +272,11 @@ fn serve_paths(
         // GET all apps
         "/apps" | "/apps-public" => {
             let resp = Request::to(("our", "chain", "app-store", "sys"))
-                .body(serde_json::to_vec(&ChainRequests::GetApps)?)
+                .body(serde_json::to_vec(&ChainRequest::GetApps)?)
                 .send_and_await_response(5)??;
-            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+            let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
             match msg {
-                ChainResponses::GetApps(apps) => {
+                ChainResponse::GetApps(apps) => {
                     Ok((StatusCode::OK, None, serde_json::to_vec(&apps)?))
                 }
                 _ => Err(anyhow::anyhow!("Invalid response from chain: {:?}", msg)),
@@ -298,11 +298,11 @@ fn serve_paths(
                     let package_id =
                         crate::kinode::process::main::PackageId::from_process_lib(package_id);
                     let resp = Request::to(("our", "chain", "app-store", "sys"))
-                        .body(serde_json::to_vec(&ChainRequests::GetApp(package_id))?)
+                        .body(serde_json::to_vec(&ChainRequest::GetApp(package_id))?)
                         .send_and_await_response(5)??;
-                    let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+                    let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
                     match msg {
-                        ChainResponses::GetApp(app) => {
+                        ChainResponse::GetApp(app) => {
                             Ok((StatusCode::OK, None, serde_json::to_vec(&app)?))
                         }
                         _ => Err(anyhow::anyhow!("Invalid response from chain: {:?}", msg)),
@@ -328,15 +328,15 @@ fn serve_paths(
         "/downloads" => {
             // get all local downloads!
             let resp = Request::to(("our", "downloads", "app-store", "sys"))
-                .body(serde_json::to_vec(&DownloadRequests::GetFiles(None))?)
+                .body(serde_json::to_vec(&DownloadRequest::GetFiles(None))?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
             match msg {
-                DownloadResponses::GetFiles(files) => {
+                DownloadResponse::GetFiles(files) => {
                     Ok((StatusCode::OK, None, serde_json::to_vec(&files)?))
                 }
-                DownloadResponses::Err(e) => Err(anyhow::anyhow!("Error from downloads: {:?}", e)),
+                DownloadResponse::Err(e) => Err(anyhow::anyhow!("Error from downloads: {:?}", e)),
                 _ => Err(anyhow::anyhow!(
                     "Invalid response from downloads: {:?}",
                     msg
@@ -354,17 +354,17 @@ fn serve_paths(
             };
             let package_id = crate::kinode::process::main::PackageId::from_process_lib(package_id);
             let resp = Request::to(("our", "downloads", "app-store", "sys"))
-                .body(serde_json::to_vec(&DownloadRequests::GetFiles(Some(
+                .body(serde_json::to_vec(&DownloadRequest::GetFiles(Some(
                     package_id,
                 )))?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
             match msg {
-                DownloadResponses::GetFiles(files) => {
+                DownloadResponse::GetFiles(files) => {
                     Ok((StatusCode::OK, None, serde_json::to_vec(&files)?))
                 }
-                DownloadResponses::Err(e) => Err(anyhow::anyhow!("Error from downloads: {:?}", e)),
+                DownloadResponse::Err(e) => Err(anyhow::anyhow!("Error from downloads: {:?}", e)),
                 _ => Err(anyhow::anyhow!(
                     "Invalid response from downloads: {:?}",
                     msg
@@ -393,14 +393,14 @@ fn serve_paths(
 
             // get the file corresponding to the version hash, extract manifest and return.
             let resp = Request::to(("our", "downloads", "app-store", "sys"))
-                .body(serde_json::to_vec(&DownloadRequests::GetFiles(Some(
+                .body(serde_json::to_vec(&DownloadRequest::GetFiles(Some(
                     package_id.clone(),
                 )))?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
             match msg {
-                DownloadResponses::GetFiles(files) => {
+                DownloadResponse::GetFiles(files) => {
                     let file_name = format!("{version_hash}.zip");
                     let file_entry = files.into_iter().find(|entry| match entry {
                         Entry::File(file) => file.name == file_name,
@@ -426,7 +426,7 @@ fn serve_paths(
                         }
                     }
                 }
-                DownloadResponses::Err(e) => Ok((
+                DownloadResponse::Err(e) => Ok((
                     StatusCode::NOT_FOUND,
                     None,
                     format!("Error from downloads: {:?}", e).into_bytes(),
@@ -472,11 +472,11 @@ fn serve_paths(
         }
         "/ourapps" => {
             let resp = Request::to(("our", "chain", "app-store", "sys"))
-                .body(serde_json::to_vec(&ChainRequests::GetOurApps)?)
+                .body(serde_json::to_vec(&ChainRequest::GetOurApps)?)
                 .send_and_await_response(5)??;
-            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+            let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
             match msg {
-                ChainResponses::GetOurApps(apps) => {
+                ChainResponse::GetOurApps(apps) => {
                     Ok((StatusCode::OK, None, serde_json::to_vec(&apps)?))
                 }
                 _ => Err(anyhow::anyhow!("Invalid response from chain: {:?}", msg)),
@@ -508,7 +508,7 @@ fn serve_paths(
                 .map(|s| s.to_string())
                 .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
 
-            let download_request = DownloadRequests::LocalDownload(LocalDownloadRequest {
+            let download_request = DownloadRequest::LocalDownload(LocalDownloadRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 download_from: download_from.clone(),
                 desired_version_hash: version_hash,
@@ -520,7 +520,7 @@ fn serve_paths(
             Ok((
                 StatusCode::OK,
                 None,
-                serde_json::to_vec(&DownloadResponses::Success)?,
+                serde_json::to_vec(&DownloadResponse::Success)?,
             ))
         }
         // POST /apps/:id/install
@@ -585,14 +585,14 @@ fn serve_paths(
                 Method::PUT => {
                     let resp = Request::new()
                         .target(downloads)
-                        .body(serde_json::to_vec(&DownloadRequests::StartMirroring(
+                        .body(serde_json::to_vec(&DownloadRequest::StartMirroring(
                             crate::kinode::process::main::PackageId::from_process_lib(package_id),
                         ))?)
                         .send_and_await_response(5)??;
-                    let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+                    let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
                     match msg {
-                        DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
-                        DownloadResponses::Err(e) => {
+                        DownloadResponse::Success => Ok((StatusCode::OK, None, vec![])),
+                        DownloadResponse::Err(e) => {
                             Err(anyhow::anyhow!("Error starting mirroring: {:?}", e))
                         }
                         _ => Err(anyhow::anyhow!(
@@ -605,14 +605,14 @@ fn serve_paths(
                 Method::DELETE => {
                     let resp = Request::new()
                         .target(downloads)
-                        .body(serde_json::to_vec(&DownloadRequests::StopMirroring(
+                        .body(serde_json::to_vec(&DownloadRequest::StopMirroring(
                             crate::kinode::process::main::PackageId::from_process_lib(package_id),
                         ))?)
                         .send_and_await_response(5)??;
-                    let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+                    let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
                     match msg {
-                        DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
-                        DownloadResponses::Err(e) => {
+                        DownloadResponse::Success => Ok((StatusCode::OK, None, vec![])),
+                        DownloadResponse::Err(e) => {
                             Err(anyhow::anyhow!("Error stopping mirroring: {:?}", e))
                         }
                         _ => Err(anyhow::anyhow!(
@@ -646,7 +646,7 @@ fn serve_paths(
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
-            let download_request = DownloadRequests::RemoveFile(RemoveFileRequest {
+            let download_request = DownloadRequest::RemoveFile(RemoveFileRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 version_hash: version_hash,
             });
@@ -654,10 +654,10 @@ fn serve_paths(
             let resp = Request::to(("our", "downloads", "app-store", "sys"))
                 .body(serde_json::to_vec(&download_request)?)
                 .send_and_await_response(5)??;
-            let msg = serde_json::from_slice::<DownloadResponses>(resp.body())?;
+            let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
             match msg {
-                DownloadResponses::Success => Ok((StatusCode::OK, None, vec![])),
-                DownloadResponses::Err(e) => Err(anyhow::anyhow!("Error removing file: {:?}", e)),
+                DownloadResponse::Success => Ok((StatusCode::OK, None, vec![])),
+                DownloadResponse::Err(e) => Err(anyhow::anyhow!("Error removing file: {:?}", e)),
                 _ => Err(anyhow::anyhow!(
                     "Invalid response from downloads: {:?}",
                     msg
@@ -670,10 +670,10 @@ fn serve_paths(
             let package_id = get_package_id(url_params)?;
 
             let chain_request = match method {
-                Method::PUT => ChainRequests::StartAutoUpdate(
+                Method::PUT => ChainRequest::StartAutoUpdate(
                     crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 ),
-                Method::DELETE => ChainRequests::StopAutoUpdate(
+                Method::DELETE => ChainRequest::StopAutoUpdate(
                     crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 ),
                 _ => {
@@ -689,11 +689,11 @@ fn serve_paths(
                 .body(serde_json::to_vec(&chain_request)?)
                 .send_and_await_response(5)??;
 
-            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
+            let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
             match msg {
-                ChainResponses::AutoUpdateStarted
-                | ChainResponses::AutoUpdateStopped
-                | ChainResponses::Err(_) => Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?)),
+                ChainResponse::AutoUpdateStarted
+                | ChainResponse::AutoUpdateStopped
+                | ChainResponse::Err(_) => Ok((StatusCode::OK, None, serde_json::to_vec(&msg)?)),
                 _ => Ok((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     None,
@@ -739,17 +739,17 @@ fn serve_paths(
 
             let resp = Request::new()
                 .target(chain)
-                .body(&ChainRequests::Reset)
+                .body(&ChainRequest::Reset)
                 .send_and_await_response(5)??;
-            let msg = serde_json::from_slice::<ChainResponses>(resp.body())?;
-            if let ChainResponses::ResetOk = msg {
+            let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
+            if let ChainResponse::ResetOk = msg {
                 Ok((StatusCode::OK, None, vec![]))
             } else {
                 Ok((StatusCode::INTERNAL_SERVER_ERROR, None, vec![]))
             }
         }
         // GET online/offline mirrors for a listed app
-        "/mirrorcheck/:node" => {
+        "/mirrorcheck/:id/:node" => {
             if method != Method::GET {
                 return Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
@@ -764,10 +764,29 @@ fn serve_paths(
                     format!("Missing node").into_bytes(),
                 ));
             };
-            if let Err(SendError { kind, .. }) = Request::to((node, "net", "distro", "sys"))
-                .body(b"checking your mirror status...")
-                .send_and_await_response(3)
-                .unwrap()
+            let Some(package_id) = url_params.get("id") else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing package_id").into_bytes(),
+                ));
+            };
+            let Ok(package_id_parsed) = PackageId::from_str(package_id) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Invalid package_id: {package_id}").into_bytes(),
+                ));
+            };
+            if let Err(SendError { kind, .. }) =
+                Request::to((node, "downloads", "app-store", "sys"))
+                    .body(DownloadRequest::MirrorCheck(
+                        crate::kinode::process::main::PackageId::from_process_lib(
+                            package_id_parsed,
+                        ),
+                    ))
+                    .send_and_await_response(3)
+                    .unwrap()
             {
                 match kind {
                     SendErrorKind::Timeout => {

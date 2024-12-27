@@ -1,8 +1,8 @@
 use {
     crate::{
         kinode::process::{
-            chain::{ChainRequests, ChainResponses, OnchainMetadata},
-            downloads::{AddDownloadRequest, DownloadRequests, DownloadResponses},
+            chain::{ChainRequest, ChainResponse, OnchainMetadata},
+            downloads::{AddDownloadRequest, DownloadRequest, DownloadResponse},
         },
         state::{PackageState, State},
         VFS_TIMEOUT,
@@ -70,12 +70,12 @@ pub fn fetch_package_metadata(
     package_id: &crate::kinode::process::main::PackageId,
 ) -> anyhow::Result<OnchainMetadata> {
     let resp = Request::to(("our", "chain", "app-store", "sys"))
-        .body(serde_json::to_vec(&ChainRequests::GetApp(package_id.clone())).unwrap())
+        .body(serde_json::to_vec(&ChainRequest::GetApp(package_id.clone())).unwrap())
         .send_and_await_response(5)??;
 
-    let resp = serde_json::from_slice::<ChainResponses>(&resp.body())?;
+    let resp = serde_json::from_slice::<ChainResponse>(&resp.body())?;
     let app = match resp {
-        ChainResponses::GetApp(Some(app)) => app,
+        ChainResponse::GetApp(Some(app)) => app,
         _ => {
             return Err(anyhow::anyhow!(
                 "No app data found in response from chain:app-store:sys"
@@ -102,7 +102,7 @@ pub fn new_package(
     let version_hash = sha_256_hash(&bytes);
 
     let resp = Request::to(("our", "downloads", "app-store", "sys"))
-        .body(serde_json::to_vec(&DownloadRequests::AddDownload(
+        .body(serde_json::to_vec(&DownloadRequest::AddDownload(
             AddDownloadRequest {
                 package_id: package_id.clone(),
                 version_hash: version_hash.clone(),
@@ -112,9 +112,9 @@ pub fn new_package(
         .blob_bytes(bytes)
         .send_and_await_response(5)??;
 
-    let download_resp = serde_json::from_slice::<DownloadResponses>(&resp.body())?;
+    let download_resp = serde_json::from_slice::<DownloadResponse>(&resp.body())?;
 
-    if let DownloadResponses::Err(e) = download_resp {
+    if let DownloadResponse::Err(e) = download_resp {
         return Err(anyhow::anyhow!("failed to add download: {:?}", e));
     }
     Ok(())

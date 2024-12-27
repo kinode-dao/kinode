@@ -170,7 +170,7 @@ fn init(our: Address) {
 
 fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
     #[cfg(feature = "simulation-mode")]
-    add_temp_hardcoded_tlzs(&mut state);
+    add_temp_hardcoded_tlzs(state);
 
     // loop through checkpointed values and send to net
     if let Err(e) = state.send_nodes() {
