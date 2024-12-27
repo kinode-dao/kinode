@@ -47,7 +47,7 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSele
 
     const checkMirrorStatus = useCallback(async (mirror: string) => {
         try {
-            const status = await checkMirror(mirror);
+            const status = await checkMirror(packageId, mirror);
             setMirrorStatuses(prev => ({ ...prev, [mirror]: status?.is_online ?? false }));
             return status?.is_online ?? false;
         } catch {

@@ -102,21 +102,19 @@ fn init(our: Address) {
                 Ok(_) => print_to_terminal(
                     1,
                     &format!(
-                        "ft_worker: receive downloaded package in {}ms",
+                        "ft_worker: received downloaded package in {}ms",
                         start.elapsed().as_millis()
                     ),
                 ),
                 Err(e) => {
                     print_to_terminal(1, &format!("ft_worker: receive error: {}", e));
-                    // bubble up to parent.
-                    // TODO: doublecheck this.
-                    // if this fires on a basic timeout, that's bad.
+                    // fallback bubble up to parent.
                     Request::new()
                         .body(DownloadRequests::DownloadComplete(
                             DownloadCompleteRequest {
                                 package_id: package_id.clone().into(),
                                 version_hash: desired_version_hash.to_string(),
-                                err: Some(DownloadError::HandlingError(e.to_string())),
+                                err: Some(DownloadError::WorkerSpawnFailed),
                             },
                         ))
                         .target(parent_process)

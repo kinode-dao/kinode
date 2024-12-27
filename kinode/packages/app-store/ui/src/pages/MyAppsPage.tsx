@@ -88,8 +88,6 @@ export default function MyAppsPage() {
             return error;
         } else if ('HashMismatch' in error) {
             return `Hash mismatch (expected ${error.HashMismatch.desired.slice(0, 8)}, got ${error.HashMismatch.actual.slice(0, 8)})`;
-        } else if ('HandlingError' in error) {
-            return error.HandlingError;
         } else if ('Timeout' in error) {
             return 'Connection timed out';
         }

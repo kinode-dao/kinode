@@ -208,9 +208,9 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
     return null;
   },
 
-  checkMirror: async (node: string) => {
+  checkMirror: async (id: string, node: string) => {
     try {
-      const res = await fetch(`${BASE_URL}/mirrorcheck/${node}`);
+      const res = await fetch(`${BASE_URL}/mirrorcheck/${id}/${node}`);
       if (res.status === HTTP_STATUS.OK) {
         return await res.json() as MirrorCheckFile;
       }
@@ -416,7 +416,7 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
       const response = await fetch(`${BASE_URL}/reset`, {
         method: 'POST',
       });
-      
+
       if (!response.ok) {
         throw new Error('Reset failed');
       }

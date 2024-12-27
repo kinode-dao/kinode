@@ -8,7 +8,6 @@ use crate::{
         downloads::{
             DownloadRequests, DownloadResponses, Entry, LocalDownloadRequest, RemoveFileRequest,
         },
-        main::RemoteRequest,
     },
     state::{MirrorCheck, PackageState, State, Updates},
 };
@@ -37,14 +36,14 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/installed/:id", // detail about an installed app
         "/manifest",      // manifest of a downloaded app, id & version hash in query params
         // actions
-        "/apps/:id/download",    // download a listed app
-        "/apps/:id/install",     // install a downloaded app
-        "/downloads/:id/mirror", // start mirroring a version of a downloaded app
-        "/downloads/:id/remove", // remove a downloaded app
-        "/reset",                // reset chain state, re-index
-        "/apps/:id/auto-update", // set auto-updating a version of a downloaded app
-        "/updates/:id/clear",    // clear update info for an app.
-        "/mirrorcheck/:node",    // check if a node/mirror is online/offline
+        "/apps/:id/download",     // download a listed app
+        "/apps/:id/install",      // install a downloaded app
+        "/downloads/:id/mirror",  // start mirroring a version of a downloaded app
+        "/downloads/:id/remove",  // remove a downloaded app
+        "/reset",                 // reset chain state, re-index
+        "/apps/:id/auto-update",  // set auto-updating a version of a downloaded app
+        "/updates/:id/clear",     // clear update info for an app.
+        "/mirrorcheck/:id/:node", // check if a node/mirror is online/offline
     ] {
         http_server
             .bind_http_path(path, config.clone())
@@ -199,7 +198,7 @@ fn make_widget() -> String {
 /// - get manifest of a specific downloaded app: GET /manifest?id={id}&version_hash={version_hash}
 /// - remove a downloaded app: POST /downloads/:id/remove
 
-/// - get online/offline mirrors for a listed app: GET /mirrorcheck/:node
+/// - get online/offline mirrors for a listed app: GET /mirrorcheck/:id/:node
 /// - download a listed app: POST /apps/:id/download
 /// - install a downloaded app: POST /apps/:id/install
 /// - uninstall/delete a downloaded app: DELETE /apps/:id
@@ -750,7 +749,7 @@ fn serve_paths(
             }
         }
         // GET online/offline mirrors for a listed app
-        "/mirrorcheck/:node" => {
+        "/mirrorcheck/:id/:node" => {
             if method != Method::GET {
                 return Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
@@ -765,10 +764,29 @@ fn serve_paths(
                     format!("Missing node").into_bytes(),
                 ));
             };
-            if let Err(SendError { kind, .. }) = Request::to((node, "main", "app-store", "sys"))
-                .body(RemoteRequest::Ping)
-                .send_and_await_response(3)
-                .unwrap()
+            let Some(package_id) = url_params.get("id") else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing package_id").into_bytes(),
+                ));
+            };
+            let Ok(package_id_parsed) = PackageId::from_str(package_id) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Invalid package_id: {package_id}").into_bytes(),
+                ));
+            };
+            if let Err(SendError { kind, .. }) =
+                Request::to((node, "downloads", "app-store", "sys"))
+                    .body(DownloadRequests::MirrorCheck(
+                        crate::kinode::process::main::PackageId::from_process_lib(
+                            package_id_parsed,
+                        ),
+                    ))
+                    .send_and_await_response(3)
+                    .unwrap()
             {
                 match kind {
                     SendErrorKind::Timeout => {

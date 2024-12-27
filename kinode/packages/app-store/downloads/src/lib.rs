@@ -46,12 +46,6 @@ use crate::kinode::process::downloads::{
     DownloadCompleteRequest, DownloadError, DownloadRequests, DownloadResponses, Entry, FileEntry,
     HashMismatch, LocalDownloadRequest, RemoteDownloadRequest, RemoveFileRequest,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    io::Read,
-    str::FromStr,
-};
-
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
 use kinode::process::downloads::AutoDownloadSuccess;
 use kinode_process_lib::{
@@ -59,10 +53,15 @@ use kinode_process_lib::{
     http::client,
     print_to_terminal, println, set_state,
     vfs::{self, Directory},
-    Address, Message, PackageId, ProcessId, Request, Response,
+    Address, Message, PackageId, ProcessId, Request, Response, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Read,
+    str::FromStr,
+};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -142,14 +141,7 @@ fn init(our: Address) {
                     &mut tmp,
                     &mut auto_updates,
                 ) {
-                    let error_message = format!("error handling message: {e:?}");
-                    print_to_terminal(1, &error_message);
-                    Response::new()
-                        .body(DownloadResponses::Err(DownloadError::HandlingError(
-                            error_message,
-                        )))
-                        .send()
-                        .unwrap();
+                    print_to_terminal(1, &format!("error handling message: {e:?}"));
                 }
             }
             Err(send_error) => {
@@ -164,12 +156,9 @@ fn init(our: Address) {
                         );
 
                         // Get the error first
-                        let error = if send_error.kind.is_timeout() {
-                            DownloadError::Timeout
-                        } else if send_error.kind.is_offline() {
-                            DownloadError::Offline
-                        } else {
-                            DownloadError::HandlingError(send_error.to_string())
+                        let error = match send_error.kind {
+                            SendErrorKind::Timeout => DownloadError::Timeout,
+                            SendErrorKind::Offline => DownloadError::Offline,
                         };
 
                         // Then remove and get metadata
@@ -551,30 +540,18 @@ fn handle_message(
                 // Handle any non-200 response or client error
                 let Ok(client::HttpClientResponse::Http(resp)) = resp else {
                     if let Some(meta) = metadata {
-                        let error = if let Err(e) = resp {
-                            format!("HTTP client error: {e:?}")
-                        } else {
-                            "unexpected response type".to_string()
-                        };
-                        try_next_mirror(
-                            meta,
-                            key,
-                            auto_updates,
-                            DownloadError::HandlingError(error),
-                        );
+                        try_next_mirror(meta, key, auto_updates, DownloadError::HttpClientError);
                     }
                     return Ok(());
                 };
 
                 if resp.status != 200 {
-                    let error =
-                        DownloadError::HandlingError(format!("HTTP status {}", resp.status));
                     handle_download_error(
                         is_auto_update,
                         metadata,
                         key,
                         auto_updates,
-                        error,
+                        DownloadError::HttpClientError,
                         &download_request,
                     )?;
                     return Ok(());
@@ -607,9 +584,7 @@ fn handle_message(
                                     meta,
                                     key,
                                     auto_updates,
-                                    DownloadError::HandlingError(
-                                        "could not get manifest hash".to_string(),
-                                    ),
+                                    DownloadError::InvalidManifest,
                                 );
                             }
                         }

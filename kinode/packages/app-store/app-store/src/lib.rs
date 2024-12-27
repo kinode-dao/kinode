@@ -34,8 +34,7 @@ use crate::kinode::process::downloads::{
 };
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
-    LocalResponse, NewPackageRequest, NewPackageResponse, RemoteRequest, RemoteResponse,
-    Response as AppStoreResponse, UninstallResponse,
+    LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
@@ -63,7 +62,6 @@ const VFS_TIMEOUT: u64 = 10;
 #[serde(untagged)] // untagged as a meta-type for all incoming requests
 pub enum Req {
     LocalRequest(LocalRequest),
-    RemoteRequest(RemoteRequest),
     Progress(ProgressUpdate),
     DownloadComplete(DownloadCompleteRequest),
     AutoDownloadComplete(AutoDownloadCompleteRequest),
@@ -95,12 +93,7 @@ fn init(our: Address) {
                 if let Err(e) =
                     handle_message(&our, &mut state, &mut updates, &mut http_server, &message)
                 {
-                    let error_message = format!("error handling message: {e:?}");
-                    print_to_terminal(1, &error_message);
-                    Response::new()
-                        .body(AppStoreResponse::HandlingError(error_message))
-                        .send()
-                        .unwrap();
+                    print_to_terminal(1, &format!("error handling message: {e:?}"));
                 }
             }
         }
@@ -132,11 +125,6 @@ fn handle_message(
                     response.send()?;
                 }
             }
-            Req::RemoteRequest(remote_request) => match remote_request {
-                RemoteRequest::Ping => {
-                    Response::new().body(RemoteResponse::Ping).send()?;
-                }
-            },
             Req::Http(server_request) => {
                 if !message.is_local(&our) || message.source().process != "http-server:distro:sys" {
                     return Err(anyhow::anyhow!("http-server from non-local node"));
