@@ -3,7 +3,7 @@
 //! for file transfers in the App Store system
 //!
 use crate::kinode::process::downloads::{
-    DownloadRequests, LocalDownloadRequest, PackageId, RemoteDownloadRequest,
+    DownloadRequest, LocalDownloadRequest, PackageId, RemoteDownloadRequest,
 };
 
 use kinode_process_lib::*;
@@ -33,7 +33,7 @@ pub fn spawn_send_transfer(
     };
 
     let req = Request::new().target((&our.node, worker_process_id)).body(
-        serde_json::to_vec(&DownloadRequests::RemoteDownload(RemoteDownloadRequest {
+        serde_json::to_vec(&DownloadRequest::RemoteDownload(RemoteDownloadRequest {
             package_id: package_id.clone(),
             desired_version_hash: version_hash.to_string(),
             worker_address: to_addr.to_string(),
@@ -71,7 +71,7 @@ pub fn spawn_receive_transfer(
     let req = Request::new()
         .target((&our.node, worker_process_id.clone()))
         .body(
-            serde_json::to_vec(&DownloadRequests::LocalDownload(LocalDownloadRequest {
+            serde_json::to_vec(&DownloadRequest::LocalDownload(LocalDownloadRequest {
                 package_id: package_id.clone(),
                 desired_version_hash: version_hash.to_string(),
                 download_from: from_node.to_string(),

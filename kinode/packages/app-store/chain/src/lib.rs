@@ -26,12 +26,12 @@
 //! metadata management and providing information about available apps.
 //!
 use crate::kinode::process::chain::{
-    ChainError, ChainRequests, OnchainApp, OnchainMetadata, OnchainProperties,
+    ChainError, ChainRequest, OnchainApp, OnchainMetadata, OnchainProperties,
 };
-use crate::kinode::process::downloads::{AutoUpdateRequest, DownloadRequests};
+use crate::kinode::process::downloads::{AutoUpdateRequest, DownloadRequest};
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
-use kinode::process::chain::ChainResponses;
+use kinode::process::chain::ChainResponse;
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, http, kernel_types as kt, kimap, print_to_terminal,
     println,
@@ -89,7 +89,7 @@ pub struct PackageListing {
 #[serde(untagged)] // untagged as a meta-type for all incoming requests
 pub enum Req {
     Eth(eth::EthSubResult),
-    Request(ChainRequests),
+    Request(ChainRequest),
 }
 
 pub struct DB {
@@ -433,29 +433,25 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
     Ok(())
 }
 
-fn handle_local_request(
-    our: &Address,
-    state: &mut State,
-    req: ChainRequests,
-) -> anyhow::Result<()> {
+fn handle_local_request(our: &Address, state: &mut State, req: ChainRequest) -> anyhow::Result<()> {
     match req {
-        ChainRequests::GetApp(package_id) => {
+        ChainRequest::GetApp(package_id) => {
             let pid = package_id.clone().to_process_lib();
             let listing = state.db.get_listing(&pid)?;
             let onchain_app = listing.map(|app| app.to_onchain_app(&pid));
-            let response = ChainResponses::GetApp(onchain_app);
+            let response = ChainResponse::GetApp(onchain_app);
             Response::new().body(&response).send()?;
         }
-        ChainRequests::GetApps => {
+        ChainRequest::GetApps => {
             let listings = state.db.get_all_listings()?;
             let apps: Vec<OnchainApp> = listings
                 .into_iter()
                 .map(|(pid, listing)| listing.to_onchain_app(&pid))
                 .collect();
-            let response = ChainResponses::GetApps(apps);
+            let response = ChainResponse::GetApps(apps);
             Response::new().body(&response).send()?;
         }
-        ChainRequests::GetOurApps => {
+        ChainRequest::GetOurApps => {
             let published_list = state.db.get_all_published()?;
             let mut apps = Vec::new();
             for pid in published_list {
@@ -463,36 +459,36 @@ fn handle_local_request(
                     apps.push(listing.to_onchain_app(&pid));
                 }
             }
-            let response = ChainResponses::GetOurApps(apps);
+            let response = ChainResponse::GetOurApps(apps);
             Response::new().body(&response).send()?;
         }
-        ChainRequests::StartAutoUpdate(package_id) => {
+        ChainRequest::StartAutoUpdate(package_id) => {
             let pid = package_id.to_process_lib();
             if let Some(mut listing) = state.db.get_listing(&pid)? {
                 listing.auto_update = true;
                 state.db.insert_or_update_listing(&pid, &listing)?;
-                let response = ChainResponses::AutoUpdateStarted;
+                let response = ChainResponse::AutoUpdateStarted;
                 Response::new().body(&response).send()?;
             } else {
-                let error_response = ChainResponses::Err(ChainError::NoPackage);
+                let error_response = ChainResponse::Err(ChainError::NoPackage);
                 Response::new().body(&error_response).send()?;
             }
         }
-        ChainRequests::StopAutoUpdate(package_id) => {
+        ChainRequest::StopAutoUpdate(package_id) => {
             let pid = package_id.to_process_lib();
             if let Some(mut listing) = state.db.get_listing(&pid)? {
                 listing.auto_update = false;
                 state.db.insert_or_update_listing(&pid, &listing)?;
-                let response = ChainResponses::AutoUpdateStopped;
+                let response = ChainResponse::AutoUpdateStopped;
                 Response::new().body(&response).send()?;
             } else {
-                let error_response = ChainResponses::Err(ChainError::NoPackage);
+                let error_response = ChainResponse::Err(ChainError::NoPackage);
                 Response::new().body(&error_response).send()?;
             }
         }
-        ChainRequests::Reset => {
+        ChainRequest::Reset => {
             state.db.reset(&our);
-            Response::new().body(&ChainResponses::ResetOk).send()?;
+            Response::new().body(&ChainResponse::ResetOk).send()?;
             panic!("resetting state, restarting!");
         }
     }
@@ -609,7 +605,7 @@ fn handle_eth_log(
     if !startup && listing.auto_update {
         println!("kicking off auto-update for: {}", package_id);
         Request::to(("our", "downloads", "app-store", "sys"))
-            .body(&DownloadRequests::AutoUpdate(AutoUpdateRequest {
+            .body(&DownloadRequest::AutoUpdate(AutoUpdateRequest {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(
                     package_id.clone(),
                 ),
@@ -726,7 +722,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
             if let Some(md) = metadata {
                 print_to_terminal(0, &format!("kicking off auto-update for: {}", pid));
                 if let Err(e) = Request::to(("our", "downloads", "app-store", "sys"))
-                    .body(&DownloadRequests::AutoUpdate(AutoUpdateRequest {
+                    .body(&DownloadRequest::AutoUpdate(AutoUpdateRequest {
                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
                             pid.clone(),
                         ),

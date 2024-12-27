@@ -114,7 +114,7 @@ interface chain {
     use standard.{package-id};
 
     /// Requests that can be made to the chain component
-    variant chain-requests {
+    variant chain-request {
         /// Get information about a specific app
         ///
         /// lazy-load-blob: none.
@@ -142,7 +142,7 @@ interface chain {
     }
 
     /// Responses from the chain component
-    variant chain-responses {
+    variant chain-response {
         /// lazy-load-blob: none.
         get-app(option<onchain-app>),
         /// lazy-load-blob: none.
@@ -208,7 +208,7 @@ interface downloads {
     use chain.{onchain-metadata};
 
     /// Requests that can be made to the downloads component
-    variant download-requests {
+    variant download-request {
         /// Check if a a node is mirroring a given package.
         /// returns a success response if the node is mirroring the package,
         /// otherwise an error response of type err(not-mirroring).
@@ -270,7 +270,7 @@ interface downloads {
     }
 
     /// Responses from the downloads component
-    variant download-responses {
+    variant download-response {
         /// catch-all success response
         /// lazy-load-blob: none.
         success,

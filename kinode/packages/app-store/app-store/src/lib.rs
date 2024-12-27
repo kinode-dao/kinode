@@ -30,7 +30,7 @@
 //! It delegates these responsibilities to the downloads and chain processes respectively.
 //!
 use crate::kinode::process::downloads::{
-    AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponses, ProgressUpdate,
+    AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponse, ProgressUpdate,
 };
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
@@ -72,7 +72,7 @@ pub enum Req {
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     LocalResponse(LocalResponse),
-    Download(DownloadResponses),
+    Download(DownloadResponse),
 }
 
 call_init!(init);
