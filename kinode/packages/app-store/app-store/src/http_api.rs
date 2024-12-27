@@ -8,6 +8,7 @@ use crate::{
         downloads::{
             DownloadRequests, DownloadResponses, Entry, LocalDownloadRequest, RemoveFileRequest,
         },
+        main::RemoteRequest,
     },
     state::{MirrorCheck, PackageState, State, Updates},
 };
@@ -764,8 +765,8 @@ fn serve_paths(
                     format!("Missing node").into_bytes(),
                 ));
             };
-            if let Err(SendError { kind, .. }) = Request::to((node, "net", "distro", "sys"))
-                .body(b"checking your mirror status...")
+            if let Err(SendError { kind, .. }) = Request::to((node, "main", "app-store", "sys"))
+                .body(RemoteRequest::Ping)
                 .send_and_await_response(3)
                 .unwrap()
             {

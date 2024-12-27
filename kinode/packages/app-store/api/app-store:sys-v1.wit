@@ -10,11 +10,13 @@ interface main {
     /// Represents various requests that can be made to the main App Store interface
     variant request {
         local(local-request),
+        remote(remote-request),
     }
 
     /// Represents various responses from the main App Store interface
     variant response {
         local(local-response),
+        remote(remote-response),
         chain-error(chain-error),
         download-error(download-error),
         handling-error(string),
@@ -58,6 +60,18 @@ interface main {
         apis-response(apis-response),
         /// lazy-load-blob: on success; the WIT API that was requested.
         get-api-response(get-api-response),
+    }
+
+    /// Remote requests that can be made to the App Store
+    variant remote-request {
+        /// lazy-load-blob: none.
+        ping,
+    }
+
+    /// Remote responses from the App Store
+    variant remote-response {
+        /// lazy-load-blob: none.
+        ping,
     }
 
     /// Request to add a new package
@@ -135,7 +149,7 @@ interface chain {
         /// lazy-load-blob: none.
         stop-auto-update(package-id),
         /// Reset app-store db
-        /// 
+        ///
         /// lazy-load-blob: none.
         reset,
     }

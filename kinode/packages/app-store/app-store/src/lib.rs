@@ -34,7 +34,7 @@ use crate::kinode::process::downloads::{
 };
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
-    LocalResponse, NewPackageRequest, NewPackageResponse, Response as AppStoreResponse,
+    LocalResponse, NewPackageRequest, NewPackageResponse, RemoteRequest, RemoteResponse, Response as AppStoreResponse,
     UninstallResponse,
 };
 use kinode_process_lib::{
@@ -63,6 +63,7 @@ const VFS_TIMEOUT: u64 = 10;
 #[serde(untagged)] // untagged as a meta-type for all incoming requests
 pub enum Req {
     LocalRequest(LocalRequest),
+    RemoteRequest(RemoteRequest),
     Progress(ProgressUpdate),
     DownloadComplete(DownloadCompleteRequest),
     AutoDownloadComplete(AutoDownloadCompleteRequest),
@@ -129,6 +130,13 @@ fn handle_message(
                     response.blob(blob).send()?;
                 } else {
                     response.send()?;
+                }
+            }
+            Req::RemoteRequest(remote_request) => {
+                match remote_request {
+                    RemoteRequest::Ping => {
+                        Response::new().body(RemoteResponse::Ping).send()?;
+                    }
                 }
             }
             Req::Http(server_request) => {
