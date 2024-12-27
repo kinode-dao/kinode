@@ -34,8 +34,8 @@ use crate::kinode::process::downloads::{
 };
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
-    LocalResponse, NewPackageRequest, NewPackageResponse, RemoteRequest, RemoteResponse, Response as AppStoreResponse,
-    UninstallResponse,
+    LocalResponse, NewPackageRequest, NewPackageResponse, RemoteRequest, RemoteResponse,
+    Response as AppStoreResponse, UninstallResponse,
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
@@ -132,13 +132,11 @@ fn handle_message(
                     response.send()?;
                 }
             }
-            Req::RemoteRequest(remote_request) => {
-                match remote_request {
-                    RemoteRequest::Ping => {
-                        Response::new().body(RemoteResponse::Ping).send()?;
-                    }
+            Req::RemoteRequest(remote_request) => match remote_request {
+                RemoteRequest::Ping => {
+                    Response::new().body(RemoteResponse::Ping).send()?;
                 }
-            }
+            },
             Req::Http(server_request) => {
                 if !message.is_local(&our) || message.source().process != "http-server:distro:sys" {
                     return Err(anyhow::anyhow!("http-server from non-local node"));
