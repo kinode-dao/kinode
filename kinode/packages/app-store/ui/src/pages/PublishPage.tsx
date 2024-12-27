@@ -98,13 +98,13 @@ export default function PublishPage() {
           return !hasDownload;
         });
 
-        if (missingHashes.length > 0) {
+        if (missingHashes.length == codeHashes.length) {
           setMetadataError(`Missing local downloads for mirroring versions: ${missingHashes.map(([version]) => version).join(', ')}`);
         } else {
           setMetadataError("");
         }
       } else {
-        setMetadataError("The metadata does not contain the required 'code_hashes' property or it's not in the expected format");
+        setMetadataError("The metadata does not contain the required 'code_hashes' property or it is not in the expected format");
       }
 
       const metadataHash = keccak256(toBytes(metadataText));

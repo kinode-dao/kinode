@@ -216,16 +216,16 @@ pub fn handle_http_request(
 ) -> (server::HttpResponse, Option<LazyLoadBlob>) {
     match serve_paths(our, state, updates, req) {
         Ok((status_code, _headers, body)) => (
-            server::HttpResponse::new(status_code).header("Content-Type", "application/json"),
+            server::HttpResponse::new(status_code),
             Some(LazyLoadBlob {
-                mime: None,
+                mime: Some("application/json".to_string()),
                 bytes: body,
             }),
         ),
         Err(e) => (
             server::HttpResponse::new(http::StatusCode::INTERNAL_SERVER_ERROR),
             Some(LazyLoadBlob {
-                mime: None,
+                mime: Some("application/json".to_string()),
                 bytes: serde_json::to_vec(&json!({"error": e.to_string()})).unwrap(),
             }),
         ),

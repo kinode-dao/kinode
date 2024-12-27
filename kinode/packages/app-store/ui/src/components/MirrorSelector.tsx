@@ -20,7 +20,8 @@ const MirrorSelector: React.FC<MirrorSelectorProps> = ({ packageId, onMirrorSele
         const appData = await fetchListing(packageId);
         if (!appData) return;
         const mirrors = [appData.package_id.publisher_node, ...(appData.metadata?.properties?.mirrors || [])];
-        setAvailableMirrors(mirrors);
+        // remove duplicates
+        setAvailableMirrors(Array.from(new Set(mirrors)));
 
         // Start with the publisher node
         setSelectedMirror(appData.package_id.publisher_node);

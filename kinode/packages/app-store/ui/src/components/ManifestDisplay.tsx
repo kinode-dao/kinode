@@ -51,24 +51,30 @@ const ProcessManifest: React.FC<{ manifest: PackageManifestEntry }> = ({ manifes
 
             {isExpanded && (
                 <div className="process-details">
-                    {manifest.request_capabilities.length > 0 && (
+                    {manifest.request_capabilities?.length > 0 && (
                         <div className="capability-section">
                             <h4>Requested Capabilities:</h4>
                             <ul>
-                                {transformCapabilities(manifest.request_capabilities).map((cap, i) => (
-                                    <li key={i}>{cap}</li>
-                                ))}
+                                {transformCapabilities(manifest.request_capabilities || []).map((cap, i) => {
+                                    if (typeof cap === 'object') {
+                                        return <li key={i}>{JSON.stringify(cap)}</li>;
+                                    }
+                                    return <li key={i}>{cap}</li>;
+                                })}
                             </ul>
                         </div>
                     )}
 
-                    {manifest.grant_capabilities.length > 0 && (
+                    {manifest.grant_capabilities?.length > 0 && (
                         <div className="capability-section">
                             <h4>Granted Capabilities:</h4>
                             <ul>
-                                {transformCapabilities(manifest.grant_capabilities).map((cap, i) => (
-                                    <li key={i}>{cap}</li>
-                                ))}
+                                {transformCapabilities(manifest.grant_capabilities || []).map((cap, i) => {
+                                    if (typeof cap === 'object') {
+                                        return <li key={i}>{JSON.stringify(cap)}</li>;
+                                    }
+                                    return <li key={i}>{cap}</li>;
+                                })}
                             </ul>
                         </div>
                     )}
@@ -79,12 +85,21 @@ const ProcessManifest: React.FC<{ manifest: PackageManifestEntry }> = ({ manifes
 };
 
 const ManifestDisplay: React.FC<ManifestDisplayProps> = ({ manifestResponse }) => {
-    if (!manifestResponse) {
+    if (!manifestResponse || !manifestResponse.manifest) {
         return <p>No manifest data available.</p>;
     }
 
-    const parsedManifests: PackageManifestEntry[] = JSON.parse(manifestResponse.manifest);
-
+    let parsedManifests: PackageManifestEntry[] = [];
+    try {
+        parsedManifests = JSON.parse(manifestResponse.manifest);
+        // Ensure the parsed result is an array
+        if (!Array.isArray(parsedManifests)) {
+            return <p>Invalid manifest format.</p>;
+        }
+    } catch (error) {
+        console.error('Error parsing manifest:', error);
+        return <p>Error parsing manifest data.</p>;
+    }
     return (
         <div className="manifest-display">
             {parsedManifests.map((manifest, index) => (

@@ -186,6 +186,17 @@ fn handle_message(
 ) -> anyhow::Result<()> {
     if message.is_request() {
         match message.body().try_into()? {
+            DownloadRequest::MirrorCheck(package_id) => {
+                Response::new()
+                    .body(
+                        match state.mirroring.contains(&package_id.to_process_lib()) {
+                            true => DownloadResponse::Success,
+                            false => DownloadResponse::Err(DownloadError::NotMirroring),
+                        },
+                    )
+                    .send()?;
+                return Ok(());
+            }
             DownloadRequest::LocalDownload(download_request) => {
                 // we want to download a package.
                 if !message.is_local(our) {
@@ -473,7 +484,9 @@ fn handle_message(
                     .body(DownloadRequest::LocalDownload(download_request))
                     .send()?;
             }
-            _ => {}
+            other => {
+                return Err(anyhow::anyhow!("unexpected download request: {other:?}"));
+            }
         }
     } else {
         match message.body().try_into()? {
