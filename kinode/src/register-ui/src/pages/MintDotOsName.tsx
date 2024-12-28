@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
@@ -36,13 +36,11 @@ function MintDotOsName({
     });
   const addRecentTransaction = useAddRecentTransaction();
 
-  const [triggerNameCheck, setTriggerNameCheck] = useState<boolean>(false)
+  const [hasMinted, setHasMinted] = useState(false);
 
   useEffect(() => {
     document.title = "Mint"
   }, [])
-
-  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
   useEffect(() => {
     if (!address) {
@@ -50,14 +48,16 @@ function MintDotOsName({
     }
   }, [address, openConnectModal]);
 
-  let handleMint = useCallback(async (e: FormEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-
+  const handleMint = useCallback(async () => {
     if (!address) {
       openConnectModal?.()
       return
     }
+    if (hasMinted) {
+      return
+    }
+
+    setHasMinted(true);
 
     const initCall = await generateNetworkingKeys({
       direct,
@@ -70,8 +70,6 @@ function MintDotOsName({
       setRouters,
       reset: false,
     });
-
-    console.log("minting name: ", knsName)
 
     // strip .os suffix
     const name = knsName.replace(/\.os$/, '');
@@ -101,8 +99,15 @@ function MintDotOsName({
       })
     } catch (error) {
       console.error('Failed to send transaction:', error)
+      setHasMinted(false);
     }
-  }, [direct, address, sendTransaction, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal])
+  }, [direct, address, sendTransaction, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal, knsName, hasMinted])
+
+  useEffect(() => {
+    if (address && !isPending && !isConfirming) {
+      handleMint();
+    }
+  }, [address, handleMint, isPending, isConfirming]);
 
   useEffect(() => {
     if (isConfirmed) {
@@ -113,26 +118,18 @@ function MintDotOsName({
   return (
     <div className="container fade-in">
       <div className="section">
-        {
-          <form className="form" onSubmit={handleMint}>
-            {isPending || isConfirming ? (
-              <Loader msg={isConfirming ? 'Minting name...' : 'Please confirm the transaction in your wallet'} />
-            ) : (
-              <>
-                <div className="button-group">
-                  <button type="submit" className="button">
-                    Mint {knsName}
-                  </button>
-                </div>
-              </>
-            )}
-            {isError && (
-              <p className="error-message">
-                Error: {error?.message || 'There was an error minting your name, please try again.'}
-              </p>
-            )}
-          </form>
-        }
+        <div className="form">
+          {isPending || isConfirming ? (
+            <Loader msg={isConfirming ? 'Minting name...' : 'Please confirm the transaction in your wallet'} />
+          ) : (
+            <Loader msg="Preparing to mint..." />
+          )}
+          {isError && (
+            <p className="error-message">
+              Error: {error?.message || 'There was an error minting your name, please try again.'}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+    "app-store",
+    "chain",
+    "download",
+    "downloads",
+    "ft-worker",
+    "install",
+    "uninstall",
+]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true

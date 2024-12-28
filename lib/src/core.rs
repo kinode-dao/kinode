@@ -1,16 +1,15 @@
 use crate::wit;
-use ring::signature;
-use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
+pub use crate::{fd_manager::*, kernel::*, kv::*, net::*, sqlite::*, state::*, timer::*, vfs::*};
+
 lazy_static::lazy_static! {
     pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
-    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd_manager"), "distro", "sys");
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
+    pub static ref FD_MANAGER_PROCESS_ID: ProcessId = ProcessId::new(Some("fd-manager"), "distro", "sys");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http-client"), "distro", "sys");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http-server"), "distro", "sys");
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
     pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
     pub static ref NET_PROCESS_ID: ProcessId = ProcessId::new(Some("net"), "distro", "sys");
@@ -31,6 +30,49 @@ lazy_static::lazy_static! {
 
 pub type Context = Vec<u8>;
 pub type NodeId = String; // KNS domain name
+
+/// Determine if the given `input` string is Kimap-safe or not.
+/// A Kimap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
+/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
+/// `is_kimap_safe()` allows `.`s.
+/// Use `is_kimap_safe_no_dots()` to disallow `.`s.
+pub fn is_kimap_safe(input: &str) -> bool {
+    let expression = r"^[a-z0-9\-.]+$";
+    let re = regex::Regex::new(expression).unwrap();
+    re.is_match(input)
+}
+
+/// Determine if the given `input` string is Kimap-safe or not.
+/// A Kimap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
+/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
+/// `is_kimap_safe_no_dots()` disallows `.`s.
+/// Use `is_kimap_safe()` to allow `.`s.
+pub fn is_kimap_safe_no_dots(input: &str) -> bool {
+    let expression = r"^[a-z0-9\-]+$";
+    let re = regex::Regex::new(expression).unwrap();
+    re.is_match(input)
+}
+
+pub fn check_process_id_kimap_safe(p: &ProcessId) -> Result<(), AddressParseError> {
+    if !is_kimap_safe_no_dots(&p.process_name) {
+        return Err(AddressParseError::ProcessNameNotKimapSafe(
+            p.process_name.clone(),
+        ));
+    }
+    if !is_kimap_safe_no_dots(&p.package_name) {
+        return Err(AddressParseError::PackageNameNotKimapSafe(
+            p.package_name.clone(),
+        ));
+    }
+    if !is_kimap_safe(&p.publisher_node) {
+        return Err(AddressParseError::PublisherNodeNotKimapSafe(
+            p.publisher_node.clone(),
+        ));
+    }
+    Ok(())
+}
 
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
@@ -54,7 +96,7 @@ impl Serialize for ProcessId {
 }
 
 impl<'a> Deserialize<'a> for ProcessId {
-    fn deserialize<D>(deserializer: D) -> Result<ProcessId, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'a>,
     {
@@ -69,13 +111,15 @@ impl<'a> Deserialize<'a> for ProcessId {
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
     pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
-        ProcessId {
-            process_name: process_name
-                .unwrap_or(&rand::random::<u64>().to_string())
-                .into(),
-            package_name: package_name.into(),
-            publisher_node: publisher_node.into(),
-        }
+        let process_name = process_name
+            .unwrap_or(&rand::random::<u64>().to_string())
+            .to_string();
+        let process_id = ProcessId {
+            process_name,
+            package_name: package_name.to_string(),
+            publisher_node: publisher_node.to_string(),
+        };
+        process_id
     }
     pub fn process(&self) -> &str {
         &self.process_name
@@ -100,60 +144,84 @@ impl ProcessId {
             publisher_node: self.publisher_node.clone(),
         }
     }
-    pub fn de_wit(wit: wit::ProcessId) -> ProcessId {
+    pub fn en_wit_v1(&self) -> crate::v1::wit::ProcessId {
+        crate::v1::wit::ProcessId {
+            process_name: self.process_name.clone(),
+            package_name: self.package_name.clone(),
+            publisher_node: self.publisher_node.clone(),
+        }
+    }
+    pub fn de_wit(wit: wit::ProcessId) -> Self {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
     }
-    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> ProcessId {
+    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> Self {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
+    }
+    pub fn de_wit_v1(wit: crate::v1::wit::ProcessId) -> Self {
+        ProcessId {
+            process_name: wit.process_name,
+            package_name: wit.package_name,
+            publisher_node: wit.publisher_node,
+        }
+    }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        check_process_id_kimap_safe(&self)?;
+        Ok(self)
     }
 }
 
 impl std::str::FromStr for ProcessId {
-    type Err = ProcessIdParseError;
+    type Err = AddressParseError;
     /// Attempts to parse a `ProcessId` from a string. To succeed, the string must contain
     /// exactly 3 segments, separated by colons `:`. The segments must not contain colons.
     /// Please note that while any string without colons will parse successfully
     /// to create a `ProcessId`, not all strings without colons are actually
     /// valid usernames, which the `publisher_node` field of a `ProcessId` will
     /// always in practice be.
-    fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
         let segments: Vec<&str> = input.split(':').collect();
         if segments.len() < 3 {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         } else if segments.len() > 3 {
-            return Err(ProcessIdParseError::TooManyColons);
+            return Err(AddressParseError::TooManyColons);
         }
-        let process_name = segments[0].to_string();
+        let process_name = segments[0];
         if process_name.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        let package_name = segments[1].to_string();
+        let package_name = segments[1];
         if package_name.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        let publisher_node = segments[2].to_string();
+        let publisher_node = segments[2];
         if publisher_node.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        Ok(ProcessId {
-            process_name,
+        Ok(ProcessId::new(
+            Some(process_name),
             package_name,
             publisher_node,
-        })
+        ))
     }
 }
 
 impl From<(&str, &str, &str)> for ProcessId {
     fn from(input: (&str, &str, &str)) -> Self {
         ProcessId::new(Some(input.0), input.1, input.2)
+    }
+}
+
+impl From<&ProcessId> for ProcessId {
+    fn from(input: &ProcessId) -> Self {
+        input.clone()
     }
 }
 
@@ -190,8 +258,8 @@ pub struct PackageId {
 impl PackageId {
     pub fn new(package_name: &str, publisher_node: &str) -> Self {
         PackageId {
-            package_name: package_name.into(),
-            publisher_node: publisher_node.into(),
+            package_name: package_name.to_string(),
+            publisher_node: publisher_node.to_string(),
         }
     }
     pub fn _package(&self) -> &str {
@@ -200,10 +268,23 @@ impl PackageId {
     pub fn _publisher(&self) -> &str {
         &self.publisher_node
     }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        if !is_kimap_safe_no_dots(&self.package_name) {
+            return Err(AddressParseError::ProcessNameNotKimapSafe(
+                self.package_name.clone(),
+            ));
+        }
+        if !is_kimap_safe(&self.publisher_node) {
+            return Err(AddressParseError::PublisherNodeNotKimapSafe(
+                self.publisher_node.clone(),
+            ));
+        }
+        Ok(self)
+    }
 }
 
 impl std::str::FromStr for PackageId {
-    type Err = ProcessIdParseError;
+    type Err = AddressParseError;
     /// Attempt to parse a `PackageId` from a string. The string must
     /// contain exactly two segments, where segments are non-empty strings
     /// separated by a colon (`:`). The segments cannot themselves contain colons.
@@ -215,59 +296,25 @@ impl std::str::FromStr for PackageId {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let segments: Vec<&str> = input.split(':').collect();
         if segments.len() < 2 {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         } else if segments.len() > 2 {
-            return Err(ProcessIdParseError::TooManyColons);
+            return Err(AddressParseError::TooManyColons);
         }
-        let package_name = segments[0].to_string();
+        let package_name = segments[0];
         if package_name.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-        let publisher_node = segments[1].to_string();
+        let publisher_node = segments[1];
         if publisher_node.is_empty() {
-            return Err(ProcessIdParseError::MissingField);
+            return Err(AddressParseError::MissingField);
         }
-
-        Ok(PackageId {
-            package_name,
-            publisher_node,
-        })
+        Ok(PackageId::new(package_name, publisher_node))
     }
 }
 
 impl std::fmt::Display for PackageId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.package_name, self.publisher_node)
-    }
-}
-
-/// Errors that can occur when parsing a [`ProcessId`] from a string.
-/// Also used for [`PackageId`].
-#[derive(Debug)]
-pub enum ProcessIdParseError {
-    TooManyColons,
-    MissingField,
-}
-
-impl std::fmt::Display for ProcessIdParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ProcessIdParseError::TooManyColons => "Too many colons",
-                ProcessIdParseError::MissingField => "Missing field",
-            }
-        )
-    }
-}
-
-impl std::error::Error for ProcessIdParseError {
-    fn description(&self) -> &str {
-        match self {
-            ProcessIdParseError::TooManyColons => "Too many colons",
-            ProcessIdParseError::MissingField => "Missing field",
-        }
     }
 }
 
@@ -280,15 +327,14 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn new<T, U>(node: T, process: U) -> Address
+    pub fn new<T, U>(node: T, process: U) -> Self
     where
         T: Into<String>,
         U: Into<ProcessId>,
     {
-        Address {
-            node: node.into(),
-            process: process.into(),
-        }
+        let node = node.into();
+        let process = process.into();
+        Address { node, process }
     }
     pub fn en_wit(&self) -> wit::Address {
         wit::Address {
@@ -300,6 +346,12 @@ impl Address {
         crate::v0::wit::Address {
             node: self.node.clone(),
             process: self.process.en_wit_v0(),
+        }
+    }
+    pub fn en_wit_v1(&self) -> crate::v1::wit::Address {
+        crate::v1::wit::Address {
+            node: self.node.clone(),
+            process: self.process.en_wit_v1(),
         }
     }
     pub fn de_wit(wit: wit::Address) -> Address {
@@ -322,6 +374,23 @@ impl Address {
             },
         }
     }
+    pub fn de_wit_v1(wit: crate::v1::wit::Address) -> Address {
+        Address {
+            node: wit.node,
+            process: ProcessId {
+                process_name: wit.process.process_name,
+                package_name: wit.process.package_name,
+                publisher_node: wit.process.publisher_node,
+            },
+        }
+    }
+    pub fn check(self) -> Result<Self, AddressParseError> {
+        if !is_kimap_safe(&self.node) {
+            return Err(AddressParseError::NodeNotKimapSafe(self.node.clone()));
+        }
+        check_process_id_kimap_safe(&self.process)?;
+        Ok(self)
+    }
 }
 
 impl std::str::FromStr for Address {
@@ -340,7 +409,7 @@ impl std::str::FromStr for Address {
         } else if parts.len() > 2 {
             return Err(AddressParseError::TooManyAts);
         }
-        let node = parts[0].to_string();
+        let node = parts[0];
         if node.is_empty() {
             return Err(AddressParseError::MissingNodeId);
         }
@@ -352,27 +421,22 @@ impl std::str::FromStr for Address {
         } else if segments.len() > 3 {
             return Err(AddressParseError::TooManyColons);
         }
-        let process_name = segments[0].to_string();
+        let process_name = segments[0];
         if process_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        let package_name = segments[1].to_string();
+        let package_name = segments[1];
         if package_name.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-        let publisher_node = segments[2].to_string();
+        let publisher_node = segments[2];
         if publisher_node.is_empty() {
             return Err(AddressParseError::MissingField);
         }
-
-        Ok(Address {
+        Ok(Address::new(
             node,
-            process: ProcessId {
-                process_name,
-                package_name,
-                publisher_node,
-            },
-        })
+            (process_name, package_name, publisher_node),
+        ))
     }
 }
 
@@ -418,29 +482,28 @@ impl std::fmt::Display for Address {
     }
 }
 
-#[derive(Debug)]
+/// Errors that can occur when parsing a [`Address`] from a string.
+/// Also used for [`ProcessId`] and [`PackageId`].
+#[derive(Error, Debug)]
 pub enum AddressParseError {
+    #[error("Too many `@` chars: only one allowed")]
     TooManyAts,
+    #[error("Too many colons in ProcessId string")]
     TooManyColons,
+    #[error("Node ID missing")]
     MissingNodeId,
+    #[error("Missing field in ProcessId string")]
     MissingField,
-}
-
-impl std::fmt::Display for AddressParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
-impl std::error::Error for AddressParseError {
-    fn description(&self) -> &str {
-        match self {
-            AddressParseError::TooManyAts => "Too many '@' chars in ProcessId string",
-            AddressParseError::TooManyColons => "Too many colons in ProcessId string",
-            AddressParseError::MissingNodeId => "Node ID missing",
-            AddressParseError::MissingField => "Missing field in ProcessId string",
-        }
-    }
+    #[error("Process name ({0}) can only contain a-z, 0-9, `-`")]
+    ProcessNameNotKimapSafe(String),
+    #[error("Package name ({0}) can only contain a-z, 0-9, `-`")]
+    PackageNameNotKimapSafe(String),
+    #[error("Node ({0}) can only contain a-z, 0-9, `-`, `.`")]
+    NodeNotKimapSafe(String),
+    #[error("Publisher node ({0}) can only contain a-z, 0-9, `-`, `.`")]
+    PublisherNodeNotKimapSafe(String),
+    #[error("Other: {0}")]
+    Other(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -607,6 +670,24 @@ impl OnExit {
         }
     }
 
+    pub fn en_wit_v1(&self) -> crate::v1::wit::OnExit {
+        match self {
+            OnExit::None => crate::v1::wit::OnExit::None,
+            OnExit::Restart => crate::v1::wit::OnExit::Restart,
+            OnExit::Requests(reqs) => crate::v1::wit::OnExit::Requests(
+                reqs.iter()
+                    .map(|(address, request, blob)| {
+                        (
+                            address.en_wit_v1(),
+                            en_wit_request_v1(request.clone()),
+                            en_wit_blob_v1(blob.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
     pub fn de_wit(wit: wit::OnExit) -> Self {
         match wit {
             wit::OnExit::None => OnExit::None,
@@ -636,6 +717,24 @@ impl OnExit {
                             Address::de_wit_v0(address),
                             de_wit_request_v0(request),
                             de_wit_blob_v0(blob),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn de_wit_v1(wit: crate::v1::wit::OnExit) -> Self {
+        match wit {
+            crate::v1::wit::OnExit::None => OnExit::None,
+            crate::v1::wit::OnExit::Restart => OnExit::Restart,
+            crate::v1::wit::OnExit::Requests(reqs) => OnExit::Requests(
+                reqs.into_iter()
+                    .map(|(address, request, blob)| {
+                        (
+                            Address::de_wit_v1(address),
+                            de_wit_request_v1(request),
+                            de_wit_blob_v1(blob),
                         )
                     })
                     .collect(),
@@ -676,7 +775,7 @@ fn display_capabilities(capabilities: &Vec<(Capability, Vec<u8>)>, delimiter: &s
     format!("{}{}]", caps_string, delimiter)
 }
 
-fn display_message(m: &Message, delimiter: &str) -> String {
+pub fn display_message(m: &Message, delimiter: &str) -> String {
     let lines = match m {
         Message::Request(request) => {
             vec![
@@ -749,8 +848,8 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
         metadata: wit.metadata,
         capabilities: wit
             .capabilities
-            .iter()
-            .map(|cap| de_wit_capability(cap.clone()))
+            .into_iter()
+            .map(|cap| de_wit_capability(cap))
             .collect(),
     }
 }
@@ -763,8 +862,22 @@ pub fn de_wit_request_v0(wit: crate::v0::wit::Request) -> Request {
         metadata: wit.metadata,
         capabilities: wit
             .capabilities
-            .iter()
-            .map(|cap| de_wit_capability_v0(cap.clone()))
+            .into_iter()
+            .map(|cap| de_wit_capability_v0(cap))
+            .collect(),
+    }
+}
+
+pub fn de_wit_request_v1(wit: crate::v1::wit::Request) -> Request {
+    Request {
+        inherit: wit.inherit,
+        expects_response: wit.expects_response,
+        body: wit.body,
+        metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .into_iter()
+            .map(|cap| de_wit_capability_v1(cap))
             .collect(),
     }
 }
@@ -777,8 +890,8 @@ pub fn en_wit_request(request: Request) -> wit::Request {
         metadata: request.metadata,
         capabilities: request
             .capabilities
-            .iter()
-            .map(|cap| en_wit_capability(cap.clone()))
+            .into_iter()
+            .map(|cap| en_wit_capability(cap))
             .collect(),
     }
 }
@@ -791,8 +904,22 @@ pub fn en_wit_request_v0(request: Request) -> crate::v0::wit::Request {
         metadata: request.metadata,
         capabilities: request
             .capabilities
-            .iter()
-            .map(|cap| en_wit_capability_v0(cap.clone()))
+            .into_iter()
+            .map(|cap| en_wit_capability_v0(cap))
+            .collect(),
+    }
+}
+
+pub fn en_wit_request_v1(request: Request) -> crate::v1::wit::Request {
+    crate::v1::wit::Request {
+        inherit: request.inherit,
+        expects_response: request.expects_response,
+        body: request.body,
+        metadata: request.metadata,
+        capabilities: request
+            .capabilities
+            .into_iter()
+            .map(|cap| en_wit_capability_v1(cap))
             .collect(),
     }
 }
@@ -804,8 +931,8 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
         metadata: wit.metadata,
         capabilities: wit
             .capabilities
-            .iter()
-            .map(|cap| de_wit_capability(cap.clone()))
+            .into_iter()
+            .map(|cap| de_wit_capability(cap))
             .collect(),
     }
 }
@@ -817,8 +944,21 @@ pub fn de_wit_response_v0(wit: crate::v0::wit::Response) -> Response {
         metadata: wit.metadata,
         capabilities: wit
             .capabilities
-            .iter()
-            .map(|cap| de_wit_capability_v0(cap.clone()))
+            .into_iter()
+            .map(|cap| de_wit_capability_v0(cap))
+            .collect(),
+    }
+}
+
+pub fn de_wit_response_v1(wit: crate::v1::wit::Response) -> Response {
+    Response {
+        inherit: wit.inherit,
+        body: wit.body,
+        metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .into_iter()
+            .map(|cap| de_wit_capability_v1(cap))
             .collect(),
     }
 }
@@ -830,8 +970,8 @@ pub fn en_wit_response(response: Response) -> wit::Response {
         metadata: response.metadata,
         capabilities: response
             .capabilities
-            .iter()
-            .map(|cap| en_wit_capability(cap.clone()))
+            .into_iter()
+            .map(|cap| en_wit_capability(cap))
             .collect(),
     }
 }
@@ -843,8 +983,21 @@ pub fn en_wit_response_v0(response: Response) -> crate::v0::wit::Response {
         metadata: response.metadata,
         capabilities: response
             .capabilities
-            .iter()
-            .map(|cap| en_wit_capability_v0(cap.clone()))
+            .into_iter()
+            .map(|cap| en_wit_capability_v0(cap))
+            .collect(),
+    }
+}
+
+pub fn en_wit_response_v1(response: Response) -> crate::v1::wit::Response {
+    crate::v1::wit::Response {
+        inherit: response.inherit,
+        body: response.body,
+        metadata: response.metadata,
+        capabilities: response
+            .capabilities
+            .into_iter()
+            .map(|cap| en_wit_capability_v1(cap))
             .collect(),
     }
 }
@@ -869,6 +1022,16 @@ pub fn de_wit_blob_v0(wit: Option<crate::v0::wit::LazyLoadBlob>) -> Option<LazyL
     }
 }
 
+pub fn de_wit_blob_v1(wit: Option<crate::v1::wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
+    match wit {
+        None => None,
+        Some(wit) => Some(LazyLoadBlob {
+            mime: wit.mime,
+            bytes: wit.bytes,
+        }),
+    }
+}
+
 pub fn en_wit_blob(load: Option<LazyLoadBlob>) -> Option<wit::LazyLoadBlob> {
     match load {
         None => None,
@@ -883,6 +1046,16 @@ pub fn en_wit_blob_v0(load: Option<LazyLoadBlob>) -> Option<crate::v0::wit::Lazy
     match load {
         None => None,
         Some(load) => Some(crate::v0::wit::LazyLoadBlob {
+            mime: load.mime,
+            bytes: load.bytes,
+        }),
+    }
+}
+
+pub fn en_wit_blob_v1(load: Option<LazyLoadBlob>) -> Option<crate::v1::wit::LazyLoadBlob> {
+    match load {
+        None => None,
+        Some(load) => Some(crate::v1::wit::LazyLoadBlob {
             mime: load.mime,
             bytes: load.bytes,
         }),
@@ -923,17 +1096,41 @@ pub fn de_wit_capability_v0(wit: crate::v0::wit::Capability) -> (Capability, Vec
     )
 }
 
+pub fn de_wit_capability_v1(wit: crate::v1::wit::Capability) -> (Capability, Vec<u8>) {
+    (
+        Capability {
+            issuer: Address {
+                node: wit.issuer.node,
+                process: ProcessId {
+                    process_name: wit.issuer.process.process_name,
+                    package_name: wit.issuer.process.package_name,
+                    publisher_node: wit.issuer.process.publisher_node,
+                },
+            },
+            params: wit.params,
+        },
+        vec![],
+    )
+}
+
 pub fn en_wit_capability(cap: (Capability, Vec<u8>)) -> wit::Capability {
     wit::Capability {
         issuer: cap.0.issuer.en_wit(),
-        params: cap.0.params.to_string(),
+        params: cap.0.params,
     }
 }
 
 pub fn en_wit_capability_v0(cap: (Capability, Vec<u8>)) -> crate::v0::wit::Capability {
     crate::v0::wit::Capability {
         issuer: cap.0.issuer.en_wit_v0(),
-        params: cap.0.params.to_string(),
+        params: cap.0.params,
+    }
+}
+
+pub fn en_wit_capability_v1(cap: (Capability, Vec<u8>)) -> crate::v1::wit::Capability {
+    crate::v1::wit::Capability {
+        issuer: cap.0.issuer.en_wit_v1(),
+        params: cap.0.params,
     }
 }
 
@@ -955,6 +1152,15 @@ pub fn en_wit_message_v0(message: Message) -> crate::v0::wit::Message {
     }
 }
 
+pub fn en_wit_message_v1(message: Message) -> crate::v1::wit::Message {
+    match message {
+        Message::Request(request) => crate::v1::wit::Message::Request(en_wit_request_v1(request)),
+        Message::Response((response, context)) => {
+            crate::v1::wit::Message::Response((en_wit_response_v1(response), context))
+        }
+    }
+}
+
 pub fn en_wit_send_error(error: SendError) -> wit::SendError {
     wit::SendError {
         kind: en_wit_send_error_kind(error.kind),
@@ -972,6 +1178,15 @@ pub fn en_wit_send_error_v0(error: SendError) -> crate::v0::wit::SendError {
     }
 }
 
+pub fn en_wit_send_error_v1(error: SendError) -> crate::v1::wit::SendError {
+    crate::v1::wit::SendError {
+        kind: en_wit_send_error_kind_v1(error.kind),
+        target: error.target.en_wit_v1(),
+        message: en_wit_message_v1(error.message),
+        lazy_load_blob: en_wit_blob_v1(error.lazy_load_blob),
+    }
+}
+
 pub fn en_wit_send_error_kind(kind: SendErrorKind) -> wit::SendErrorKind {
     match kind {
         SendErrorKind::Offline => wit::SendErrorKind::Offline,
@@ -986,1144 +1201,9 @@ pub fn en_wit_send_error_kind_v0(kind: SendErrorKind) -> crate::v0::wit::SendErr
     }
 }
 
-//
-// END SYNC with process_lib
-//
-
-//
-// internal message pipes between kernel and runtime modules
-//
-
-// keeps the from address so we know where to pipe error
-pub type NetworkErrorSender = tokio::sync::mpsc::Sender<WrappedSendError>;
-pub type NetworkErrorReceiver = tokio::sync::mpsc::Receiver<WrappedSendError>;
-
-pub type MessageSender = tokio::sync::mpsc::Sender<KernelMessage>;
-pub type MessageReceiver = tokio::sync::mpsc::Receiver<KernelMessage>;
-
-pub type PrintSender = tokio::sync::mpsc::Sender<Printout>;
-pub type PrintReceiver = tokio::sync::mpsc::Receiver<Printout>;
-
-pub type DebugSender = tokio::sync::mpsc::Sender<DebugCommand>;
-pub type DebugReceiver = tokio::sync::mpsc::Receiver<DebugCommand>;
-
-pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
-pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
-
-pub type ProcessMessageSender = tokio::sync::mpsc::Sender<Result<KernelMessage, WrappedSendError>>;
-pub type ProcessMessageReceiver =
-    tokio::sync::mpsc::Receiver<Result<KernelMessage, WrappedSendError>>;
-
-//
-// types used for onchain identity system
-//
-
-#[derive(Debug)]
-pub struct Keyfile {
-    pub username: String,
-    pub routers: Vec<String>,
-    pub networking_keypair: signature::Ed25519KeyPair,
-    pub jwt_secret_bytes: Vec<u8>,
-    pub file_key: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BootInfo {
-    pub password_hash: String,
-    pub username: String,
-    pub reset: bool,
-    pub direct: bool,
-    pub owner: String,
-    pub signature: String,
-    pub timestamp: u64,
-    pub chain_id: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImportKeyfileInfo {
-    pub password_hash: String,
-    pub keyfile: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoginInfo {
-    pub password_hash: String,
-    pub subdomain: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoginAndResetInfo {
-    pub password_hash: String,
-    pub direct: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Identity {
-    pub name: NodeId,
-    pub networking_key: String,
-    pub routing: NodeRouting,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NodeRouting {
-    Routers(Vec<NodeId>),
-    Direct {
-        ip: String,
-        ports: BTreeMap<String, u16>,
-    },
-    /// currently only used for initial registration...
-    Both {
-        ip: String,
-        ports: BTreeMap<String, u16>,
-        routers: Vec<NodeId>,
-    },
-}
-
-impl Identity {
-    pub fn is_direct(&self) -> bool {
-        match &self.routing {
-            NodeRouting::Direct { .. } => true,
-            _ => false,
-        }
+pub fn en_wit_send_error_kind_v1(kind: SendErrorKind) -> crate::v1::wit::SendErrorKind {
+    match kind {
+        SendErrorKind::Offline => crate::v1::wit::SendErrorKind::Offline,
+        SendErrorKind::Timeout => crate::v1::wit::SendErrorKind::Timeout,
     }
-    pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
-        match &self.routing {
-            NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ports, .. } | NodeRouting::Both { ports, .. } => {
-                ports.get(protocol)
-            }
-        }
-    }
-    pub fn get_ip(&self) -> Option<&str> {
-        match &self.routing {
-            NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ip, .. } | NodeRouting::Both { ip, .. } => Some(ip),
-        }
-    }
-    pub fn ws_routing(&self) -> Option<(&str, &u16)> {
-        match &self.routing {
-            NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ip, ports } | NodeRouting::Both { ip, ports, .. } => {
-                if let Some(port) = ports.get("ws") {
-                    if *port != 0 {
-                        Some((ip, port))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-        }
-    }
-    pub fn tcp_routing(&self) -> Option<(&str, &u16)> {
-        match &self.routing {
-            NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ip, ports } | NodeRouting::Both { ip, ports, .. } => {
-                if let Some(port) = ports.get("tcp") {
-                    if *port != 0 {
-                        Some((ip, port))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
-        }
-    }
-    pub fn routers(&self) -> Option<&Vec<NodeId>> {
-        match &self.routing {
-            NodeRouting::Routers(routers) | NodeRouting::Both { routers, .. } => Some(routers),
-            NodeRouting::Direct { .. } => None,
-        }
-    }
-    pub fn both_to_direct(&mut self) {
-        if let NodeRouting::Both {
-            ip,
-            ports,
-            routers: _,
-        } = self.routing.clone()
-        {
-            self.routing = NodeRouting::Direct { ip, ports };
-        }
-    }
-    pub fn both_to_routers(&mut self) {
-        if let NodeRouting::Both {
-            ip: _,
-            ports: _,
-            routers,
-        } = self.routing.clone()
-        {
-            self.routing = NodeRouting::Routers(routers);
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct UnencryptedIdentity {
-    pub name: NodeId,
-    pub allowed_routers: Vec<NodeId>,
-}
-
-//
-// kernel types that runtime modules use
-//
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProcessMetadata {
-    pub our: Address,
-    pub wasm_bytes_handle: String,
-    /// if None, use the oldest version: 0.7.0
-    pub wit_version: Option<u32>,
-    pub on_exit: OnExit,
-    pub public: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct KernelMessage {
-    pub id: u64,
-    pub source: Address,
-    pub target: Address,
-    pub rsvp: Rsvp,
-    pub message: Message,
-    pub lazy_load_blob: Option<LazyLoadBlob>,
-}
-
-impl KernelMessage {
-    pub fn builder() -> KernelMessageBuilder {
-        KernelMessageBuilder::default()
-    }
-
-    pub async fn send(self, sender: &MessageSender) {
-        let Err(e) = sender.try_send(self) else {
-            // not Err -> send successful; done here
-            return;
-        };
-        // its an Err: handle
-        match e {
-            tokio::sync::mpsc::error::TrySendError::Closed(_) => {
-                panic!("kernel message sender: receiver closed");
-            }
-            tokio::sync::mpsc::error::TrySendError::Full(_) => {
-                // TODO: implement backpressure
-                panic!("kernel overloaded with messages: TODO: implement backpressure");
-            }
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct KernelMessageBuilder {
-    id: u64,
-    source: Option<Address>,
-    target: Option<Address>,
-    rsvp: Rsvp,
-    message: Option<Message>,
-    lazy_load_blob: Option<LazyLoadBlob>,
-}
-
-impl KernelMessageBuilder {
-    pub fn id(mut self, id: u64) -> Self {
-        self.id = id;
-        self
-    }
-
-    pub fn source<T>(mut self, source: T) -> Self
-    where
-        T: Into<Address>,
-    {
-        self.source = Some(source.into());
-        self
-    }
-
-    pub fn target<T>(mut self, target: T) -> Self
-    where
-        T: Into<Address>,
-    {
-        self.target = Some(target.into());
-        self
-    }
-
-    pub fn rsvp(mut self, rsvp: Rsvp) -> Self {
-        self.rsvp = rsvp;
-        self
-    }
-
-    pub fn message(mut self, message: Message) -> Self {
-        self.message = Some(message);
-        self
-    }
-
-    pub fn lazy_load_blob(mut self, blob: Option<LazyLoadBlob>) -> Self {
-        self.lazy_load_blob = blob;
-        self
-    }
-
-    pub fn build(self) -> Result<KernelMessage, String> {
-        Ok(KernelMessage {
-            id: self.id,
-            source: self.source.ok_or("Source address is required")?,
-            target: self.target.ok_or("Target address is required")?,
-            rsvp: self.rsvp,
-            message: self.message.ok_or("Message is required")?,
-            lazy_load_blob: self.lazy_load_blob,
-        })
-    }
-}
-
-impl std::fmt::Display for KernelMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    blob: {},\n}}",
-            self.id,
-            self.source,
-            self.target,
-            match &self.rsvp {
-                Some(rsvp) => rsvp.to_string(),
-                None => "None".to_string()
-            },
-            display_message(&self.message, "\n        "),
-            self.lazy_load_blob.is_some(),
-        )
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WrappedSendError {
-    pub id: u64,
-    pub source: Address,
-    pub error: SendError,
-}
-
-/// A terminal printout. Verbosity level is from low to high.
-/// - `0`: always printed
-/// - `1`: verbose, used for debugging
-/// - `2`: very verbose: shows runtime information
-/// - `3`: very verbose: shows every event in event loop
-pub struct Printout {
-    pub verbosity: u8,
-    pub content: String,
-}
-
-impl Printout {
-    pub fn new<T>(verbosity: u8, content: T) -> Self
-    where
-        T: Into<String>,
-    {
-        Self {
-            verbosity,
-            content: content.into(),
-        }
-    }
-
-    /// Fire the printout to the terminal without checking for success.
-    pub async fn send(self, sender: &PrintSender) {
-        let _ = sender.send(self).await;
-    }
-}
-
-/// kernel sets in case, e.g.,
-///  A requests response from B does not request response from C
-///  -> kernel sets `Some(A) = Rsvp` for B's request to C
-pub type Rsvp = Option<Address>;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum DebugCommand {
-    ToggleStepthrough,
-    Step,
-    ToggleEventLoop,
-}
-
-/// IPC format for requests sent to kernel runtime module
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KernelCommand {
-    /// RUNTIME ONLY: used to notify the kernel that booting is complete and
-    /// all processes have been loaded in from their persisted or bootstrapped state.
-    Booted,
-    /// Tell the kernel to install and prepare a new process for execution.
-    /// The process will not begin execution until the kernel receives a
-    /// `RunProcess` command with the same `id`.
-    ///
-    /// The process that sends this command will be given messaging capabilities
-    /// for the new process if `public` is false.
-    ///
-    /// All capabilities passed into initial_capabilities must be held by the source
-    /// of this message, or the kernel will discard them (silently for now).
-    InitializeProcess {
-        id: ProcessId,
-        wasm_bytes_handle: String,
-        wit_version: Option<u32>,
-        on_exit: OnExit,
-        initial_capabilities: HashSet<Capability>,
-        public: bool,
-    },
-    /// Create an arbitrary capability and grant it to a process.
-    GrantCapabilities {
-        target: ProcessId,
-        capabilities: Vec<Capability>,
-    },
-    /// Drop capabilities. Does nothing if process doesn't have these caps
-    DropCapabilities {
-        target: ProcessId,
-        capabilities: Vec<Capability>,
-    },
-    /// Tell the kernel to run a process that has already been installed.
-    /// TODO: in the future, this command could be extended to allow for
-    /// resource provision.
-    RunProcess(ProcessId),
-    /// Kill a running process immediately. This may result in the dropping / mishandling of messages!
-    KillProcess(ProcessId),
-    /// RUNTIME ONLY: notify the kernel that the runtime is shutting down and it
-    /// should gracefully stop and persist the running processes.
-    Shutdown,
-    /// Ask kernel to produce debugging information
-    Debug(KernelPrint),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KernelPrint {
-    ProcessMap,
-    Process(ProcessId),
-    HasCap { on: ProcessId, cap: Capability },
-}
-
-/// IPC format for all KernelCommand responses
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KernelResponse {
-    InitializedProcess,
-    InitializeProcessError,
-    StartedProcess,
-    RunProcessError,
-    KilledProcess(ProcessId),
-    Debug(KernelPrintResponse),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KernelPrintResponse {
-    ProcessMap(UserspaceProcessMap),
-    Process(Option<UserspacePersistedProcess>),
-    HasCap(Option<bool>),
-}
-
-#[derive(Debug)]
-pub enum CapMessage {
-    /// root access: uncritically sign and add all `caps` to `on`
-    Add {
-        on: ProcessId,
-        caps: Vec<Capability>,
-        responder: Option<tokio::sync::oneshot::Sender<bool>>,
-    },
-    /// root delete: uncritically remove all `caps` from `on`
-    Drop {
-        on: ProcessId,
-        caps: Vec<Capability>,
-        responder: Option<tokio::sync::oneshot::Sender<bool>>,
-    },
-    /// does `on` have `cap` in its store?
-    Has {
-        // a bool is given in response here
-        on: ProcessId,
-        cap: Capability,
-        responder: tokio::sync::oneshot::Sender<bool>,
-    },
-    /// return all caps in `on`'s store
-    GetAll {
-        on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
-    },
-    /// Remove all caps issued by `on` from every process on the entire system
-    RevokeAll {
-        on: ProcessId,
-        responder: Option<tokio::sync::oneshot::Sender<bool>>,
-    },
-    /// before `on` sends a message, filter out any bogus caps it may have attached, sign any new
-    /// caps it may have created, and retreive the signature for the caps in its store.
-    FilterCaps {
-        on: ProcessId,
-        caps: Vec<Capability>,
-        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
-    },
-}
-
-impl std::fmt::Display for CapMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            CapMessage::Add { on, caps, .. } => write!(
-                f,
-                "caps: add {} on {on}",
-                caps.iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            CapMessage::Drop { on, caps, .. } => write!(
-                f,
-                "caps: drop {} on {on}",
-                caps.iter()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            CapMessage::Has { on, cap, .. } => write!(f, "caps: has {} on {on}", cap),
-            CapMessage::GetAll { on, .. } => write!(f, "caps: get all on {on}"),
-            CapMessage::RevokeAll { on, .. } => write!(f, "caps: revoke all on {on}"),
-            CapMessage::FilterCaps { on, caps, .. } => {
-                write!(
-                    f,
-                    "caps: filter for {} on {on}",
-                    caps.iter()
-                        .map(|c| c.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                )
-            }
-        }
-    }
-}
-
-pub type ReverseCapIndex = HashMap<ProcessId, HashMap<ProcessId, Vec<Capability>>>;
-
-pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
-pub type UserspaceProcessMap = HashMap<ProcessId, UserspacePersistedProcess>;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PersistedProcess {
-    pub wasm_bytes_handle: String,
-    pub wit_version: Option<u32>,
-    pub on_exit: OnExit,
-    pub capabilities: HashMap<Capability, Vec<u8>>,
-    pub public: bool, // marks if a process allows messages from any process
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct UserspacePersistedProcess {
-    pub wasm_bytes_handle: String,
-    pub wit_version: Option<u32>,
-    pub on_exit: OnExit,
-    pub capabilities: HashSet<Capability>,
-    pub public: bool,
-}
-
-impl From<PersistedProcess> for UserspacePersistedProcess {
-    fn from(p: PersistedProcess) -> Self {
-        UserspacePersistedProcess {
-            wasm_bytes_handle: p.wasm_bytes_handle,
-            wit_version: p.wit_version,
-            on_exit: p.on_exit,
-            capabilities: p.capabilities.into_keys().collect(),
-            public: p.public,
-        }
-    }
-}
-
-/// Represents the metadata associated with a kinode package, which is an ERC721 compatible token.
-/// This is deserialized from the `metadata.json` file in a package.
-/// Fields:
-/// - `name`: An optional field representing the display name of the package. This does not have to be unique, and is not used for identification purposes.
-/// - `description`: An optional field providing a description of the package.
-/// - `image`: An optional field containing a URL to an image representing the package.
-/// - `external_url`: An optional field containing a URL for more information about the package. For example, a link to the github repository.
-/// - `animation_url`: An optional field containing a URL to an animation or video representing the package.
-/// - `properties`: A requried field containing important information about the package.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Erc721Metadata {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub image: Option<String>,
-    pub external_url: Option<String>,
-    pub animation_url: Option<String>,
-    pub properties: Erc721Properties,
-}
-
-/// Represents critical fields of a kinode package in an ERC721 compatible format.
-/// This follows the [ERC1155](https://github.com/ethereum/ercs/blob/master/ERCS/erc-1155.md#erc-1155-metadata-uri-json-schema) metadata standard.
-///
-/// Fields:
-/// - `package_name`: The unique name of the package, used in the `PackageId`, e.g. `package_name:publisher`.
-/// - `publisher`: The KNS identity of the package publisher used in the `PackageId`, e.g. `package_name:publisher`
-/// - `current_version`: A string representing the current version of the package, e.g. `1.0.0`.
-/// - `mirrors`: A list of NodeIds where the package can be found, providing redundancy.
-/// - `code_hashes`: A map from version names to their respective SHA-256 hashes.
-/// - `license`: An optional field containing the license of the package.
-/// - `screenshots`: An optional field containing a list of URLs to screenshots of the package.
-/// - `wit_version`: An optional field containing the version of the WIT standard that the package adheres to.
-/// - `dependencies`: An optional field containing a list of `PackageId`s: API dependencies.
-/// - `api_includes`: An optional field containing a list of `PathBuf`s: additional files to include in the `api.zip`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Erc721Properties {
-    pub package_name: String,
-    pub publisher: String,
-    pub current_version: String,
-    pub mirrors: Vec<NodeId>,
-    pub code_hashes: HashMap<String, String>,
-    pub license: Option<String>,
-    pub screenshots: Option<Vec<String>>,
-    pub wit_version: Option<u32>,
-    pub dependencies: Option<Vec<String>>,
-    pub api_includes: Option<Vec<std::path::PathBuf>>,
-}
-
-/// the type that gets deserialized from each entry in the array in `manifest.json`
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PackageManifestEntry {
-    pub process_name: String,
-    pub process_wasm_path: String,
-    pub on_exit: OnExit,
-    pub request_networking: bool,
-    pub request_capabilities: Vec<serde_json::Value>,
-    pub grant_capabilities: Vec<serde_json::Value>,
-    pub public: bool,
-}
-
-/// IPC Requests for the state:distro:sys runtime module.
-#[derive(Serialize, Deserialize, Debug)]
-pub enum StateAction {
-    GetState(ProcessId),
-    SetState(ProcessId),
-    DeleteState(ProcessId),
-    Backup,
-}
-
-/// Responses for the state:distro:sys runtime module.
-#[derive(Serialize, Deserialize, Debug)]
-pub enum StateResponse {
-    GetState,
-    SetState,
-    DeleteState,
-    Backup,
-    Err(StateError),
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum StateError {
-    #[error("rocksdb internal error: {error}")]
-    RocksDBError { action: String, error: String },
-    #[error("startup error")]
-    StartupError { action: String },
-    #[error("bytes blob required for {action}")]
-    BadBytes { action: String },
-    #[error("bad request error: {error}")]
-    BadRequest { error: String },
-    #[error("Bad JSON blob: {error}")]
-    BadJson { error: String },
-    #[error("state not found for ProcessId {process_id}")]
-    NotFound { process_id: ProcessId },
-    #[error("IO error: {error}")]
-    IOError { error: String },
-}
-
-impl StateError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            StateError::RocksDBError { .. } => "RocksDBError",
-            StateError::StartupError { .. } => "StartupError",
-            StateError::BadBytes { .. } => "BadBytes",
-            StateError::BadRequest { .. } => "BadRequest",
-            StateError::BadJson { .. } => "NoJson",
-            StateError::NotFound { .. } => "NotFound",
-            StateError::IOError { .. } => "IOError",
-        }
-    }
-}
-
-/// IPC Request format for the vfs:distro:sys runtime module.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VfsRequest {
-    pub path: String,
-    pub action: VfsAction,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub enum VfsAction {
-    CreateDrive,
-    CreateDir,
-    CreateDirAll,
-    CreateFile,
-    OpenFile { create: bool },
-    CloseFile,
-    Write,
-    WriteAll,
-    Append,
-    SyncAll,
-    Read,
-    ReadDir,
-    ReadToEnd,
-    ReadExact(u64),
-    ReadToString,
-    Seek { seek_from: SeekFrom },
-    RemoveFile,
-    RemoveDir,
-    RemoveDirAll,
-    Rename { new_path: String },
-    Metadata,
-    AddZip,
-    CopyFile { new_path: String },
-    Len,
-    SetLen(u64),
-    Hash,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-pub enum SeekFrom {
-    Start(u64),
-    End(i64),
-    Current(i64),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileType {
-    File,
-    Directory,
-    Symlink,
-    Other,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileMetadata {
-    pub file_type: FileType,
-    pub len: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DirEntry {
-    pub path: String,
-    pub file_type: FileType,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum VfsResponse {
-    Ok,
-    Err(VfsError),
-    Read,
-    SeekFrom(u64),
-    ReadDir(Vec<DirEntry>),
-    ReadToString(String),
-    Metadata(FileMetadata),
-    Len(u64),
-    Hash([u8; 32]),
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum VfsError {
-    #[error("No capability for action {action} at path {path}")]
-    NoCap { action: String, path: String },
-    #[error("Bytes blob required for {action} at path {path}")]
-    BadBytes { action: String, path: String },
-    #[error("bad request error: {error}")]
-    BadRequest { error: String },
-    #[error("error parsing path: {path}: {error}")]
-    ParseError { error: String, path: String },
-    #[error("IO error: {error}, at path {path}")]
-    IOError { error: String, path: String },
-    #[error("kernel capability channel error: {error}")]
-    CapChannelFail { error: String },
-    #[error("Bad JSON blob: {error}")]
-    BadJson { error: String },
-    #[error("File not found at path {path}")]
-    NotFound { path: String },
-    #[error("Creating directory failed at path: {path}: {error}")]
-    CreateDirError { path: String, error: String },
-    #[error("Other error: {error}")]
-    Other { error: String },
-}
-
-impl VfsError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            VfsError::NoCap { .. } => "NoCap",
-            VfsError::BadBytes { .. } => "BadBytes",
-            VfsError::BadRequest { .. } => "BadRequest",
-            VfsError::ParseError { .. } => "ParseError",
-            VfsError::IOError { .. } => "IOError",
-            VfsError::CapChannelFail { .. } => "CapChannelFail",
-            VfsError::BadJson { .. } => "NoJson",
-            VfsError::NotFound { .. } => "NotFound",
-            VfsError::CreateDirError { .. } => "CreateDirError",
-            VfsError::Other { .. } => "Other",
-        }
-    }
-}
-
-/// IPC Request format for the kv:distro:sys runtime module.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct KvRequest {
-    pub package_id: PackageId,
-    pub db: String,
-    pub action: KvAction,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum KvAction {
-    Open,
-    RemoveDb,
-    Set { key: Vec<u8>, tx_id: Option<u64> },
-    Delete { key: Vec<u8>, tx_id: Option<u64> },
-    Get { key: Vec<u8> },
-    BeginTx,
-    Commit { tx_id: u64 },
-    Backup,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KvResponse {
-    Ok,
-    BeginTx { tx_id: u64 },
-    Get { key: Vec<u8> },
-    Err { error: KvError },
-}
-
-#[derive(Debug, Serialize, Deserialize, Error)]
-pub enum KvError {
-    #[error("DbDoesNotExist")]
-    NoDb,
-    #[error("KeyNotFound")]
-    KeyNotFound,
-    #[error("no Tx found")]
-    NoTx,
-    #[error("No capability: {error}")]
-    NoCap { error: String },
-    #[error("rocksdb internal error: {error}")]
-    RocksDBError { action: String, error: String },
-    #[error("input bytes/json/key error: {error}")]
-    InputError { error: String },
-    #[error("IO error: {error}")]
-    IOError { error: String },
-}
-
-/// IPC Request format for the sqlite:distro:sys runtime module.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SqliteRequest {
-    pub package_id: PackageId,
-    pub db: String,
-    pub action: SqliteAction,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum SqliteAction {
-    Open,
-    RemoveDb,
-    Write {
-        statement: String,
-        tx_id: Option<u64>,
-    },
-    Read {
-        query: String,
-    },
-    BeginTx,
-    Commit {
-        tx_id: u64,
-    },
-    Backup,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum SqliteResponse {
-    Ok,
-    Read,
-    BeginTx { tx_id: u64 },
-    Err { error: SqliteError },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum SqlValue {
-    Integer(i64),
-    Real(f64),
-    Text(String),
-    Blob(Vec<u8>),
-    Boolean(bool),
-    Null,
-}
-
-#[derive(Debug, Serialize, Deserialize, Error)]
-pub enum SqliteError {
-    #[error("sqlite: DbDoesNotExist")]
-    NoDb,
-    #[error("sqlite: NoTx")]
-    NoTx,
-    #[error("sqlite: No capability: {error}")]
-    NoCap { error: String },
-    #[error("sqlite: UnexpectedResponse")]
-    UnexpectedResponse,
-    #[error("sqlite: NotAWriteKeyword")]
-    NotAWriteKeyword,
-    #[error("sqlite: NotAReadKeyword")]
-    NotAReadKeyword,
-    #[error("sqlite: Invalid Parameters")]
-    InvalidParameters,
-    #[error("sqlite: IO error: {error}")]
-    IOError { error: String },
-    #[error("sqlite: rusqlite error: {error}")]
-    RusqliteError { error: String },
-    #[error("sqlite: input bytes/json/key error: {error}")]
-    InputError { error: String },
-}
-
-impl std::fmt::Display for KvAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for KvError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        KvError::NoCap {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for KvError {
-    fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
-        KvError::NoCap {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<std::io::Error> for KvError {
-    fn from(err: std::io::Error) -> Self {
-        KvError::IOError {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for VfsError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        VfsError::CapChannelFail {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for VfsError {
-    fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
-        VfsError::CapChannelFail {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<std::io::Error> for VfsError {
-    fn from(err: std::io::Error) -> Self {
-        VfsError::IOError {
-            path: "".into(),
-            error: err.to_string(),
-        }
-    }
-}
-
-impl std::fmt::Display for VfsAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<std::io::Error> for StateError {
-    fn from(err: std::io::Error) -> Self {
-        StateError::IOError {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl ToSql for SqlValue {
-    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput> {
-        match self {
-            SqlValue::Integer(i) => i.to_sql(),
-            SqlValue::Real(f) => f.to_sql(),
-            SqlValue::Text(ref s) => s.to_sql(),
-            SqlValue::Blob(ref b) => b.to_sql(),
-            SqlValue::Boolean(b) => b.to_sql(),
-            SqlValue::Null => Ok(rusqlite::types::ToSqlOutput::Owned(
-                rusqlite::types::Value::Null,
-            )),
-        }
-    }
-}
-
-impl FromSql for SqlValue {
-    fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
-        match value {
-            ValueRef::Integer(i) => Ok(SqlValue::Integer(i)),
-            ValueRef::Real(f) => Ok(SqlValue::Real(f)),
-            ValueRef::Text(t) => {
-                let text_str = std::str::from_utf8(t).map_err(|_| FromSqlError::InvalidType)?;
-                Ok(SqlValue::Text(text_str.to_string()))
-            }
-            ValueRef::Blob(b) => Ok(SqlValue::Blob(b.to_vec())),
-            _ => Err(FromSqlError::InvalidType),
-        }
-    }
-}
-
-impl std::fmt::Display for SqliteAction {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl From<std::io::Error> for SqliteError {
-    fn from(err: std::io::Error) -> Self {
-        SqliteError::IOError {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<rusqlite::Error> for SqliteError {
-    fn from(err: rusqlite::Error) -> Self {
-        SqliteError::RusqliteError {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for SqliteError {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        SqliteError::NoCap {
-            error: err.to_string(),
-        }
-    }
-}
-
-impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for SqliteError {
-    fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
-        SqliteError::NoCap {
-            error: err.to_string(),
-        }
-    }
-}
-
-/// IPC Request format for the timer:distro:sys runtime module.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TimerAction {
-    Debug,
-    SetTimer(u64),
-}
-
-//
-// networking protocol types
-//
-
-/// Must be parsed from message pack vector.
-/// all Get actions must be sent from local process. used for debugging
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetAction {
-    /// Received from a router of ours when they have a new pending passthrough for us.
-    /// We should respond (if we desire) by using them to initialize a routed connection
-    /// with the NodeId given.
-    ConnectionRequest(NodeId),
-    /// can only receive from trusted source: requires net root cap
-    KnsUpdate(KnsUpdate),
-    /// can only receive from trusted source: requires net root cap
-    KnsBatchUpdate(Vec<KnsUpdate>),
-    /// get a list of peers we are connected to
-    GetPeers,
-    /// get the [`Identity`] struct for a single peer
-    GetPeer(String),
-    /// get a user-readable diagnostics string containing networking inforamtion
-    GetDiagnostics,
-    /// sign the attached blob payload, sign with our node's networking key.
-    /// **only accepted from our own node**
-    /// **the source [`Address`] will always be prepended to the payload**
-    Sign,
-    /// given a message in blob payload, verify the message is signed by
-    /// the given source. if the signer is not in our representation of
-    /// the PKI, will not verify.
-    /// **the `from` [`Address`] will always be prepended to the payload**
-    Verify { from: Address, signature: Vec<u8> },
-}
-
-/// Must be parsed from message pack vector
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetResponse {
-    /// response to [`NetAction::ConnectionRequest`]
-    Accepted(NodeId),
-    /// response to [`NetAction::ConnectionRequest`]
-    Rejected(NodeId),
-    /// response to [`NetAction::GetPeers`]
-    Peers(Vec<Identity>),
-    /// response to [`NetAction::GetPeer`]
-    Peer(Option<Identity>),
-    /// response to [`NetAction::GetDiagnostics`]. a user-readable string.
-    Diagnostics(String),
-    /// response to [`NetAction::Sign`]. contains the signature in blob
-    Signed,
-    /// response to [`NetAction::Verify`]. boolean indicates whether
-    /// the signature was valid or not. note that if the signer node
-    /// cannot be found in our representation of PKI, this will return false,
-    /// because we cannot find the networking public key to verify with.
-    Verified(bool),
-}
-
-//
-// KNS parts of the networking protocol
-//
-
-#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct KnsUpdate {
-    pub name: String,
-    pub public_key: String,
-    pub ips: Vec<String>,
-    pub ports: BTreeMap<String, u16>,
-    pub routers: Vec<String>,
-}
-
-impl KnsUpdate {
-    pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
-        self.ports.get(protocol)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum FdManagerRequest {
-    /// other process -> fd_manager
-    /// must send this to fd_manager to get an initial fds_limit
-    RequestFdsLimit,
-    /// other process -> fd_manager
-    /// send this to notify fd_manager that limit was hit,
-    /// which may or may not be reacted to
-    FdsLimitHit,
-
-    /// fd_manager -> other process
-    FdsLimit(u64),
-
-    /// administrative
-    UpdateMaxFdsAsFractionOfUlimitPercentage(u64),
-    /// administrative
-    UpdateUpdateUlimitSecs(u64),
-    /// administrative
-    UpdateCullFractionDenominator(u64),
-
-    /// get a `HashMap` of all `ProcessId`s to their number of allocated file descriptors.
-    GetState,
-    /// get the `u64` number of file descriptors allocated to `ProcessId`.
-    GetProcessFdLimit(ProcessId),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FdManagerResponse {
-    /// response to [`FdManagerRequest::GetState`]
-    GetState(HashMap<ProcessId, FdsLimit>),
-    /// response to [`FdManagerRequest::GetProcessFdLimit`]
-    GetProcessFdLimit(u64),
-}
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct FdsLimit {
-    pub limit: u64,
-    pub hit_count: u64,
-}
-
-#[derive(Debug, Error)]
-pub enum FdManagerError {
-    #[error("fd_manager: received a non-Request message")]
-    NotARequest,
-    #[error("fd_manager: received a non-FdManangerRequest")]
-    BadRequest,
-    #[error("fd_manager: received a FdManagerRequest::FdsLimit, but I am the one who sets limits")]
-    FdManagerWasSentLimit,
 }

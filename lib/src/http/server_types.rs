@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// HTTP Request received from the `http_server:distro:sys` service as a
+/// HTTP Request received from the `http-server:distro:sys` service as a
 /// result of either an HTTP or WebSocket binding, created via [`HttpServerAction`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HttpServerRequest {
@@ -48,11 +48,12 @@ pub struct IncomingHttpRequest {
 
 /// HTTP Response type that can be shared over Wasm boundary to apps.
 /// Respond to [`IncomingHttpRequest`] with this type.
-#[derive(Debug, Serialize, Deserialize)]
+///
+/// BODY is stored in the lazy_load_blob, as bytes
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HttpResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
-    // BODY is stored in the lazy_load_blob, as bytes
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,7 +62,7 @@ pub struct RpcResponseBody {
     pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
-/// Request type sent to `http_server:distro:sys` in order to configure it.
+/// Request type sent to `http-server:distro:sys` in order to configure it.
 ///
 /// If a response is expected, all actions will return a Response
 /// with the shape `Result<(), HttpServerActionError>` serialized to JSON.
@@ -102,18 +103,13 @@ pub enum HttpServerAction {
     WebSocketBind {
         path: String,
         authenticated: bool,
-        encrypted: bool,
         extension: bool,
     },
     /// SecureBind is the same as Bind, except that it forces new connections to be made
     /// from the unique subdomain of the process that bound the path. These are *always*
     /// authenticated. Since the subdomain is unique, it will require the user to be
     /// logged in separately to the general domain authentication.
-    WebSocketSecureBind {
-        path: String,
-        encrypted: bool,
-        extension: bool,
-    },
+    WebSocketSecureBind { path: String, extension: bool },
     /// Unbind a previously-bound WebSocket path
     WebSocketUnbind { path: String },
     /// Processes will RECEIVE this kind of request when a client connects to them.
@@ -134,8 +130,8 @@ pub enum HttpServerAction {
         desired_reply_type: MessageType,
     },
     /// For communicating with the ext.
-    /// Kinode's http_server sends this to the ext after receiving `WebSocketExtPushOutgoing`.
-    /// Upon receiving reply with this type from ext, http_server parses, setting:
+    /// Kinode's http-server sends this to the ext after receiving `WebSocketExtPushOutgoing`.
+    /// Upon receiving reply with this type from ext, http-server parses, setting:
     /// * id as given,
     /// * message type as given (Request or Response),
     /// * body as HttpServerRequest::WebSocketPush,
@@ -170,35 +166,33 @@ pub enum WsMessageType {
     Close,
 }
 
-/// Part of the Response type issued by http_server
+/// Part of the Response type issued by `http-server:distro:sys`
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum HttpServerError {
-    #[error("request could not be parsed to HttpServerAction: {req}.")]
-    BadRequest { req: String },
+    #[error("request could not be deserialized to valid HttpServerRequest")]
+    MalformedRequest,
     #[error("action expected blob")]
     NoBlob,
-    #[error("path binding error: {error}")]
-    PathBindError { error: String },
-    #[error("WebSocket error: {error}")]
-    WebSocketPushError { error: String },
+    #[error("path binding error: invalid source process")]
+    InvalidSourceProcess,
+    #[error("WebSocket error: ping/pong message too long")]
+    WsPingPongTooLong,
+    #[error("WebSocket error: channel not found")]
+    WsChannelNotFound,
 }
 
 /// Structure sent from client websocket to this server upon opening a new connection.
-/// After this is sent, depending on the `encrypted` flag, the channel will either be
-/// open to send and receive plaintext messages or messages encrypted with a symmetric
-/// key derived from the JWT.
+/// After this is sent the channel will be open to send and receive plaintext messages.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegister {
     pub auth_token: String,
     pub target_process: String,
-    pub encrypted: bool, // TODO symmetric key exchange here if true
 }
 
 /// Structure sent from this server to client websocket upon opening a new connection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegisterResponse {
     pub channel_id: u32,
-    // TODO symmetric key exchange here
 }
 
 #[derive(Debug, Serialize, Deserialize)]

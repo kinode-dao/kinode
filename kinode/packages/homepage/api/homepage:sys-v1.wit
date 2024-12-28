@@ -1,0 +1,45 @@
+interface homepage {
+    enum capability {
+        remove-other,
+        set-stylesheet,
+    }
+
+    /// The request format to add or remove an app from the homepage. You must have messaging
+    /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
+    variant request {
+        /// the package and process name will come from request source.
+        /// the path will automatically have the process_id prepended.
+        /// the icon is a base64 encoded image.
+        ///
+        /// lazy-load-blob: none.
+        add(add-request),
+        /// remove ourself from homepage (message source will be item removed)
+        ///
+        /// lazy-load-blob: none.
+        remove,
+        /// remove another app from homepage
+        /// using this requires RemoveOther capability
+        /// app store uses this to remove apps on uninstall
+        ///
+        /// lazy-load-blob: none.
+        remove-other(string),
+        /// set the stylesheet for the homepage
+        /// using this requires SetStylesheet capability
+        /// settings:settings:sys uses this to set the stylesheet
+        ///
+        /// lazy-load-blob: none.
+        set-stylesheet(string),
+    }
+
+    record add-request {
+        label: string,
+        icon: option<string>,
+        path: option<string>,
+        widget: option<string>,
+    }
+}
+
+world homepage-sys-v1 {
+    import homepage;
+    include process-v1;
+}

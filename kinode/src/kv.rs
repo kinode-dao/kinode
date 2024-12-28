@@ -2,9 +2,9 @@ use crate::vfs::UniqueQueue;
 use dashmap::DashMap;
 use lib::types::core::{
     Address, CapMessage, CapMessageSender, Capability, FdManagerRequest, KernelMessage, KvAction,
-    KvError, KvRequest, KvResponse, LazyLoadBlob, Message, MessageReceiver, MessageSender,
-    PackageId, PrintSender, Printout, ProcessId, Request, Response, FD_MANAGER_PROCESS_ID,
-    KV_PROCESS_ID,
+    KvCapabilityKind, KvCapabilityParams, KvError, KvRequest, KvResponse, LazyLoadBlob, Message,
+    MessageReceiver, MessageSender, PackageId, PrintSender, Printout, ProcessId, Request, Response,
+    FD_MANAGER_PROCESS_ID, KV_PROCESS_ID,
 };
 use rocksdb::OptimisticTransactionDB;
 use std::{
@@ -46,48 +46,43 @@ impl KvState {
         }
     }
 
-    pub async fn open_db(&mut self, package_id: PackageId, db: String) -> Result<(), KvError> {
-        let key = (package_id.clone(), db.clone());
-        if self.open_kvs.contains_key(&key) {
+    pub async fn open_db(&mut self, key: &(PackageId, String)) -> Result<(), KvError> {
+        if self.open_kvs.contains_key(key) {
             let mut access_order = self.access_order.lock().await;
-            access_order.remove(&key);
-            access_order.push_back(key);
+            access_order.remove(key);
+            access_order.push_back(key.clone());
             return Ok(());
         }
 
         if self.open_kvs.len() as u64 >= self.fds_limit {
             // close least recently used db
-            let key = self.access_order.lock().await.pop_front().unwrap();
-            self.remove_db(key.0, key.1).await;
+            let to_close = self.access_order.lock().await.pop_front().unwrap();
+            self.remove_db(&to_close).await;
         }
 
         #[cfg(unix)]
-        let db_path = self.kv_path.join(format!("{package_id}")).join(&db);
+        let db_path = self.kv_path.join(format!("{}", key.0)).join(&key.1);
         #[cfg(target_os = "windows")]
         let db_path = self
             .kv_path
-            .join(format!(
-                "{}_{}",
-                package_id._package(),
-                package_id._publisher()
-            ))
-            .join(&db);
+            .join(format!("{}_{}", key.0._package(), key.0._publisher()))
+            .join(&key.1);
 
         fs::create_dir_all(&db_path).await?;
 
         self.open_kvs.insert(
-            key,
+            key.clone(),
             OptimisticTransactionDB::open_default(&db_path).map_err(rocks_to_kv_err)?,
         );
         let mut access_order = self.access_order.lock().await;
-        access_order.push_back((package_id, db));
+        access_order.push_back(key.clone());
         Ok(())
     }
 
-    pub async fn remove_db(&mut self, package_id: PackageId, db: String) {
-        self.open_kvs.remove(&(package_id.clone(), db.to_string()));
+    pub async fn remove_db(&mut self, key: &(PackageId, String)) {
+        self.open_kvs.remove(key);
         let mut access_order = self.access_order.lock().await;
-        access_order.remove(&(package_id, db));
+        access_order.remove(key);
     }
 
     pub async fn remove_least_recently_used_dbs(&mut self, n: u64) {
@@ -95,7 +90,7 @@ impl KvState {
             let mut lock = self.access_order.lock().await;
             let key = lock.pop_front().unwrap();
             drop(lock);
-            self.remove_db(key.0, key.1).await;
+            self.remove_db(&key).await;
         }
     }
 }
@@ -124,6 +119,7 @@ pub async fn kv(
         if state.our.node != km.source.node {
             Printout::new(
                 1,
+                KV_PROCESS_ID.clone(),
                 format!(
                     "kv: got request from {}, but requests must come from our node {}",
                     km.source.node, state.our.node,
@@ -138,7 +134,8 @@ pub async fn kv(
             if let Err(e) = handle_fd_request(km, &mut state).await {
                 Printout::new(
                     1,
-                    format!("kv: got request from fd_manager that errored: {e:?}"),
+                    KV_PROCESS_ID.clone(),
+                    format!("kv: got request from fd-manager that errored: {e:?}"),
                 )
                 .send(&state.send_to_terminal)
                 .await;
@@ -167,7 +164,7 @@ pub async fn kv(
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
                 if let Err(e) = handle_request(km, &mut state, &send_to_caps_oracle).await {
-                    Printout::new(1, format!("kv: {e}"))
+                    Printout::new(1, KV_PROCESS_ID.clone(), format!("kv: {e}"))
                         .send(&state.send_to_terminal)
                         .await;
                     KernelMessage::builder()
@@ -177,7 +174,7 @@ pub async fn kv(
                         .message(Message::Response((
                             Response {
                                 inherit: false,
-                                body: serde_json::to_vec(&KvResponse::Err { error: e }).unwrap(),
+                                body: serde_json::to_vec(&KvResponse::Err(e)).unwrap(),
                                 metadata: None,
                                 capabilities: vec![],
                             },
@@ -213,29 +210,33 @@ async fn handle_request(
         ..
     }) = message
     else {
-        return Err(KvError::InputError {
-            error: "not a request".into(),
-        });
+        // we got a response -- safe to ignore
+        return Ok(());
     };
 
     let request: KvRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
-            println!("kv: got invalid Request: {}", e);
-            return Err(KvError::InputError {
-                error: "didn't serialize to KvAction.".into(),
-            });
+            println!("kv: got invalid request: {e}");
+            return Err(KvError::MalformedRequest);
         }
     };
 
-    check_caps(&source, state, send_to_caps_oracle, &request).await?;
+    let db_key = (request.package_id, request.db);
+
+    check_caps(
+        &source,
+        state,
+        send_to_caps_oracle,
+        &request.action,
+        &db_key,
+    )
+    .await?;
 
     // always open to ensure db exists
-    state
-        .open_db(request.package_id.clone(), request.db.clone())
-        .await?;
+    state.open_db(&db_key).await?;
 
-    let (body, bytes) = match &request.action {
+    let (body, bytes) = match request.action {
         KvAction::Open => {
             // handled in check_caps.
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
@@ -244,27 +245,24 @@ async fn handle_request(
             // handled in check_caps.
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
-        KvAction::Get { key } => {
-            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
+        KvAction::Get(key) => {
+            let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb);
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
 
-            match db.get(key) {
+            match db.get(&key) {
                 Ok(Some(value)) => (
-                    serde_json::to_vec(&KvResponse::Get { key: key.to_vec() }).unwrap(),
+                    serde_json::to_vec(&KvResponse::Get(key)).unwrap(),
                     Some(value),
                 ),
                 Ok(None) => {
                     return Err(KvError::KeyNotFound);
                 }
                 Err(e) => {
-                    return Err(KvError::RocksDBError {
-                        action: request.action.to_string(),
-                        error: e.to_string(),
-                    })
+                    return Err(rocks_to_kv_err(e));
                 }
             }
         }
@@ -276,17 +274,15 @@ async fn handle_request(
                 None,
             )
         }
-        KvAction::Set { key, tx_id } => {
-            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
+        KvAction::Set { ref key, tx_id } => {
+            let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb);
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
             let Some(blob) = blob else {
-                return Err(KvError::InputError {
-                    error: "no blob".into(),
-                });
+                return Err(KvError::MalformedRequest);
             };
 
             match tx_id {
@@ -294,22 +290,22 @@ async fn handle_request(
                     db.put(key, blob.bytes).map_err(rocks_to_kv_err)?;
                 }
                 Some(tx_id) => {
-                    let mut tx = match state.txs.get_mut(tx_id) {
+                    let mut tx = match state.txs.get_mut(&tx_id) {
                         None => {
-                            return Err(KvError::NoTx);
+                            return Err(KvError::NoTx(tx_id));
                         }
                         Some(tx) => tx,
                     };
-                    tx.push((request.action.clone(), Some(blob.bytes)));
+                    tx.push((request.action, Some(blob.bytes)));
                 }
             }
 
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
-        KvAction::Delete { key, tx_id } => {
-            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
+        KvAction::Delete { ref key, tx_id } => {
+            let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb);
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
@@ -318,28 +314,28 @@ async fn handle_request(
                     db.delete(key).map_err(rocks_to_kv_err)?;
                 }
                 Some(tx_id) => {
-                    let mut tx = match state.txs.get_mut(tx_id) {
+                    let mut tx = match state.txs.get_mut(&tx_id) {
                         None => {
-                            return Err(KvError::NoTx);
+                            return Err(KvError::NoTx(tx_id));
                         }
                         Some(tx) => tx,
                     };
-                    tx.push((request.action.clone(), None));
+                    tx.push((request.action, None));
                 }
             }
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Commit { tx_id } => {
-            let db = match state.open_kvs.get(&(request.package_id, request.db)) {
+            let db = match state.open_kvs.get(&db_key) {
                 None => {
-                    return Err(KvError::NoDb);
+                    return Err(KvError::NoDb(db_key.0, db_key.1));
                 }
                 Some(db) => db,
             };
 
-            let txs = match state.txs.remove(tx_id).map(|(_, tx)| tx) {
+            let txs = match state.txs.remove(&tx_id).map(|(_, tx)| tx) {
                 None => {
-                    return Err(KvError::NoTx);
+                    return Err(KvError::NoTx(tx_id));
                 }
                 Some(tx) => tx,
             };
@@ -362,20 +358,9 @@ async fn handle_request(
             match tx.commit() {
                 Ok(_) => (serde_json::to_vec(&KvResponse::Ok).unwrap(), None),
                 Err(e) => {
-                    return Err(KvError::RocksDBError {
-                        action: request.action.to_string(),
-                        error: e.to_string(),
-                    })
+                    return Err(rocks_to_kv_err(e));
                 }
             }
-        }
-        KvAction::Backup => {
-            // looping through open dbs and flushing their memtables
-            for db_ref in state.open_kvs.iter() {
-                let db = db_ref.value();
-                db.flush().map_err(rocks_to_kv_err)?;
-            }
-            (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
     };
 
@@ -410,128 +395,110 @@ async fn check_caps(
     source: &Address,
     state: &mut KvState,
     send_to_caps_oracle: &CapMessageSender,
-    request: &KvRequest,
+    action: &KvAction,
+    db_key: &(PackageId, String),
 ) -> Result<(), KvError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
-    match &request.action {
+    match &action {
         KvAction::Delete { .. }
         | KvAction::Set { .. }
         | KvAction::BeginTx
         | KvAction::Commit { .. } => {
-            send_to_caps_oracle
+            let Ok(()) = send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
                     cap: Capability::new(
                         state.our.as_ref().clone(),
-                        serde_json::json!({
-                            "kind": "write",
-                            "db": request.db.to_string(),
+                        serde_json::to_string(&KvCapabilityParams {
+                            kind: KvCapabilityKind::Write,
+                            db_key: db_key.clone(),
                         })
-                        .to_string(),
+                        .unwrap(),
                     ),
                     responder: send_cap_bool,
                 })
-                .await?;
-            let has_cap = recv_cap_bool.await?;
-            if !has_cap {
-                return Err(KvError::NoCap {
-                    error: request.action.to_string(),
-                });
-            }
+                .await
+            else {
+                return Err(KvError::NoWriteCap);
+            };
+            let Ok(true) = recv_cap_bool.await else {
+                return Err(KvError::NoWriteCap);
+            };
             Ok(())
         }
         KvAction::Get { .. } => {
-            send_to_caps_oracle
+            let Ok(()) = send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
                     cap: Capability::new(
                         state.our.as_ref().clone(),
-                        serde_json::json!({
-                            "kind": "read",
-                            "db": request.db.to_string(),
+                        serde_json::to_string(&KvCapabilityParams {
+                            kind: KvCapabilityKind::Read,
+                            db_key: db_key.clone(),
                         })
-                        .to_string(),
+                        .unwrap(),
                     ),
                     responder: send_cap_bool,
                 })
-                .await?;
-            let has_cap = recv_cap_bool.await?;
-            if !has_cap {
-                return Err(KvError::NoCap {
-                    error: request.action.to_string(),
-                });
-            }
+                .await
+            else {
+                return Err(KvError::NoReadCap);
+            };
+            let Ok(true) = recv_cap_bool.await else {
+                return Err(KvError::NoReadCap);
+            };
             Ok(())
         }
         KvAction::Open { .. } => {
-            if src_package_id != request.package_id {
-                return Err(KvError::NoCap {
-                    error: request.action.to_string(),
-                });
+            if src_package_id != db_key.0 {
+                return Err(KvError::MismatchingPackageId);
             }
 
             add_capability(
-                "read",
-                &request.db.to_string(),
+                KvCapabilityKind::Read,
+                &db_key,
                 &state.our,
                 &source,
                 send_to_caps_oracle,
             )
             .await?;
             add_capability(
-                "write",
-                &request.db.to_string(),
+                KvCapabilityKind::Write,
+                &db_key,
                 &state.our,
                 &source,
                 send_to_caps_oracle,
             )
             .await?;
 
-            if state
-                .open_kvs
-                .contains_key(&(request.package_id.clone(), request.db.clone()))
-            {
+            if state.open_kvs.contains_key(&db_key) {
                 return Ok(());
             }
 
-            state
-                .open_db(request.package_id.clone(), request.db.clone())
-                .await?;
+            state.open_db(&db_key).await?;
             Ok(())
         }
         KvAction::RemoveDb { .. } => {
-            if src_package_id != request.package_id {
-                return Err(KvError::NoCap {
-                    error: request.action.to_string(),
-                });
+            if src_package_id != db_key.0 {
+                return Err(KvError::MismatchingPackageId);
             }
 
-            state
-                .remove_db(request.package_id.clone(), request.db.clone())
-                .await;
+            state.remove_db(&db_key).await;
 
             #[cfg(unix)]
-            let db_path = state
-                .kv_path
-                .join(format!("{}", request.package_id))
-                .join(&request.db);
+            let db_path = state.kv_path.join(format!("{}", db_key.0)).join(&db_key.1);
             #[cfg(target_os = "windows")]
             let db_path = state
                 .kv_path
-                .join(format!(
-                    "{}_{}",
-                    request.package_id._package(),
-                    request.package_id._publisher()
-                ))
-                .join(&request.db);
+                .join(format!("{}_{}", db_key.0._package(), db_key.0._publisher()))
+                .join(&db_key.1);
 
             fs::remove_dir_all(&db_path).await?;
 
             Ok(())
         }
-        KvAction::Backup { .. } => Ok(()),
     }
 }
 
@@ -562,31 +529,37 @@ async fn handle_fd_request(km: KernelMessage, state: &mut KvState) -> anyhow::Re
 }
 
 async fn add_capability(
-    kind: &str,
-    db: &str,
+    kind: KvCapabilityKind,
+    db_key: &(PackageId, String),
     our: &Address,
     source: &Address,
     send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), KvError> {
     let cap = Capability {
         issuer: our.clone(),
-        params: serde_json::json!({ "kind": kind, "db": db }).to_string(),
+        params: serde_json::to_string(&KvCapabilityParams {
+            kind,
+            db_key: db_key.clone(),
+        })
+        .unwrap(),
     };
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    send_to_caps_oracle
+    let Ok(()) = send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
             caps: vec![cap],
             responder: Some(send_cap_bool),
         })
-        .await?;
-    let _ = recv_cap_bool.await?;
+        .await
+    else {
+        return Err(KvError::AddCapFailed);
+    };
+    let Ok(_) = recv_cap_bool.await else {
+        return Err(KvError::AddCapFailed);
+    };
     Ok(())
 }
 
 fn rocks_to_kv_err(error: rocksdb::Error) -> KvError {
-    KvError::RocksDBError {
-        action: "".into(),
-        error: error.to_string(),
-    }
+    KvError::RocksDBError(error.to_string())
 }

@@ -2,7 +2,7 @@ use kinode_process_lib::{script, Address, Request, SendError, SendErrorKind};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    world: "process-v1",
 });
 
 const USAGE: &str = "\x1b[1mUsage:\x1b[0m hi <node_id> <message>";

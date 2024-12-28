@@ -12,10 +12,10 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use lib::types::{core::*, http_client::*, http_server::*};
 
-// Test http_client with these commands in the terminal
-// !message our http_client {"method": "GET", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {}}
-// !message our http_client {"method": "POST", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
-// !message our http_client {"method": "PUT", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
+// Test http-client with these commands in the terminal
+// m our@http-client:distro:sys '{"method": "GET", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {}}'
+// m our@http-client:distro:sys '{"method": "POST", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}'
+// m our@http-client:distro:sys '{"method": "PUT", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}'
 
 /// WebSocket client connections are mapped by a tuple of ProcessId and
 /// a process-supplied channel_id (u32)
@@ -64,9 +64,7 @@ pub async fn http_client(
                 id,
                 rsvp.unwrap_or(source),
                 expects_response,
-                HttpClientError::BadRequest {
-                    req: String::from_utf8(body).unwrap_or_default(),
-                },
+                HttpClientError::MalformedRequest,
                 send_to_loop.clone(),
             )
             .await;
@@ -156,10 +154,7 @@ pub async fn http_client(
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
-                    source: Address {
-                        node: our_name.to_string(),
-                        process: ProcessId::new(Some("http_client"), "distro", "sys"),
-                    },
+                    source: Address::new(our_name.as_str(), ("http-client", "distro", "sys")),
                     target: target.clone(),
                     rsvp: None,
                     message: Message::Response((
@@ -176,7 +171,7 @@ pub async fn http_client(
                 .await;
         }
     }
-    Err(anyhow::anyhow!("http_client: loop died"))
+    Err(anyhow::anyhow!("http-client: loop died"))
 }
 
 async fn connect_websocket(
@@ -200,8 +195,8 @@ async fn connect_websocket(
     };
 
     let Ok(mut req) = url.clone().into_client_request() else {
-        return Err(HttpClientError::BadRequest {
-            req: "failed to parse url into client request".into(),
+        return Err(HttpClientError::WsOpenFailed {
+            url: url.to_string(),
         });
     };
 
@@ -220,10 +215,11 @@ async fn connect_websocket(
         Ok((ws_stream, _)) => ws_stream,
         Err(e) => {
             let _ = print_tx
-                .send(Printout {
-                    verbosity: 1,
-                    content: format!("http_client: underlying lib connection error {e:?}"),
-                })
+                .send(Printout::new(
+                    1,
+                    HTTP_CLIENT_PROCESS_ID.clone(),
+                    format!("http-client: underlying lib connection error {e:?}"),
+                ))
                 .await;
 
             return Err(HttpClientError::WsOpenFailed {
@@ -407,10 +403,11 @@ async fn handle_http_request(
     };
 
     let _ = print_tx
-        .send(Printout {
-            verbosity: 2,
-            content: format!("http_client: {req_method} request to {}", url),
-        })
+        .send(Printout::new(
+            2,
+            HTTP_CLIENT_PROCESS_ID.clone(),
+            format!("http-client: {req_method} request to {}", url),
+        ))
         .await;
 
     // Build the request
@@ -444,18 +441,16 @@ async fn handle_http_request(
     }
 
     // Add the headers
-    let Ok(request) = request_builder
+    let build = request_builder
         .headers(deserialize_headers(req.headers))
-        .build()
-    else {
+        .build();
+    if let Err(e) = build {
         http_error_message(
             our,
             id,
             target,
             expects_response,
-            HttpClientError::RequestFailed {
-                error: "failed to build request".into(),
-            },
+            HttpClientError::BuildRequestFailed(e.to_string()),
             send_to_loop,
         )
         .await;
@@ -463,7 +458,7 @@ async fn handle_http_request(
     };
 
     // Send the HTTP request
-    match client.execute(request).await {
+    match client.execute(build.unwrap()).await {
         Ok(response) => {
             // Handle the response and forward to the target process
             let Ok(body) = serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(&Ok(
@@ -479,7 +474,7 @@ async fn handle_http_request(
                     id,
                     source: Address {
                         node: our.to_string(),
-                        process: ProcessId::new(Some("http_client"), "distro", "sys"),
+                        process: ProcessId::new(Some("http-client"), "distro", "sys"),
                     },
                     target,
                     rsvp: None,
@@ -501,10 +496,11 @@ async fn handle_http_request(
         }
         Err(e) => {
             let _ = print_tx
-                .send(Printout {
-                    verbosity: 2,
-                    content: "http_client: executed request but got error".to_string(),
-                })
+                .send(Printout::new(
+                    2,
+                    HTTP_CLIENT_PROCESS_ID.clone(),
+                    "http-client: executed request but got error".to_string(),
+                ))
                 .await;
             // Forward the error to the target process
             http_error_message(
@@ -512,9 +508,7 @@ async fn handle_http_request(
                 id,
                 target,
                 expects_response,
-                HttpClientError::RequestFailed {
-                    error: e.to_string(),
-                },
+                HttpClientError::ExecuteRequestFailed(e.to_string()),
                 send_to_loop,
             )
             .await;
@@ -584,7 +578,7 @@ async fn http_error_message(
                 id,
                 source: Address {
                     node: our.to_string(),
-                    process: ProcessId::new(Some("http_client"), "distro", "sys"),
+                    process: ProcessId::new(Some("http-client"), "distro", "sys"),
                 },
                 target,
                 rsvp: None,
@@ -612,32 +606,24 @@ async fn send_ws_push(
     ws_streams: WebSocketStreams,
 ) -> Result<HttpClientResponse, HttpClientError> {
     let Some(mut ws_stream) = ws_streams.get_mut(&(target.process.clone(), channel_id)) else {
-        return Err(HttpClientError::WsPushFailed {
-            req: format!("channel_id {} not found", channel_id),
-        });
+        return Err(HttpClientError::WsPushUnknownChannel { channel_id });
     };
 
     let _ = match message_type {
         WsMessageType::Text => {
             let Some(blob) = blob else {
-                return Err(HttpClientError::WsPushFailed {
-                    req: "no blob".into(),
-                });
+                return Err(HttpClientError::WsPushNoBlob);
             };
 
             let Ok(text) = String::from_utf8(blob.bytes) else {
-                return Err(HttpClientError::WsPushFailed {
-                    req: "failed to convert blob to string".into(),
-                });
+                return Err(HttpClientError::WsPushBadText);
             };
 
             ws_stream.send(TungsteniteMessage::Text(text)).await
         }
         WsMessageType::Binary => {
             let Some(blob) = blob else {
-                return Err(HttpClientError::WsPushFailed {
-                    req: "no blob".into(),
-                });
+                return Err(HttpClientError::WsPushNoBlob);
             };
 
             ws_stream.send(TungsteniteMessage::Binary(blob.bytes)).await
@@ -684,7 +670,7 @@ async fn handle_ws_message(
             id,
             source: Address {
                 node: our.to_string(),
-                process: ProcessId::new(Some("http_client"), "distro", "sys"),
+                process: ProcessId::new(Some("http-client"), "distro", "sys"),
             },
             target,
             rsvp: None,

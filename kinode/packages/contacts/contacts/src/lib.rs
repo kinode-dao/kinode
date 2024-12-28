@@ -1,7 +1,7 @@
 use crate::kinode::process::contacts;
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_typed_state, homepage, http, kimap, kiprintln,
-    set_state, Address, Capability, LazyLoadBlob, Message, NodeId, Response,
+    await_message, call_init, eth, get_blob, get_typed_state, homepage, http, kimap, set_state,
+    Address, Capability, LazyLoadBlob, Message, NodeId, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -35,17 +35,27 @@ struct Contact(HashMap<String, serde_json::Value>);
 struct Contacts(HashMap<NodeId, Contact>);
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ContactsState {
+struct ContactsStateV1 {
     our: Address,
     contacts: Contacts,
 }
 
-impl ContactsState {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "version")]
+enum VersionedState {
+    /// State fully stored in memory, persisted using serde_json.
+    /// Future state version will use SQLite.
+    V1(ContactsStateV1),
+}
+
+impl VersionedState {
     fn new(our: Address) -> Self {
-        get_typed_state(|bytes| serde_json::from_slice(bytes)).unwrap_or(Self {
-            our,
-            contacts: Contacts(HashMap::new()),
-        })
+        get_typed_state(|bytes| serde_json::from_slice(bytes)).unwrap_or(Self::V1(
+            ContactsStateV1 {
+                our,
+                contacts: Contacts(HashMap::new()),
+            },
+        ))
     }
 
     fn save(&self) {
@@ -53,36 +63,57 @@ impl ContactsState {
     }
 
     fn contacts(&self) -> &Contacts {
-        &self.contacts
+        match self {
+            VersionedState::V1(state) => &state.contacts,
+        }
     }
 
     fn get_contact(&self, node: NodeId) -> Option<&Contact> {
-        self.contacts.0.get(&node)
+        match self {
+            VersionedState::V1(state) => state.contacts.0.get(&node),
+        }
     }
 
     fn add_contact(&mut self, node: NodeId) {
-        self.contacts.0.insert(node, Contact(HashMap::new()));
+        match self {
+            VersionedState::V1(state) => {
+                state.contacts.0.insert(node, Contact(HashMap::new()));
+            }
+        }
         self.save();
     }
 
     fn remove_contact(&mut self, node: NodeId) {
-        self.contacts.0.remove(&node);
+        match self {
+            VersionedState::V1(state) => {
+                state.contacts.0.remove(&node);
+            }
+        }
         self.save();
     }
 
     fn add_field(&mut self, node: NodeId, field: String, value: serde_json::Value) {
-        self.contacts
-            .0
-            .entry(node)
-            .or_insert_with(|| Contact(HashMap::new()))
-            .0
-            .insert(field, value);
+        match self {
+            VersionedState::V1(state) => {
+                state
+                    .contacts
+                    .0
+                    .entry(node)
+                    .or_insert_with(|| Contact(HashMap::new()))
+                    .0
+                    .insert(field, value);
+            }
+        }
         self.save();
     }
 
     fn remove_field(&mut self, node: NodeId, field: String) {
-        if let Some(contact) = self.contacts.0.get_mut(&node) {
-            contact.0.remove(&field);
+        match self {
+            VersionedState::V1(state) => {
+                if let Some(contact) = state.contacts.0.get_mut(&node) {
+                    contact.0.remove(&field);
+                }
+            }
         }
         self.save();
     }
@@ -97,15 +128,20 @@ impl ContactsState {
             ),
         );
     }
+
+    fn our(&self) -> &Address {
+        match self {
+            VersionedState::V1(state) => &state.our,
+        }
+    }
 }
 
 call_init!(initialize);
 fn initialize(our: Address) {
-    kiprintln!("started");
-
     homepage::add_to_homepage("Contacts", Some(ICON), Some("/"), None);
 
-    let mut state: ContactsState = ContactsState::new(our);
+    let mut state: VersionedState = get_typed_state(|bytes| serde_json::from_slice(bytes))
+        .unwrap_or_else(|| VersionedState::new(our));
 
     let kimap = kimap::Kimap::new(
         eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT),
@@ -117,7 +153,7 @@ fn initialize(our: Address) {
     // serve the frontend on a secure subdomain
     http_server
         .serve_ui(
-            &state.our,
+            state.our(),
             "ui",
             vec!["/"],
             http::server::HttpBindingConfig::default().secure_subdomain(true),
@@ -130,7 +166,7 @@ fn initialize(our: Address) {
 }
 
 fn main_loop(
-    state: &mut ContactsState,
+    state: &mut VersionedState,
     kimap: &kimap::Kimap,
     http_server: &mut http::server::HttpServer,
 ) {
@@ -148,7 +184,7 @@ fn main_loop(
             }) => {
                 // ignore messages from other nodes -- technically superfluous check
                 // since manifest does not acquire networking capability
-                if source.node() != state.our.node {
+                if source.node() != state.our().node {
                     continue;
                 }
                 handle_request(&source, &body, capabilities, state, kimap, http_server);
@@ -162,12 +198,12 @@ fn handle_request(
     source: &Address,
     body: &[u8],
     capabilities: Vec<Capability>,
-    state: &mut ContactsState,
+    state: &mut VersionedState,
     kimap: &kimap::Kimap,
     http_server: &mut http::server::HttpServer,
 ) {
     // source node is ALWAYS ourselves since networking is disabled
-    if source.process == "http_server:distro:sys" {
+    if source.process == "http-server:distro:sys" {
         // receive HTTP requests and websocket connection messages from our server
         let server_request = http_server.parse_request(body).unwrap();
 
@@ -192,7 +228,7 @@ fn handle_request(
 
 /// Handle HTTP requests from our own frontend.
 fn handle_http_request(
-    state: &mut ContactsState,
+    state: &mut VersionedState,
     kimap: &kimap::Kimap,
     http_request: &http::server::IncomingHttpRequest,
 ) -> (http::server::HttpResponse, Option<LazyLoadBlob>) {
@@ -239,7 +275,7 @@ fn handle_http_request(
 }
 
 fn handle_contacts_request(
-    state: &mut ContactsState,
+    state: &mut VersionedState,
     kimap: &kimap::Kimap,
     request_bytes: &[u8],
     capabilities: Option<Vec<Capability>>,
@@ -254,7 +290,7 @@ fn handle_contacts_request(
     // each request requires one of read-name-only, read, add, or remove
     if let Some(capabilities) = capabilities {
         let required_capability = Capability::new(
-            &state.our,
+            state.our(),
             serde_json::to_string(&match request {
                 contacts::Request::GetNames => contacts::Capability::ReadNameOnly,
                 contacts::Request::GetAllContacts | contacts::Request::GetContact(_) => {

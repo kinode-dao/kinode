@@ -13,6 +13,6 @@
         "grant_capabilities": [
             "contacts:contacts:sys"
         ],
-        "wit_version": 0
+        "wit_version": 1
     }
 }

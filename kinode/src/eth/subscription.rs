@@ -1,7 +1,6 @@
 use crate::eth::*;
 use alloy::pubsub::RawSubscription;
 use alloy::rpc::types::eth::pubsub::SubscriptionResult;
-use alloy::rpc::types::pubsub;
 
 /// cleans itself up when the subscription is closed or fails.
 pub async fn create_new_subscription(
@@ -190,10 +189,14 @@ async fn build_subscription(
     else {
         return Err(EthError::PermissionDenied); // will never hit
     };
-    if *kind == pubsub::SubscriptionKind::NewHeads {
-        Printout::new(0, format!("newHeads subscription requested by {target}!"))
-            .send(print_tx)
-            .await;
+    if *kind == SubscriptionKind::NewHeads {
+        Printout::new(
+            0,
+            ETH_PROCESS_ID.clone(),
+            format!("newHeads subscription requested by {target}!"),
+        )
+        .send(print_tx)
+        .await;
     }
     let mut urls = {
         // in code block to drop providers lock asap to avoid deadlock
@@ -231,9 +234,8 @@ async fn build_subscription(
             }
         };
         let kind = serde_json::to_value(&kind).unwrap();
-        let params = serde_json::to_value(&params).unwrap();
         match pubsub
-            .subscribe::<[serde_json::Value; 2], SubscriptionResult>([kind, params])
+            .subscribe::<[serde_json::Value; 2], SubscriptionResult>([kind, params.to_owned()])
             .await
         {
             Ok(sub) => {
@@ -392,11 +394,11 @@ async fn maintain_local_subscription(
             },
             value = rx.recv() => {
                 let value = match value {
-                    Ok(v) => v,
+                    Ok(v) => serde_json::from_str::<serde_json::Value>(v.get()),
                     Err(e) => break e.to_string(),
                 };
-                let result: SubscriptionResult = match serde_json::from_str(value.get()) {
-                    Ok(res) => res,
+                let result = match value {
+                    Ok(v) => v,
                     Err(e) => break e.to_string(),
                 };
                 kernel_message(

@@ -38,7 +38,7 @@ cargo install cargo-wasi
 
 # Install NPM so we can build frontends for "distro" packages.
 # https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-# If you want to skip this step, build the packages with `cargo run -p build_packages -- --skip-build-frontend` to neglect building the frontends
+# If you want to skip this step, build the packages with `cargo run -p build-packages -- --skip-build-frontend` to neglect building the frontends
 
 # Build the "distro" Wasm modules, then, build the runtime.
 # The compiled packages will be at `kinode/target/packages.zip`.
@@ -46,7 +46,8 @@ cargo install cargo-wasi
 # OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`).
 
 cd kinode
-cargo run -p build_packages
+cargo run -p build-packages
+# OPTIONAL: --release flag
 cargo build -p kinode
 ```
 
@@ -54,15 +55,17 @@ cargo build -p kinode
 
 ## Security Status
 
-No security audits of this crate have ever been performed. This software is under active development and should be **used at your own risk**.
+This software is under active development and should be **used at your own risk**.
+
+A security audit targeting the networking protocol, web interface, and kernel architecture was performed by [Enigma Dark](https://www.enigmadark.com/).
+That report can be found [here](https://github.com/Enigma-Dark/security-review-reports/blob/main/2024-11-18_Architecture_Review_Report_Kinode.pdf).
 
 ## Boot
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
 ```bash
-# OPTIONAL: --release flag
-cargo +nightly run -p kinode -- home
+cargo run -p kinode -- home
 ```
 
 On boot you will be prompted to navigate to `localhost:8080` or whatever HTTP port your node bound to: it will try 8080 and go up from there, or use the port passed with the `--port` boot flag. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
@@ -108,14 +111,14 @@ You can also do the same thing by using the `--rpc` boot flag with an Optimism W
 
 The base OS install comes with certain runtime modules. These are interacted with in the same way as userspace processes, but are deeply ingrained to the system and the APIs they present at their Process IDs are assumed to be available by userspace processes. All of these are identified in the `distro:sys` package.
 
-This distribution of the OS also comes with userspace packages pre-installed. Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns_indexer`. Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
+This distribution of the OS also comes with userspace packages pre-installed. Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns-indexer`. Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
 
 The runtime distro processes are:
 
 - `eth:distro:sys`
-- `fd_manager:distro:sys`
-- `http_client:distro:sys`
-- `http_server:distro:sys`
+- `fd-manager:distro:sys`
+- `http-client:distro:sys`
+- `http-server:distro:sys`
 - `kernel:distro:sys`
 - `kv:distro:sys`
 - `net:distro:sys`
@@ -127,12 +130,11 @@ The runtime distro processes are:
 
 The distro userspace packages are:
 
-- `app_store:sys`
+- `app-store:sys`
 - `chess:sys`
 - `contacts:sys`
 - `homepage:sys`
-- `kino_updates:sys`
-- `kns_indexer:sys`
+- `kns-indexer:sys`
 - `settings:sys`
 - `terminal:sys`
 - `tester:sys` (used with `kit` for running test suites, only installed in `simulation-mode`)
@@ -154,6 +156,8 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
+- CTRL+W to set process-level verbosities that override the verbosity mode set with CTRL+V (0-3, 0 is default and lowest verbosity)
+
 ### Built-in terminal scripts
 
 The terminal package contains a number of built-in scripts.
@@ -167,7 +171,7 @@ Subsequent use of the shorthand will then be interpolated as the process ID.
 A list of the terminal scripts included in this distro:
 
 - `alias <shorthand> <process_id>`: create an alias for a script.
-    - Example: `alias get_block get_block:kns_indexer:sys`
+    - Example: `alias get_block get-block:kns-indexer:sys`
     - note: all of these listed commands are just default aliases for terminal scripts.
 - `cat <vfs-file-path>`: print the contents of a file in the terminal.
     - Example: `cat /terminal:sys/pkg/scripts.json`
@@ -183,7 +187,7 @@ A list of the terminal scripts included in this distro:
     - Example: `m our@eth:distro:sys "SetPublic" -a 5`
     - the '-a' flag is used to expect a response with a given timeout
     - `our` will always be interpolated by the system as your node's name
-- `net_diagnostics`: print some useful networking diagnostic data.
+- `net-diagnostics`: print some useful networking diagnostic data.
 - `peer <name>`: print the peer's PKI info, if it exists.
 - `peers`: print the peers the node currently hold connections with.
 - `top <process_id>`: display kernel debugging info about a process. Leave the process ID blank to display info about all processes and get the total number of running processes.
@@ -202,20 +206,32 @@ To build a local Docker image, run the following command in this project root.
 
 ```bash
 # The `VERSION` may be replaced with the tag of a GitHub release
+export VERSION=0.9.8
 
 # Build for your system's architecture
-docker build . -t 0xlynett/kinode --build-arg VERSION=v0.9.1
+docker build . -t kinode-${VERSION} --build-arg VERSION=v${VERSION} --platform linux/amd64
 
 # Build a multiarch image
-docker buildx build . --platform arm64,amd64 --build-arg VERSION=v0.9.1 -t 0xlynett/kinode
+docker buildx build . -t kinode-${VERSION} --build-arg VERSION=v${VERSION} --platform arm64,amd64
 ```
 
-For example:
+To run, for example for a node named `helloworld.os`:
 
 ```bash
-docker volume create kinode-volume
+export NODENAME=helloworld.os
 
-docker run -d -p 8080:8080 -it --name my-kinode \
-    --mount type=volume,source=kinode-volume,destination=/kinode-home \
-    0xlynett/kinode
+docker volume create kinode-${NODENAME}
+
+docker run -p 8080:8080 --rm -it --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+```
+
+which will launch your Kinode container attached to the terminal.
+Alternatively you can run it detached:
+```
+docker run -p 8080:8080 --rm -dt --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+```
+Note that the `-t` flag *must* be passed.
+If it is not passed, you must pass the `--detached` argument to the Kinode binary, i.e.
+```
+docker run -p 8080:8080 --rm -d --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION} /kinode-home --detached
 ```

@@ -1,42 +1,24 @@
+use crate::kinode::process::settings::{
+    Direct, EthConfigRequest as SettingsEthConfigAction, HiRequest, Identity as SettingsIdentity,
+    NodeOrRpcUrl as SettingsNodeOrRpcUrl, NodeRouting as SettingsNodeRouting,
+    Request as SettingsRequest, Response as SettingsResponse, SettingsData, SettingsError,
+};
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, homepage, http, kernel_types, net, println, Address,
-    LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError, SendErrorKind,
+    await_message, call_init, eth, get_blob, get_capability, homepage, http, kernel_types, kimap,
+    net, println, Address, Capability, LazyLoadBlob, Message, ProcessId, Request, Response,
+    SendError, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-extern crate base64;
+use std::{collections::HashMap, vec};
 
 const ICON: &str = include_str!("icon");
 
-#[derive(Debug, Serialize, Deserialize)]
-enum SettingsRequest {
-    Hi {
-        node: NodeId,
-        content: String,
-        timeout: u64,
-    },
-    PeerId(NodeId),
-    EthConfig(eth::EthConfigAction),
-    Shutdown,
-    KillProcess(ProcessId),
-    SetStylesheet(String),
-}
-
-type SettingsResponse = Result<Option<SettingsData>, SettingsError>;
-
-#[derive(Debug, Serialize, Deserialize)]
-enum SettingsData {
-    PeerId(net::Identity),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum SettingsError {
-    HiTimeout,
-    HiOffline,
-    KernelNonresponsive,
-    MalformedRequest,
-    StateFetchFailed,
-}
+wit_bindgen::generate!({
+    path: "target/wit",
+    world: "settings-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [serde::Deserialize, serde::Serialize],
+});
 
 /// never gets persisted
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,6 +30,13 @@ struct SettingsState {
     pub eth_rpc_access_settings: Option<eth::AccessSettings>,
     pub process_map: Option<kernel_types::ProcessMap>,
     pub stylesheet: Option<String>,
+    pub our_tba: eth::Address,
+    pub our_owner: eth::Address,
+    pub net_key: Option<eth::Bytes>,  // always
+    pub routers: Option<eth::Bytes>,  // if indirect
+    pub ip: Option<eth::Bytes>,       // if direct
+    pub ws_port: Option<eth::Bytes>,  // sometimes, if direct
+    pub tcp_port: Option<eth::Bytes>, // sometimes, if direct
 }
 
 impl SettingsState {
@@ -60,6 +49,13 @@ impl SettingsState {
             eth_rpc_access_settings: None,
             process_map: None,
             stylesheet: None,
+            our_tba: eth::Address::ZERO,
+            our_owner: eth::Address::ZERO,
+            net_key: None,
+            routers: None,
+            ip: None,
+            ws_port: None,
+            tcp_port: None,
         }
     }
 
@@ -164,20 +160,43 @@ impl SettingsState {
             self.stylesheet = Some(String::from_utf8_lossy(&bytes).to_string());
         }
 
+        // kimap
+        let kimap = kimap::Kimap::default(5);
+        let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
+            return Err(anyhow::anyhow!("failed to get kimap node"));
+        };
+        self.our_tba = tba;
+        self.our_owner = owner;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~net-key.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get net-key"));
+        };
+        self.net_key = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~routers.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get routers"));
+        };
+        self.routers = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ip.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get ip"));
+        };
+        self.ip = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ws-port.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get ws-port"));
+        };
+        self.ws_port = bytes;
+        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~tcp-port.{}", self.our.node())) else {
+            return Err(anyhow::anyhow!("failed to get tcp-port"));
+        };
+        self.tcp_port = bytes;
+
+        // update homepage widget
+        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), Some(&make_widget(self)));
+
         Ok(())
     }
 }
 
-wit_bindgen::generate!({
-    path: "target/wit",
-    world: "process-v0",
-});
-
 call_init!(initialize);
 fn initialize(our: Address) {
-    // add ourselves to the homepage
-    homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
-
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
 
@@ -195,6 +214,17 @@ fn initialize(our: Address) {
         .unwrap();
     http_server.secure_bind_http_path("/ask").unwrap();
     http_server.secure_bind_ws_path("/").unwrap();
+    // insecure to allow widget to call refresh
+    http_server
+        .bind_http_path("/refresh", http::server::HttpBindingConfig::default())
+        .unwrap();
+
+    // populate state
+    // this will add ourselves to the homepage
+    if let Err(e) = state.fetch() {
+        println!("failed to fetch settings: {e}");
+        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
+    }
 
     main_loop(&mut state, &mut http_server);
 }
@@ -236,7 +266,7 @@ fn handle_request(
     http_server: &mut http::server::HttpServer,
 ) -> SettingsResponse {
     // source node is ALWAYS ourselves since networking is disabled
-    if source.process == "http_server:distro:sys" {
+    if source.process == "http-server:distro:sys" {
         // receive HTTP requests and websocket connection messages from our server
         let server_request = http_server
             .parse_request(body)
@@ -280,6 +310,12 @@ fn handle_http_request(
     state: &mut SettingsState,
     http_request: &http::server::IncomingHttpRequest,
 ) -> anyhow::Result<(http::server::HttpResponse, Option<LazyLoadBlob>)> {
+    if let Ok(path) = http_request.path() {
+        if &path == "/refresh" {
+            state.fetch()?;
+            return Ok((http::server::HttpResponse::new(http::StatusCode::OK), None));
+        }
+    }
     match http_request.method()?.as_str() {
         "GET" => {
             state.fetch()?;
@@ -327,11 +363,11 @@ fn handle_settings_request(
     request: SettingsRequest,
 ) -> SettingsResponse {
     match request {
-        SettingsRequest::Hi {
+        SettingsRequest::Hi(HiRequest {
             node,
             content,
             timeout,
-        } => {
+        }) => {
             if let Err(SendError { kind, .. }) = Request::to((&node, "net", "distro", "sys"))
                 .body(content.into_bytes())
                 .send_and_await_response(timeout)
@@ -361,7 +397,23 @@ fn handle_settings_request(
                 Ok(msg) => match rmp_serde::from_slice::<net::NetResponse>(msg.body()) {
                     Ok(net::NetResponse::Peer(Some(peer))) => {
                         println!("got peer info: {peer:?}");
-                        return Ok(Some(SettingsData::PeerId(peer)));
+                        // convert Identity to SettingsIdentity
+                        let settings_identity = SettingsIdentity {
+                            name: peer.name,
+                            networking_key: peer.networking_key,
+                            routing: match peer.routing {
+                                net::NodeRouting::Direct { ip, ports } => {
+                                    SettingsNodeRouting::Direct(Direct {
+                                        ip,
+                                        ports: ports.into_iter().map(|(p, q)| (p, q)).collect(),
+                                    })
+                                }
+                                net::NodeRouting::Routers(routers) => {
+                                    SettingsNodeRouting::Routers(routers)
+                                }
+                            },
+                        };
+                        return Ok(Some(SettingsData::PeerId(settings_identity)));
                     }
                     Ok(net::NetResponse::Peer(None)) => {
                         println!("peer not found");
@@ -376,7 +428,9 @@ fn handle_settings_request(
                 }
             }
         }
-        SettingsRequest::EthConfig(action) => {
+        SettingsRequest::EthConfig(settings_eth_config_request) => {
+            // convert SettingsEthConfigRequest to EthConfigRequest
+            let action = eth_config_convert(settings_eth_config_request)?;
             match Request::to(("our", "eth", "distro", "sys"))
                 .body(serde_json::to_vec(&action).unwrap())
                 .send_and_await_response(30)
@@ -405,8 +459,24 @@ fn handle_settings_request(
                 .send()
                 .unwrap();
         }
-        SettingsRequest::KillProcess(pid) => {
+        SettingsRequest::Reset => {
+            // reset KNS
+            let kns_address = Address::new(&state.our.node, ("kns-indexer", "kns-indexer", "sys"));
+            let root_cap = get_capability(&kns_address, "{\"root\":true}");
+
+            if let Some(cap) = root_cap {
+                Request::to(("our", "kns-indexer", "kns-indexer", "sys"))
+                    .body(serde_json::to_vec(&SettingsRequest::Reset).unwrap())
+                    .capabilities(vec![cap])
+                    .send()
+                    .unwrap();
+            }
+        }
+        SettingsRequest::KillProcess(pid_str) => {
             // kill a process
+            let Ok(pid) = pid_str.parse::<ProcessId>() else {
+                return SettingsResponse::Err(SettingsError::MalformedRequest);
+            };
             if let Err(_) = Request::to(("our", "kernel", "distro", "sys"))
                 .body(serde_json::to_vec(&kernel_types::KernelCommand::KillProcess(pid)).unwrap())
                 .send_and_await_response(30)
@@ -429,6 +499,10 @@ fn handle_settings_request(
                         .to_string()
                         .as_bytes(),
                 )
+                .capabilities(vec![Capability::new(
+                    Address::new(&state.our.node, ("homepage", "homepage", "sys")),
+                    "\"SetStylesheet\"".to_string(),
+                )])
                 .send()
                 .unwrap();
             state.stylesheet = Some(stylesheet);
@@ -438,4 +512,177 @@ fn handle_settings_request(
 
     state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
     SettingsResponse::Ok(None)
+}
+
+fn eth_config_convert(
+    settings_eth_config_request: SettingsEthConfigAction,
+) -> Result<eth::EthConfigAction, SettingsError> {
+    match settings_eth_config_request {
+        SettingsEthConfigAction::AddProvider(settings_provider_config) => {
+            Ok(eth::EthConfigAction::AddProvider(eth::ProviderConfig {
+                chain_id: settings_provider_config.chain_id,
+                provider: match settings_provider_config.node_or_rpc_url {
+                    SettingsNodeOrRpcUrl::Node(node_str) => {
+                        // the eth module does not actually need the full routing info
+                        // so we can just use the name as the kns update
+                        eth::NodeOrRpcUrl::Node {
+                            kns_update: net::KnsUpdate {
+                                name: node_str,
+                                public_key: "".to_string(),
+                                ips: vec![],
+                                ports: std::collections::BTreeMap::new(),
+                                routers: vec![],
+                            },
+                            use_as_provider: true,
+                        }
+                    }
+                    SettingsNodeOrRpcUrl::RpcUrl(url) => eth::NodeOrRpcUrl::RpcUrl(url),
+                },
+                trusted: true,
+            }))
+        }
+        SettingsEthConfigAction::RemoveProvider((chain_id, provider_str)) => Ok(
+            eth::EthConfigAction::RemoveProvider((chain_id, provider_str)),
+        ),
+        SettingsEthConfigAction::SetPublic => Ok(eth::EthConfigAction::SetPublic),
+        SettingsEthConfigAction::SetPrivate => Ok(eth::EthConfigAction::SetPrivate),
+        SettingsEthConfigAction::AllowNode(node) => Ok(eth::EthConfigAction::AllowNode(node)),
+        SettingsEthConfigAction::UnallowNode(node) => Ok(eth::EthConfigAction::UnallowNode(node)),
+        SettingsEthConfigAction::DenyNode(node) => Ok(eth::EthConfigAction::DenyNode(node)),
+        SettingsEthConfigAction::UndenyNode(node) => Ok(eth::EthConfigAction::UndenyNode(node)),
+    }
+}
+
+fn make_widget(state: &SettingsState) -> String {
+    let owner_string = state.our_owner.to_string();
+    let tba_string = state.our_tba.to_string();
+    return format!(
+        r#"<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/kinode.css">
+    </head>
+    <body style="margin: 0; padding: 8px; width: 100%; height: 100%; padding-bottom: 30px;">
+        <article id="onchain-id">
+            <h3>{}</h3>
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{} processes running</p></summary>
+                <ul style="margin: 8px; list-style-type: none;">
+                    {}
+                </ul>
+            </details>
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{} RPC providers</p></summary>
+                <ul style="margin: 8px; list-style-type: none;">
+                    {}
+                </ul>
+            </details>
+        </article>
+
+        <br />
+
+        <article id="addrs">
+            <p>owner: <a href="https://etherscan.io/address/{}#multichain-portfolio" target="_blank">{}</a></p>
+            <p>token-bound account: <a href="https://etherscan.io/address/{}#multichain-portfolio" target="_blank">{}</a></p>
+        </article>
+
+        <br />
+
+        <article id="net">
+            <details style="word-wrap: break-word;">
+                <summary><p style="display: inline;">{}</p></summary>
+                <p style="white-space: pre; margin: 8px;">{}</p>
+            </details>
+        </article>
+
+        <br />
+
+        <button id="refresh" onclick="this.innerHTML='⌛'; fetch('/settings:settings:sys/refresh').then(() => setTimeout(() => window.location.reload(), 1000))" style="width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; font-size: 24px;">⟳</button>
+
+        <br />
+
+        <a href="/settings:settings:sys/" target="_blank">Adjust Settings</a>
+    </body>
+    </html>"#,
+        state.our.node(),
+        state.process_map.as_ref().map(|m| m.len()).unwrap_or(0),
+        state
+            .process_map
+            .as_ref()
+            .map(|m| {
+                let mut v = m
+                    .keys()
+                    .map(|pid| format!("<li>{}</li>", pid))
+                    .collect::<Vec<_>>();
+                v.sort();
+                v.join("\n")
+            })
+            .unwrap_or_default(),
+        state
+            .eth_rpc_providers
+            .as_ref()
+            .map(|m| m.len())
+            .unwrap_or(0),
+        state
+            .eth_rpc_providers
+            .as_ref()
+            .map(|m| {
+                let mut v = m
+                    .iter()
+                    .filter_map(|config| {
+                        match &config.provider {
+                            eth::NodeOrRpcUrl::Node {
+                                kns_update,
+                                use_as_provider,
+                            } => {
+                                if *use_as_provider {
+                                    Some(format!(
+                                        "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
+                                        kns_update.name,
+                                        config.chain_id
+                                    ))
+                                } else {
+                                    None
+                                }
+                            }
+                            eth::NodeOrRpcUrl::RpcUrl(url) => Some(format!(
+                                "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
+                                url,
+                                config.chain_id
+                            )),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                v.sort();
+                v.join("\n")
+            })
+            .unwrap_or_default(),
+        owner_string,
+        format!(
+            "{}..{}",
+            &owner_string[..4],
+            &owner_string[owner_string.len() - 4..]
+        ),
+        tba_string,
+        format!(
+            "{}..{}",
+            &tba_string[..4],
+            &tba_string[tba_string.len() - 4..]
+        ),
+        match &state.identity.as_ref().expect("identity not set!!").routing {
+            net::NodeRouting::Direct { .. } => "direct node".to_string(),
+            net::NodeRouting::Routers(routers) => format!("indirect node with {} routers", routers.len()),
+        },
+        match &state.identity.as_ref().expect("identity not set!!").routing {
+            net::NodeRouting::Direct { ip, ports } => {
+                let mut v = ports
+                    .iter()
+                    .map(|p| format!("{}: {}", p.0, p.1))
+                    .collect::<Vec<_>>();
+                v.push(format!("ip: {}", ip));
+                v.join("\n")
+            }
+            net::NodeRouting::Routers(routers) => routers.join("\n"),
+        },
+    );
 }

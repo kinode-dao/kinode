@@ -1,9 +1,11 @@
 interface tester {
     variant request {
+        /// lazy-load-blob: none.
         run(run-request),
     }
 
     variant response {
+        /// lazy-load-blob: none.
         run(result<_, fail-response>)
     }
 
@@ -23,5 +25,5 @@ interface tester {
 
 world tester-sys-v0 {
     import tester;
-    include process-v0;
+    include process-v1;
 }
