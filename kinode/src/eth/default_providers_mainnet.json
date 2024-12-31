@@ -6,7 +6,7 @@
             "Node": {
                 "use_as_provider": true,
                 "kns_update": {
-                    "name": "providerfren.os",
+                    "name": "eth-provider.kino",
                     "owner": "",
                     "node": "",
                     "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
@@ -28,7 +28,29 @@
             "Node": {
                 "use_as_provider": true,
                 "kns_update": {
-                    "name": "providerfren.os",
+                    "name": "optimism-provider.kino",
+                    "owner": "",
+                    "node": "",
+                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
+                    "ips": [
+                        "147.135.114.167"
+                    ],
+                    "ports": {
+                        "ws": 9999
+                    },
+                    "routers": []
+                }
+            }
+        }
+    },
+    {
+        "chain_id": 8453,
+        "trusted": false,
+        "provider": {
+            "Node": {
+                "use_as_provider": true,
+                "kns_update": {
+                    "name": "base-provider.kino",
                     "owner": "",
                     "node": "",
                     "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
@@ -50,7 +72,7 @@
             "Node": {
                 "use_as_provider": true,
                 "kns_update": {
-                    "name": "providerfren.os",
+                    "name": "sepolia-provider.kino",
                     "owner": "",
                     "node": "",
                     "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
