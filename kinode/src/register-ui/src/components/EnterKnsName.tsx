@@ -47,7 +47,7 @@ function EnterKnsName({
       let validities: string[] = [];
       setIsPunyfied('');
 
-      if (/[A-Z]/.test(name)) {
+      if (!/^[a-z0-9-]*$/.test(name)) {
         validities.push(NAME_URL);
         setNameValidities(validities);
         return;
@@ -119,7 +119,7 @@ function EnterKnsName({
           type="text"
           required
           name="kns-name"
-          placeholder="mynode123"
+          placeholder="node-name"
           className="kns-input"
         />
         {fixedTlz && <span className="kns-suffix">{fixedTlz}</span>}

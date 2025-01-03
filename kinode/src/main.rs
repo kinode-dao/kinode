@@ -218,12 +218,16 @@ async fn main() {
     )
     .await;
 
-    #[cfg(not(feature = "simulation-mode"))]
     println!(
-        "Welcome to Kinode.\nThe time is {}.\nLogin or register at http://localhost:{}\r",
+        "Welcome to Kinode.\nThe time is {}.",
         chrono::Local::now().to_rfc3339(),
-        http_server_port,
     );
+    let link = format!("http://localhost:{http_server_port}");
+    let link = make_remote_link(&link, &link);
+    #[cfg(feature = "simulation-mode")]
+    println!("Serving Kinode at {link}\r");
+    #[cfg(not(feature = "simulation-mode"))]
+    println!("Login or register at {link}\r");
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = match password {
         None => {
@@ -925,4 +929,8 @@ async fn login_with_password(
         .unwrap();
 
     (our, disk_keyfile, k)
+}
+
+fn make_remote_link(url: &str, text: &str) -> String {
+    format!("\x1B]8;;{}\x1B\\{}\x1B]8;;\x1B\\", url, text)
 }
