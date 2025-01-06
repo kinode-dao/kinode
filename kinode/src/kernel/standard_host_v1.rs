@@ -569,9 +569,13 @@ impl StandardHost for process::ProcessWasiV1 {
         {
             Ok(Ok(_resp)) => {
                 // basically assuming filesystem responding properly here
-                match &self.process.last_blob {
-                    None => Ok(None),
-                    Some(blob) => Ok(Some(blob.bytes.clone())),
+                if self.process.last_message_blobbed {
+                    match &self.process.last_blob {
+                        None => Ok(None),
+                        Some(blob) => Ok(Some(blob.bytes.clone())),
+                    }
+                } else {
+                    Ok(None)
                 }
             }
             _ => Ok(None),
