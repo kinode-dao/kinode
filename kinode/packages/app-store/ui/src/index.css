@@ -91,7 +91,7 @@ a:hover {
 
 .header-left nav {
     display: flex;
-    gap: 1rem;
+    gap: 1.5rem;
 }
 
 .header-left nav a {
