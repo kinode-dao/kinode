@@ -190,22 +190,21 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
 
   fetchHomepageApps: async () => {
     try {
-      const res = await fetch('/apps');
+      const res = await fetch(`${BASE_URL}/homepageapps`);
       if (res.status === HTTP_STATUS.OK) {
-        const data: HomepageApp[] = await res.json();
-        set({ homepageApps: data });
+        const data = await res.json();
+        const apps = data.GetApps || [];
+        set({ homepageApps: apps });
       }
     } catch (error) {
       console.error("Error fetching homepage apps:", error);
+      set({ homepageApps: [] });
     }
   },
 
   getLaunchUrl: (id: string) => {
-    const app = get().homepageApps.find(app => `${app.package}:${app.publisher}` === id);
-    if (app && app.path) {
-      return app.path;
-    }
-    return null;
+    const app = get().homepageApps?.find(app => `${app.package_name}:${app.publisher}` === id);
+    return app?.path || null;
   },
 
   checkMirror: async (id: string, node: string) => {
