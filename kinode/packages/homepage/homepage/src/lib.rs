@@ -1,9 +1,9 @@
 use crate::kinode::process::homepage;
 use kinode_process_lib::{
-    await_message, call_init, get_blob, http, http::server, println, Address, Capability,
-    LazyLoadBlob,
+    await_message, call_init, get_blob,
+    http::{self, server},
+    println, Address, Capability, LazyLoadBlob, Response,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 /// Fetching OS version from main package
@@ -14,20 +14,6 @@ const DEFAULT_FAVES: &[&str] = &[
     "main:app-store:sys",
     "settings:settings:sys",
 ];
-
-#[derive(Serialize, Deserialize)]
-struct HomepageApp {
-    id: String,
-    process: String,
-    package: String,
-    publisher: String,
-    path: Option<String>,
-    label: String,
-    base64_icon: Option<String>,
-    widget: Option<String>,
-    order: u32,
-    favorite: bool, // **not currently used on frontend**
-}
 
 type PersistedAppOrder = HashMap<String, u32>;
 
@@ -42,7 +28,7 @@ call_init!(init);
 fn init(our: Address) {
     println!("started");
 
-    let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
+    let mut app_data: BTreeMap<String, homepage::App> = BTreeMap::new();
 
     let mut http_server = server::HttpServer::new(5);
     let http_config = server::HttpBindingConfig::default();
@@ -190,7 +176,7 @@ fn init(our: Address) {
                                 Some(LazyLoadBlob::new(
                                     Some("application/json"),
                                     serde_json::to_vec(
-                                        &app_data.values().collect::<Vec<&HomepageApp>>(),
+                                        &app_data.values().collect::<Vec<&homepage::App>>(),
                                     )
                                     .unwrap(),
                                 )),
@@ -284,7 +270,7 @@ fn init(our: Address) {
                 );
             }
         } else {
-            // handle messages to add or remove an app from the homepage.
+            // handle messages to get apps, add or remove an app from the homepage.
             // they must have messaging access to us in order to perform this.
             if let Ok(request) = serde_json::from_slice::<homepage::Request>(message.body()) {
                 match request {
@@ -297,10 +283,10 @@ fn init(our: Address) {
                         let id = message.source().process.to_string();
                         app_data.insert(
                             id.clone(),
-                            HomepageApp {
+                            homepage::App {
                                 id: id.clone(),
                                 process: message.source().process().to_string(),
-                                package: message.source().package().to_string(),
+                                package_name: message.source().package().to_string(),
                                 publisher: message.source().publisher().to_string(),
                                 path: path.map(|path| {
                                     format!(
@@ -339,6 +325,14 @@ fn init(our: Address) {
                         // end caps check
                         app_data.remove(&id);
                         persisted_app_order.remove(&id);
+                    }
+                    homepage::Request::GetApps => {
+                        let apps = app_data.values().cloned().collect::<Vec<homepage::App>>();
+                        let resp = homepage::Response::GetApps(apps);
+                        Response::new()
+                            .body(serde_json::to_vec(&resp).unwrap())
+                            .send()
+                            .unwrap();
                     }
                     homepage::Request::SetStylesheet(new_stylesheet_string) => {
                         // caps check

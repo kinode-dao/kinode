@@ -29,6 +29,15 @@ interface homepage {
         ///
         /// lazy-load-blob: none.
         set-stylesheet(string),
+        /// Get the list of apps on the homepage
+        ///
+        /// lazy-load-blob: none.
+        get-apps,
+    }
+
+    /// The response format to get  from the homepage.
+    variant response {
+        get-apps(list<app>),
     }
 
     record add-request {
@@ -36,6 +45,19 @@ interface homepage {
         icon: option<string>,
         path: option<string>,
         widget: option<string>,
+    }
+
+    record app {
+        id: string,
+        process: string,
+        package-name: string,
+        publisher: string,
+        path: option<string>,
+        label: string,
+        base64-icon: option<string>,
+        widget: option<string>,
+        order: u32,
+        favorite: bool,
     }
 }
 
