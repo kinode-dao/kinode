@@ -241,37 +241,59 @@ export default function PublishPage() {
 
   return (
     <div className="publish-page">
-      <h1>Publish Package</h1>
-      {!address ? (
+      <h1>Manage Published Apps</h1>
+      {!address ? <></> : (
         <div className="wallet-status">
-          <button onClick={() => openConnectModal?.()}>Connect Wallet</button>
-        </div>
-      ) : (
-        <div className="wallet-status">
-          Connected: {address.slice(0, 6)}...{address.slice(-4)}
-          <Tooltip content="Make sure the wallet you're connecting to publish is the same as the owner for the publisher!" />
+          Connected: {address}
+          <Tooltip content="Make sure the connected wallet is the owner of this node!" />
         </div>
       )}
+
+      {Object.keys(ourApps).length === 0 ? (
+        <a href="https://book.kinode.org/my_first_app/chapter_5.html" target="_blank">
+          First time? Read the guide on publishing an app here.
+        </a>
+      ) : (
+        <div className="my-packages">
+          <h2>Your Published Apps</h2>
+          <ul className="package-list">
+            {Object.values(ourApps).map((app) => (
+              <li key={`${app.package_id.package_name}:${app.package_id.publisher_node}`}>
+                <Link to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`} className="app-name">
+                  {app.metadata?.image && (
+                    <img src={app.metadata.image} alt="" className="package-icon" />
+                  )}
+                  <span>{app.metadata?.name || app.package_id.package_name}</span>
+                </Link>
+
+                <button onClick={() => unpublishPackage(app.package_id.package_name, app.package_id.publisher_node)} className="danger">
+                  Unpublish
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {isConfirming ? (
         <div className="message info">
           <div className="loading-spinner"></div>
-          <span>Publishing package...</span>
+          <span>Publishing...</span>
         </div>
       ) : !address || !isConnected ? (
         <div className="connect-wallet">
-          <h4>Please connect your wallet to publish a package</h4>
-          <ConnectButton />
+          <h4>Connect your wallet to publish an app.</h4>
         </div>
       ) : isConnecting ? (
         <div className="message info">
           <div className="loading-spinner"></div>
-          <span>Approve connection in your wallet</span>
+          <span>Waiting for wallet connection...</span>
         </div>
       ) : (
         <form className="publish-form" onSubmit={publishPackage}>
           <div className="form-group">
-            <label htmlFor="package-select">Select Package</label>
-            <PackageSelector onPackageSelect={handlePackageSelection} />
+            <label htmlFor="package-select">Select app to publish</label>
+            <PackageSelector onPackageSelect={handlePackageSelection} publisherId={publisherId} />
             {nameValidity && <p className="error-message">{nameValidity}</p>}
           </div>
 
@@ -312,38 +334,16 @@ export default function PublishPage() {
 
       {isConfirmed && (
         <div className="message success">
-          Package published successfully!
+          App published successfully!
         </div>
       )}
       {error && (
         <div className="message error">
-          Error: {error.message}
+          <pre>
+            Error: {error.message}
+          </pre>
         </div>
       )}
-
-      <div className="my-packages">
-        <h2>Packages You Own</h2>
-        {Object.keys(ourApps).length > 0 ? (
-          <ul className="package-list">
-            {Object.values(ourApps).map((app) => (
-              <li key={`${app.package_id.package_name}:${app.package_id.publisher_node}`}>
-                <Link to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`} className="app-name">
-                  {app.metadata?.image && (
-                    <img src={app.metadata.image} alt="" className="package-icon" />
-                  )}
-                  <span>{app.metadata?.name || app.package_id.package_name}</span>
-                </Link>
-
-                <button onClick={() => unpublishPackage(app.package_id.package_name, app.package_id.publisher_node)} className="danger">
-                  Unpublish
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="no-packages">No packages published</p>
-        )}
-      </div>
     </div>
   );
 }
