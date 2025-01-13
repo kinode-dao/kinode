@@ -29,13 +29,13 @@ interface homepage {
         ///
         /// lazy-load-blob: none.
         set-stylesheet(string),
-        /// Get the list of apps on the homepage
+        /// get the list of apps currently on the homepage
         ///
         /// lazy-load-blob: none.
         get-apps,
     }
 
-    /// The response format to get  from the homepage.
+    /// The response format to get from the homepage. Serialized using serde_json.
     variant response {
         get-apps(list<app>),
     }
