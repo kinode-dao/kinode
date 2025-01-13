@@ -220,22 +220,11 @@ pub fn install(
     let bytes = file.read()?;
     let manifest_hash = create_package_drive(&process_package_id, bytes)?;
 
-    let package_state = PackageState {
-        our_version_hash: version_hash.to_string(),
-        verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
-        caps_approved: true, // TODO see if we want to auto-approve local installs
-        manifest_hash: Some(manifest_hash),
-    };
-
     if let Ok(extracted) = extract_api(&process_package_id) {
         if extracted {
             state.installed_apis.insert(process_package_id.clone());
         }
     }
-
-    state
-        .packages
-        .insert(process_package_id.clone(), package_state);
 
     // get the package manifest
     let drive_path = format!("/{process_package_id}/pkg");
@@ -246,6 +235,17 @@ pub fn install(
     } else {
         fetch_package_metadata(&package_id)?
     };
+
+    let package_state = PackageState {
+        our_version_hash: version_hash.to_string(),
+        verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
+        caps_approved: true, // TODO see if we want to auto-approve local installs
+        manifest_hash: Some(manifest_hash),
+    };
+
+    state
+        .packages
+        .insert(process_package_id.clone(), package_state);
 
     let wit_version = metadata.properties.wit_version;
 

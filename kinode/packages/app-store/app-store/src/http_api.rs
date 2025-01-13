@@ -269,7 +269,6 @@ fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
         },
         "our_version_hash": state.our_version_hash,
         "publisher": id.publisher(),
-        "our_version_hash": state.our_version_hash,
         "verified": state.verified,
         "caps_approved": state.caps_approved,
     })
@@ -586,6 +585,13 @@ fn serve_paths(
                         "successfully installed {}:{}",
                         process_package_id.package_name, process_package_id.publisher_node
                     );
+                    // TODO handle?
+                    let _ = Request::to(("our", "chain", "app-store", "sys"))
+                        .body(
+                            serde_json::to_vec(&ChainRequest::StartAutoUpdate(process_package_id))
+                                .unwrap(),
+                        )
+                        .send_and_await_response(5)??;
                     Ok((StatusCode::CREATED, None, vec![]))
                 }
                 Err(e) => Ok((

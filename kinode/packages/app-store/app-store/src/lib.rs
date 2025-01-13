@@ -29,6 +29,7 @@
 //! Note: This process does not directly handle file transfers or on-chain operations.
 //! It delegates these responsibilities to the downloads and chain processes respectively.
 //!
+use crate::kinode::process::chain::ChainRequest;
 use crate::kinode::process::downloads::{
     AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponse, ProgressUpdate,
 };
@@ -38,7 +39,7 @@ use crate::kinode::process::main::{
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
-    LazyLoadBlob, Message, PackageId, Response,
+    LazyLoadBlob, Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{State, UpdateInfo, Updates};
@@ -310,6 +311,12 @@ fn handle_local_request(
                         "successfully installed {}:{}",
                         package_id.package_name, package_id.publisher_node
                     );
+                    // TODO handle?
+                    let _ = Request::to(("our", "chain", "app-store", "sys"))
+                        .body(
+                            serde_json::to_vec(&ChainRequest::StartAutoUpdate(package_id)).unwrap(),
+                        )
+                        .send_and_await_response(5);
                     LocalResponse::InstallResponse(InstallResponse::Success)
                 }
                 Err(e) => {

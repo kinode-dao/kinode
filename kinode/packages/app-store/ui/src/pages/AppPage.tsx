@@ -13,6 +13,7 @@ export default function AppPage() {
   const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [upToDate, setUpToDate] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUninstalling, setIsUninstalling] = useState(false);
@@ -45,6 +46,11 @@ export default function AppPage() {
             const installedVersion = versions.find(([_, hash]) => hash === installedAppData.our_version_hash);
             if (installedVersion) {
               setCurrentVersion(installedVersion[0]);
+            }
+            if (installedVersion && installedVersion[0] === latestVer) {
+              setUpToDate(true);
+            } else {
+              setUpToDate(false);
             }
           }
         }
@@ -132,17 +138,8 @@ export default function AppPage() {
         )}
         <div className="app-title">
           <h2>{app.metadata?.name || app.package_id.package_name}</h2>
-          <p className="app-id">{`${app.package_id.package_name}.${app.package_id.publisher_node}`}</p>
+          <p className="app-id">{`${app.package_id.package_name}:${app.package_id.publisher_node}`}</p>
         </div>
-      </div>
-
-      <div className="app-warning">
-        {valid_wit_version ? <></> : "THIS APP MUST BE UPDATED TO 1.0"}
-      </div>
-
-      <div className="app-description">{app.metadata?.description || "No description available"}</div>
-
-      <div className="app-info">
         <ul className="detail-list">
           <li>
             <span>Installed:</span>
@@ -157,7 +154,7 @@ export default function AppPage() {
           {installedApp?.pending_update_hash && (
             <li className="warning">
               <span>Failed Auto-Update:</span>
-              <span>Update to version with hash {installedApp.pending_update_hash.slice(0, 8)}... failed, approve newly requested capabilities and install it here:</span>
+              <span>Update to version with hash {installedApp.pending_update_hash.slice(0, 8)}... failed</span>
             </li>
           )}
           <li><span>Publisher:</span> <span>{app.package_id.publisher_node}</span></li>
@@ -170,6 +167,8 @@ export default function AppPage() {
           </li>
         </ul>
       </div>
+
+      {valid_wit_version ? <></> : <div className="app-warning">THIS APP MUST BE UPDATED TO 1.0</div>}
 
       <div className="app-actions">
         {installedApp && (
@@ -189,7 +188,7 @@ export default function AppPage() {
           </>
         )}
         <button onClick={handleDownload} className="primary">
-          <FaDownload /> Download
+          <FaDownload /> Download Latest Version
         </button>
       </div>
 
@@ -203,6 +202,8 @@ export default function AppPage() {
           </div>
         </div>
       )}
+
+      <div className="app-description">{app.metadata?.description || "No description available"}</div>
     </section>
   );
 }

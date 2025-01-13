@@ -603,12 +603,10 @@ fn handle_eth_log(
     state.db.insert_or_update_listing(&package_id, &listing)?;
 
     if !startup && listing.auto_update {
-        println!("kicking off auto-update for: {}", package_id);
+        println!("kicking off auto-update for {package_id}");
         Request::to(("our", "downloads", "app-store", "sys"))
             .body(&DownloadRequest::AutoUpdate(AutoUpdateRequest {
-                package_id: crate::kinode::process::main::PackageId::from_process_lib(
-                    package_id.clone(),
-                ),
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 metadata: metadata.unwrap().into(),
             }))
             .send()

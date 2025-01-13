@@ -195,11 +195,6 @@ button.danger:hover {
     background: var(--surface-hover);
 } */
 
-.store-page {
-    max-width: 960px !important;
-    margin: 0 auto !important;
-}
-
 /* App Grid */
 .app-grid {
     display: grid;
@@ -238,12 +233,16 @@ td {
 }
 
 /* App Icon */
+.app-icon-wrapper {
+    margin: 0 auto;
+    width: fit-content;
+}
+
 .app-icon {
     max-width: 128px;
     max-height: 128px;
     min-width: 128px;
     min-height: 128px;
-    margin: 0 auto;
     object-fit: cover;
     border-radius: var(--border-radius);
 }
@@ -337,6 +336,7 @@ td {
     display: flex;
     justify-content: space-between;
     margin-bottom: 0.5rem;
+    gap: 0.5rem;
 }
 
 /* Error Message */
@@ -357,12 +357,9 @@ td {
 .publish-page {
     padding: 1rem;
     background: light-dark(var(--bg-light), var(--bg-dark));
-    margin: 0 1vw;
     border-radius: var(--border-radius);
-}
-
-.app-info {
-    max-width: 20rem;
+    max-width: 960px;
+    margin: 0 auto;
 }
 
 .app-header {
@@ -370,6 +367,10 @@ td {
     align-items: center;
     gap: 1rem;
     margin-bottom: 1.5rem;
+}
+
+div.app-header {
+    background: transparent !important;
 }
 
 .app-warning {
@@ -382,19 +383,11 @@ td {
     margin-bottom: 0.5rem;
     line-height: 1.6;
     word-wrap: break-word;
-}
-
-.app-info {
-    background: light-dark(var(--surface-light), var(--surface-dark));
-    border-radius: var(--border-radius);
-    padding: 1.5rem;
-    margin-bottom: 2rem;
+    color: light-dark(var(--text-light), var(--text-dark));
 }
 
 /* Components with secondary backgrounds */
 .app-header,
-.app-info,
-.app-description,
 .form-group,
 .search-bar input,
 .version-selector,
@@ -1125,8 +1118,6 @@ td {
 
 /* App Page Layout */
 .app-page {
-    max-width: 80rem;
-    margin: 0 auto;
     padding: 2rem 1rem;
 }
 
@@ -1214,6 +1205,7 @@ td {
     padding: 1rem;
     border-radius: var(--border-radius);
     background: light-dark(var(--surface-light), var(--surface-dark));
+    margin-bottom: 1rem;
 }
 
 .file-explorer h3 {
