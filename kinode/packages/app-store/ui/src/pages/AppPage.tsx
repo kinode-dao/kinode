@@ -174,13 +174,11 @@ export default function AppPage() {
       <div className="app-actions">
         {installedApp && (
           <>
-            <button
-              onClick={handleLaunch}
-              className="primary"
-              disabled={!canLaunch}
-            >
-              <FaPlay /> {canLaunch ? 'Launch' : 'No UI found for app'}
-            </button>
+            {canLaunch && (
+              <button onClick={handleLaunch} className="primary">
+                <FaPlay /> Launch
+              </button>
+            )}
             <button onClick={handleUninstall} className="secondary" disabled={isUninstalling}>
               {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />} Uninstall
             </button>

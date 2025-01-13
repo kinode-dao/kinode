@@ -92,6 +92,7 @@
             "http-server:distro:sys",
             "kns-indexer:kns-indexer:sys",
             "terminal:terminal:sys",
+            "homepage:homepage:sys",
             "vfs:distro:sys"
         ],
         "public": false
