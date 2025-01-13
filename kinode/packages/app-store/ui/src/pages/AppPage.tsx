@@ -13,7 +13,7 @@ export default function AppPage() {
   const [installedApp, setInstalledApp] = useState<PackageState | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
-  const [upToDate, setUpToDate] = useState(true);
+  const [upToDate, setUpToDate] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isUninstalling, setIsUninstalling] = useState(false);
@@ -133,23 +133,41 @@ export default function AppPage() {
   return (
     <section className="app-page">
       <div className="app-header">
-        {app.metadata?.image && (
-          <img src={app.metadata.image} alt={app.metadata?.name || app.package_id.package_name} className="app-icon" />
-        )}
-        <div className="app-title">
-          <h2>{app.metadata?.name || app.package_id.package_name}</h2>
-          <p className="app-id">{`${app.package_id.package_name}:${app.package_id.publisher_node}`}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+          <img
+            src={app.metadata?.image || '/bird-orange.svg'}
+            alt={app.metadata?.name || app.package_id.package_name}
+            className="app-icon"
+          />
+          <div className="app-title">
+            <h2>{app.metadata?.name || app.package_id.package_name}</h2>
+          </div>
         </div>
         <ul className="detail-list">
           <li>
             <span>Installed:</span>
-            <span className="status-icon">{installedApp ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}</span>
+            <span className="status-icon">
+              {installedApp ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}
+            </span>
           </li>
-          {currentVersion && (
-            <li><span>Current Version:</span> <span>{currentVersion}</span></li>
-          )}
+          {installedApp && <li>
+            <span>Auto Update:</span>
+            <span className="status-icon">
+              {app.auto_update ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}
+            </span>
+          </li>}
           {latestVersion && (
-            <li><span>Latest Version:</span> <span>{latestVersion}</span></li>
+            <>
+              <li><span>Version:</span> <span>{latestVersion}</span></li>
+            </>
+          )}
+          {currentVersion && latestVersion && currentVersion !== latestVersion && (
+            <li><span>Installed Version:</span> <span>{currentVersion}</span></li>
+          )}
+          {currentVersion && latestVersion && currentVersion === latestVersion && (
+            <li><span>Up to date:</span> <span className="status-icon">
+              {upToDate ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}
+            </span></li>
           )}
           {installedApp?.pending_update_hash && (
             <li className="warning">
@@ -158,17 +176,13 @@ export default function AppPage() {
             </li>
           )}
           <li><span>Publisher:</span> <span>{app.package_id.publisher_node}</span></li>
-          {app.metadata?.properties?.license ? <li><span>License:</span> <span>app.metadata?.properties?.license</span></li> : <></>}
-          <li>
-            <span>Auto Update:</span>
-            <span className="status-icon">
-              {app.auto_update ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}
-            </span>
-          </li>
+          {app.metadata?.properties?.license
+            ? <li><span>License:</span> <span>{app.metadata?.properties?.license}</span></li>
+            : <></>}
         </ul>
       </div>
 
-      {valid_wit_version ? <></> : <div className="app-warning">THIS APP MUST BE UPDATED TO 1.0</div>}
+      {valid_wit_version ? <></> : <div className="app-warning">This app must be updated to 1.0</div>}
 
       <div className="app-actions">
         {installedApp && (
@@ -187,9 +201,9 @@ export default function AppPage() {
             </button>
           </>
         )}
-        <button onClick={handleDownload} className="primary">
-          <FaDownload /> Download Latest Version
-        </button>
+        {valid_wit_version && !upToDate && <button onClick={handleDownload} className="primary">
+          <FaDownload /> Download
+        </button>}
       </div>
 
       {app.metadata?.properties?.screenshots && (

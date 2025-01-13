@@ -308,36 +308,45 @@ export default function MyAppsPage() {
 
             <table className="apps-table">
                 <tbody>
-                    {Object.values(installed).map((app) => {
-                        const packageId = `${app.package_id.package_name}:${app.package_id.publisher_node}`;
-                        const listing = listings?.[packageId];
-                        const isCore = CORE_PACKAGES.includes(packageId);
+                    {(() => {
+                        const userspaceApps = Object.values(installed).filter(app => !CORE_PACKAGES.includes(`${app.package_id.package_name}:${app.package_id.publisher_node}`));
+                        if (userspaceApps.length === 0) {
+                            return (
+                                <tr>
+                                    <td colSpan={2} style={{ textAlign: 'center' }}>
+                                        No apps installed yet!
+                                    </td>
+                                </tr>
+                            );
+                        }
+                        return userspaceApps.map((app) => {
+                            const packageId = `${app.package_id.package_name}:${app.package_id.publisher_node}`;
+                            const listing = listings?.[packageId];
 
-                        if (isCore) return null;
-
-                        return (
-                            <tr key={packageId}>
-                                <td>
-                                    {listing ? (
-                                        <a href={`/main:app-store:sys/app/${packageId}`}>
-                                            {listing.metadata?.name || packageId}
-                                        </a>
-                                    ) : (
-                                        packageId
-                                    )}
-                                </td>
-                                <td>
-                                    <button
-                                        onClick={() => initiateUninstall(app)}
-                                        disabled={isUninstalling}
-                                    >
-                                        {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />}
-                                        Uninstall
-                                    </button>
-                                </td>
-                            </tr>
-                        );
-                    })}
+                            return (
+                                <tr key={packageId}>
+                                    <td>
+                                        {listing ? (
+                                            <a href={`/main:app-store:sys/app/${packageId}`}>
+                                                {listing.metadata?.name || packageId}
+                                            </a>
+                                        ) : (
+                                            packageId
+                                        )}
+                                    </td>
+                                    <td>
+                                        <button
+                                            onClick={() => initiateUninstall(app)}
+                                            disabled={isUninstalling}
+                                        >
+                                            {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />}
+                                            Uninstall
+                                        </button>
+                                    </td>
+                                </tr>
+                            );
+                        });
+                    })()}
                 </tbody>
             </table>
 

@@ -376,7 +376,8 @@ div.app-header {
 .app-warning {
     background: var(--orange) !important;
     color: var(--text-light);
-    padding: 1em;
+    padding: 1rem;
+    margin-bottom: 1rem;
 }
 
 .app-description {
