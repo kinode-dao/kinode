@@ -49,10 +49,10 @@ export default function MyAppsPage() {
     const [showAdvanced, setShowAdvanced] = useState(false);
 
     useEffect(() => {
-        loadItems();
         fetchInstalled();
         fetchListings();
         fetchUpdates();
+        loadItems();
     }, [currentPath, fetchListings]);
 
     const loadItems = async () => {
@@ -203,7 +203,9 @@ export default function MyAppsPage() {
                 } else {
                     await startMirroring(packageId);
                 }
-                await loadItems();
+                if (showAdvanced) {
+                    await loadItems();
+                }
             } catch (error) {
                 console.error("Error toggling mirroring:", error);
                 setError(`Error toggling mirroring: ${error instanceof Error ? error.message : String(error)}`);
@@ -241,7 +243,9 @@ export default function MyAppsPage() {
             await installApp(packageId, versionHash);
             await fetchInstalled();
             setShowCapApproval(false);
-            await loadItems();
+            if (showAdvanced) {
+                await loadItems();
+            }
         } catch (error) {
             console.error('Installation failed:', error);
             setError(`Installation failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -256,7 +260,9 @@ export default function MyAppsPage() {
                 const packageId = currentPath.join(':');
                 const versionHash = item.File.name.replace('.zip', '');
                 await removeDownload(packageId, versionHash);
-                await loadItems();
+                if (showAdvanced) {
+                    await loadItems();
+                }
             } catch (error) {
                 console.error('Failed to remove download:', error);
                 setError(`Failed to remove download: ${error instanceof Error ? error.message : String(error)}`);
@@ -286,7 +292,9 @@ export default function MyAppsPage() {
         try {
             await uninstallApp(packageId);
             await fetchInstalled();
-            await loadItems();
+            if (showAdvanced) {
+                await loadItems();
+            }
             setShowUninstallConfirm(false);
             setAppToUninstall(null);
         } catch (error) {
@@ -353,7 +361,12 @@ export default function MyAppsPage() {
             <div className="advanced-section">
                 <button
                     className="advanced-toggle"
-                    onClick={() => setShowAdvanced(!showAdvanced)}
+                    onClick={() => {
+                        setShowAdvanced(!showAdvanced);
+                        if (showAdvanced) {
+                            loadItems();
+                        }
+                    }}
                 >
                     {showAdvanced ? <FaChevronDown /> : <FaChevronRight />} Advanced
                 </button>

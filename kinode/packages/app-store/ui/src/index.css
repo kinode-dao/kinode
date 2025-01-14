@@ -1268,8 +1268,10 @@ div.app-header {
 
 .tooltip-content {
     position: absolute;
-    left: 24px;
-    top: -4px;
+    right: calc(100% + 8px);
+    /* Position to the left with 8px gap */
+    top: 50%;
+    transform: translateY(-50%);
     background: #333;
     color: white;
     padding: 8px 12px;
@@ -1281,18 +1283,6 @@ div.app-header {
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
     min-width: max-content;
-}
-
-/* Create an invisible bridge between icon and content */
-.tooltip-content::after {
-    content: '';
-    position: absolute;
-    left: -20px;
-    /* Cover the gap between icon and content */
-    top: 0;
-    width: 20px;
-    height: 100%;
-    background: transparent;
 }
 
 .tooltip-container:hover .tooltip-content {

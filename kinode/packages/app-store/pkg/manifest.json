@@ -28,7 +28,7 @@
         "process_name": "chain",
         "process_wasm_path": "/chain.wasm",
         "on_exit": "Restart",
-        "request_networking": true,
+        "request_networking": false,
         "request_capabilities": [
             "downloads:app-store:sys",
             "eth:distro:sys",

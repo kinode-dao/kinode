@@ -124,8 +124,8 @@ fn init(our: Address) {
 
     let mut downloads =
         vfs::open_dir("/app-store:sys/downloads", true, None).expect("could not open downloads");
-    let mut tmp =
-        vfs::open_dir("/app-store:sys/downloads/tmp", true, None).expect("could not open tmp");
+    // let mut tmp =
+    //     vfs::open_dir("/app-store:sys/downloads/tmp", true, None).expect("could not open tmp");
 
     // metadata for in-flight auto-updates
     let mut auto_updates: AutoUpdates = HashMap::new();
@@ -138,7 +138,7 @@ fn init(our: Address) {
                     &mut state,
                     &message,
                     &mut downloads,
-                    &mut tmp,
+                    // &mut tmp,
                     &mut auto_updates,
                 ) {
                     print_to_terminal(1, &format!("error handling message: {e:?}"));
@@ -181,7 +181,7 @@ fn handle_message(
     state: &mut State,
     message: &Message,
     downloads: &mut Directory,
-    _tmp: &mut Directory,
+    // _tmp: &mut Directory,
     auto_updates: &mut AutoUpdates,
 ) -> anyhow::Result<()> {
     if message.is_request() {
@@ -786,6 +786,10 @@ fn format_entries(entries: Vec<vfs::DirEntry>, state: &State) -> Vec<Entry> {
                     manifest,
                 }))
             } else if !is_file {
+                // skip if the dir name is 'tmp'
+                if name == "tmp" {
+                    return None;
+                }
                 let mirroring = state.mirroring.iter().any(|pid| {
                     pid.package_name == name
                         || format!("{}:{}", pid.package_name, pid.publisher_node) == name

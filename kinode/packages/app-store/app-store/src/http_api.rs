@@ -768,10 +768,8 @@ fn serve_paths(
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
                 ));
             }
-            let chain = Address::from_str("our@chain:app-store:sys")?;
-
             let resp = Request::new()
-                .target(chain)
+                .target(("our", "chain", "app-store", "sys"))
                 .body(&ChainRequest::Reset)
                 .send_and_await_response(5)??;
             let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
