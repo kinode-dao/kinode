@@ -408,6 +408,15 @@ div.app-header {
     max-width: 20rem;
 }
 
+.advanced-options {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+    max-width: 360px;
+}
+
 .version-selector,
 .mirror-selector select {
     width: 100%;
@@ -610,10 +619,6 @@ div.app-header {
 
     .app-actions {
         flex-direction: column;
-    }
-
-    .download-section {
-        max-width: 100%;
     }
 }
 
@@ -1218,9 +1223,21 @@ div.app-header {
 }
 
 .downloads-table {
-    width: 100%;
+    display: inline-block;
+    max-width: calc(960px - 2rem);
     border-radius: var(--border-radius);
-    overflow: hidden;
+    overflow-x: scroll;
+}
+
+::-webkit-scrollbar {
+    -webkit-appearance: none;
+    width: 7px;
+}
+
+::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, .5);
+    -webkit-box-shadow: 0 0 1px rgba(255, 255, 255, .5);
 }
 
 .downloads-table th {

@@ -26,7 +26,7 @@ interface AppsStore {
   fetchDownloads: () => Promise<DownloadItem[]>
   fetchOurApps: () => Promise<void>
   fetchDownloadsForApp: (id: string) => Promise<DownloadItem[]>
-  checkMirror: (node: string) => Promise<MirrorCheckFile | null>
+  checkMirror: (id: string, node: string) => Promise<MirrorCheckFile | null>
   resetStore: () => Promise<void>
 
   fetchHomepageApps: () => Promise<void>
