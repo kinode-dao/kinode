@@ -149,7 +149,7 @@ export default function PublishPage() {
         let [tba, owner, _data] = data as [string, string, string];
         let isUpdate = Boolean(tba && tba !== '0x' && owner === address);
         let currentTBA = isUpdate ? tba as `0x${string}` : null;
-        console.log('currenttba, isupdate: ', currentTBA, isUpdate)
+        console.log('currenttba, isupdate, owner, address: ', currentTBA, isUpdate, owner, address)
         // If the package doesn't exist, check for the publisher's TBA
         if (!currentTBA) {
           data = await publicClient.readContract({
