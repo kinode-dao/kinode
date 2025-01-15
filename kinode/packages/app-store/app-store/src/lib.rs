@@ -326,25 +326,35 @@ fn handle_local_request(
             },
             None,
         ),
-        LocalRequest::Uninstall(package_id) => (
-            match utils::uninstall(our, state, &package_id.clone().to_process_lib()) {
-                Ok(()) => {
-                    println!(
-                        "successfully uninstalled package: {:?}",
-                        &package_id.to_process_lib()
-                    );
-                    LocalResponse::UninstallResponse(UninstallResponse::Success)
-                }
-                Err(e) => {
-                    println!(
-                        "error uninstalling package: {:?}: {e}",
-                        &package_id.to_process_lib()
-                    );
-                    LocalResponse::UninstallResponse(UninstallResponse::Failure)
-                }
-            },
-            None,
-        ),
+        LocalRequest::Uninstall(package_id) => {
+            let process_lib_package_id = package_id.clone().to_process_lib();
+            (
+                match utils::uninstall(our, state, &process_lib_package_id) {
+                    Ok(()) => {
+                        println!(
+                            "successfully uninstalled package {}",
+                            &process_lib_package_id
+                        );
+                        // TODO handle?
+                        let _ = Request::to(("our", "chain", "app-store", "sys"))
+                            .body(
+                                serde_json::to_vec(&ChainRequest::StopAutoUpdate(package_id))
+                                    .unwrap(),
+                            )
+                            .send_and_await_response(5);
+                        LocalResponse::UninstallResponse(UninstallResponse::Success)
+                    }
+                    Err(e) => {
+                        println!(
+                            "error uninstalling package {}: {e}",
+                            &process_lib_package_id
+                        );
+                        LocalResponse::UninstallResponse(UninstallResponse::Failure)
+                    }
+                },
+                None,
+            )
+        }
         LocalRequest::Apis => (list_apis(state), None),
         LocalRequest::GetApi(package_id) => get_api(state, &package_id.to_process_lib()),
     }

@@ -372,18 +372,20 @@ fn init(our: Address) {
 
         loop {
             match await_message() {
-                Err(send_error) => {
-                    print_to_terminal(1, &format!("chain: got network error: {send_error}"));
-                }
                 Ok(message) => match handle_message(&our, &mut state, &message) {
                     Ok(true) => {
+                        // reset state
                         break;
                     }
                     Ok(false) => {}
                     Err(e) => {
-                        print_to_terminal(1, &format!("chain: error handling message: {e:?}"))
+                        print_to_terminal(0, &format!("chain indexer: error handling message: {e}"))
                     }
                 },
+                Err(send_error) => {
+                    // we never send requests, so this is never expected
+                    print_to_terminal(0, &format!("chain indexer: got send error: {send_error}"));
+                }
             }
         }
     }
@@ -538,8 +540,8 @@ fn handle_eth_log(
                 eth::EthError::RpcError(_) => {
                     // retry on RpcError after DELAY_MS sleep
                     // sleep here rather than with, e.g., a message to
-                    //  `timer:distro:sys` so that events are processed in
-                    //  order of receipt
+                    // `timer:distro:sys` so that events are processed in
+                    // order of receipt!
                     std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
                     state.kimap.get(&hash_note)
                 }
@@ -554,8 +556,10 @@ fn handle_eth_log(
                 if metadata_uri.is_empty() {
                     state.db.delete_published(&package_id)?;
                     state.db.delete_listing(&package_id)?;
-                    state.last_saved_block = block_number;
-                    state.db.set_last_saved_block(block_number)?;
+                    if !startup {
+                        state.last_saved_block = block_number - 1;
+                        state.db.set_last_saved_block(block_number - 1)?;
+                    }
                     return Ok(());
                 }
                 return Err(anyhow::anyhow!(
@@ -613,8 +617,8 @@ fn handle_eth_log(
     }
 
     if !startup {
-        state.last_saved_block = block_number;
-        state.db.set_last_saved_block(block_number)?;
+        state.last_saved_block = block_number - 1;
+        state.db.set_last_saved_block(block_number - 1)?;
     }
 
     Ok(())
@@ -628,7 +632,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
         Ok(listings) => listings,
         Err(e) => {
             print_to_terminal(
-                1,
+                0,
                 &format!("error fetching updated listings since block {last_saved_block}: {e}"),
             );
             return;
@@ -638,7 +642,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
     for (pid, mut listing) in updated_listings {
         let hash_note = format!("~metadata-hash.{}.{}", pid.package(), pid.publisher());
         let (tba, metadata_hash) = match state.kimap.get(&hash_note) {
-            Ok((t, _o, data)) => {
+            Ok((t, _owner, data)) => {
                 match data {
                     None => {
                         // If metadata_uri empty, unpublish
@@ -660,7 +664,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                 if let eth::EthError::RpcError(_) = e {
                     std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
                     match state.kimap.get(&hash_note) {
-                        Ok((t, _o, data)) => {
+                        Ok((t, _owner, data)) => {
                             if let Some(hash_note) = data {
                                 (t, String::from_utf8_lossy(&hash_note).to_string())
                             } else {
@@ -705,19 +709,19 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
             match fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30) {
                 Ok(md) => Some(md),
                 Err(err) => {
-                    print_to_terminal(1, &format!("error fetching metadata for {}: {err}", pid));
+                    print_to_terminal(0, &format!("error fetching metadata for {pid}: {err}"));
                     None
                 }
             };
         listing.metadata = metadata.clone();
 
         if let Err(e) = state.db.insert_or_update_listing(&pid, &listing) {
-            print_to_terminal(1, &format!("error updating listing {}: {e}", pid));
+            print_to_terminal(0, &format!("error updating listing {pid}: {e}"));
         }
 
         if listing.auto_update {
             if let Some(md) = metadata {
-                print_to_terminal(0, &format!("kicking off auto-update for: {}", pid));
+                print_to_terminal(0, &format!("kicking off auto-update for {pid}"));
                 if let Err(e) = Request::to(("our", "downloads", "app-store", "sys"))
                     .body(&DownloadRequest::AutoUpdate(AutoUpdateRequest {
                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
@@ -727,7 +731,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                     }))
                     .send()
                 {
-                    print_to_terminal(1, &format!("error sending auto-update request: {e}"));
+                    print_to_terminal(0, &format!("error sending auto-update request: {e}"));
                 }
             }
         }
@@ -763,12 +767,6 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
     }
 
     update_all_metadata(state, last_saved_block);
-    // save updated last_saved_block
-    if let Ok(block_number) = state.kimap.provider.get_block_number() {
-        state.last_saved_block = block_number;
-        state.db.set_last_saved_block(block_number).unwrap();
-    }
-    // println!("up to date to block {}", state.last_saved_block);
 }
 
 /// fetch logs from the chain with a given filter

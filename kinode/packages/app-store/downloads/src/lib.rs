@@ -51,7 +51,7 @@ use kinode::process::downloads::AutoDownloadSuccess;
 use kinode_process_lib::{
     await_message, call_init, get_blob, get_state,
     http::client,
-    print_to_terminal, println, set_state,
+    print_to_terminal, set_state,
     vfs::{self, Directory},
     Address, Message, PackageId, ProcessId, Request, Response, SendErrorKind,
 };
@@ -83,7 +83,7 @@ pub enum Resp {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AutoUpdateStatus {
-    mirrors_left: HashSet<String>,                // set(node/url)
+    mirrors_left: Vec<String>,                    // vec(node/url)
     mirrors_failed: Vec<(String, DownloadError)>, // vec(node/url, error)
     active_mirror: String,                        // (node/url)
 }
@@ -211,10 +211,6 @@ fn handle_message(
 
                 if download_from.starts_with("http") {
                     // use http-client to GET it
-                    print_to_terminal(
-                        1,
-                        "kicking off http download for {package_id:?} and {version_hash:?}",
-                    );
                     Request::to(("our", "http-client", "distro", "sys"))
                         .body(
                             serde_json::to_vec(&client::HttpClientAction::Http(
@@ -428,52 +424,43 @@ fn handle_message(
                 } = auto_update_request.clone();
                 let process_lib_package_id = package_id.clone().to_process_lib();
 
-                // default auto_update to publisher
-                // let download_from = metadata.properties.publisher.clone();
                 let current_version = metadata.properties.current_version;
                 let code_hashes = metadata.properties.code_hashes;
-
-                // Create a HashSet of mirrors including the publisher
-                let mut mirrors = HashSet::new();
-
-                let download_from = if let Some(first_mirror) = metadata.properties.mirrors.first()
-                {
-                    first_mirror.clone()
-                } else {
-                    "randomnode111.os".to_string()
-                };
-                println!("first_download_from: {download_from}");
-                mirrors.extend(metadata.properties.mirrors.into_iter());
-                mirrors.insert(metadata.properties.publisher.clone());
 
                 let version_hash = code_hashes
                 .iter()
                 .find(|(version, _)| version == &current_version)
                 .map(|(_, hash)| hash.clone())
-                // note, if this errors, full on failure I thnk no?
-                // and bubble this up.
-                .ok_or_else(|| anyhow::anyhow!("auto_update: error for package_id: {}, current_version: {}, no matching hash found", process_lib_package_id.to_string(), current_version))?;
+                .ok_or_else(||
+                    anyhow::anyhow!(
+                        "auto_update: error for package_id: {}, current_version: {}, no matching hash found",
+                        process_lib_package_id.to_string(), current_version)
+                )?;
+
+                let download_from = metadata.properties.mirrors
+                    .first()
+                    .ok_or_else(||
+                        anyhow::anyhow!(
+                            "auto_update: error for package_id: {}, current_version: {}, no mirrors found",
+                            process_lib_package_id.to_string(), current_version
+                        )
+                    )?
+                    .to_string();
 
                 print_to_terminal(
-                    1,
+                    0,
                     &format!(
-                        "auto_update: kicking off download for {:?} from {} with version {} from mirror {}",
-                        package_id, download_from, version_hash, download_from
+                        "auto_update: kicking off download for {} with version {} from mirror {}",
+                        process_lib_package_id, version_hash, download_from
                     ),
                 );
-
-                let download_request = LocalDownloadRequest {
-                    package_id,
-                    download_from: download_from.clone(),
-                    desired_version_hash: version_hash.clone(),
-                };
 
                 // Initialize auto-update status with mirrors
                 let key = (process_lib_package_id.clone(), version_hash.clone());
                 auto_updates.insert(
                     key,
                     AutoUpdateStatus {
-                        mirrors_left: mirrors,
+                        mirrors_left: metadata.properties.mirrors[1..].to_vec(),
                         mirrors_failed: Vec::new(),
                         active_mirror: download_from.clone(),
                     },
@@ -481,7 +468,11 @@ fn handle_message(
 
                 // kick off local download to ourselves
                 Request::to(("our", "downloads", "app-store", "sys"))
-                    .body(DownloadRequest::LocalDownload(download_request))
+                    .body(DownloadRequest::LocalDownload(LocalDownloadRequest {
+                        package_id,
+                        download_from,
+                        desired_version_hash: version_hash,
+                    }))
                     .send()?;
             }
             other => {
@@ -572,7 +563,7 @@ fn handle_message(
 
                 // Handle successful download
                 if let Err(e) = handle_receive_http_download(&download_request) {
-                    print_to_terminal(1, &format!("error handling http-client response: {:?}", e));
+                    print_to_terminal(1, &format!("error handling http-client response: {e:?}"));
                     handle_download_error(
                         is_auto_update,
                         metadata,
@@ -584,10 +575,10 @@ fn handle_message(
                 } else if is_auto_update {
                     match handle_auto_update_success(key.0.clone(), key.1.clone()) {
                         Ok(_) => print_to_terminal(
-                            1,
+                            0,
                             &format!(
-                                "auto_update: successfully downloaded package {:?} version {}",
-                                &download_request.package_id,
+                                "auto_update: successfully downloaded package {} version {}",
+                                &download_request.package_id.to_process_lib(),
                                 &download_request.desired_version_hash
                             ),
                         ),
@@ -617,19 +608,19 @@ fn try_next_mirror(
     error: DownloadError,
 ) {
     print_to_terminal(
-        1,
+        0,
         &format!(
             "auto_update: got error from mirror {mirror:?} {error:?}, trying next mirror: {next_mirror:?}",
-            next_mirror = metadata.mirrors_left.iter().next().cloned(),
             mirror = metadata.active_mirror,
-            error = error
+            error = error,
+            next_mirror = metadata.mirrors_left.iter().next().cloned(),
         ),
     );
     // Record failure and remove from available mirrors
     metadata
         .mirrors_failed
         .push((metadata.active_mirror.clone(), error));
-    metadata.mirrors_left.remove(&metadata.active_mirror);
+    metadata.mirrors_left = metadata.mirrors_left[1..].to_vec();
 
     let (package_id, version_hash) = key.clone();
 
@@ -653,10 +644,10 @@ fn try_next_mirror(
         }
         None => {
             print_to_terminal(
-                1,
-                "auto_update: no more mirrors to try for package_id {package_id:?}",
+                0,
+                &format!("auto_update: no more mirrors to try for {package_id}"),
             );
-            // gather, and send error to main.
+            // gather and send error to main.
             let node_tries = metadata.mirrors_failed;
             let auto_download_error = AutoDownloadCompleteRequest::Err(AutoDownloadError {
                 package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
