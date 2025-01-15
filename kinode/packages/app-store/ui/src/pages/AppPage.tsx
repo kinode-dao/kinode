@@ -40,6 +40,7 @@ export default function AppPage() {
   const [showCapApproval, setShowCapApproval] = useState(false);
   const [manifestResponse, setManifestResponse] = useState<ManifestResponse | null>(null);
   const [isPolling, setIsPolling] = useState(false);
+  const [canLaunch, setCanLaunch] = useState(false);
 
   const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
 
@@ -97,6 +98,11 @@ export default function AppPage() {
 
       setApp(appData);
       setInstalledApp(installedAppData);
+
+      if (appData) {
+        await fetchHomepageApps();
+        setCanLaunch(!!getLaunchUrl(`${appData.package_id.package_name}:${appData.package_id.publisher_node}`));
+      }
 
       if (appData?.metadata?.properties?.code_hashes) {
         const versions = appData.metadata.properties.code_hashes;
@@ -214,11 +220,6 @@ export default function AppPage() {
         window.location.href = window.location.origin.replace('//app-store-sys.', '//') + launchUrl;
       }
     }
-  }, [app, getLaunchUrl]);
-
-  const canLaunch = useMemo(() => {
-    if (!app) return false;
-    return !!getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
   }, [app, getLaunchUrl]);
 
   const handleUninstall = async () => {

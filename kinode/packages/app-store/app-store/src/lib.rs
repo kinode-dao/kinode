@@ -331,10 +331,7 @@ fn handle_local_request(
             (
                 match utils::uninstall(our, state, &process_lib_package_id) {
                     Ok(()) => {
-                        println!(
-                            "successfully uninstalled package {}",
-                            &process_lib_package_id
-                        );
+                        println!("successfully uninstalled package {process_lib_package_id}");
                         // TODO handle?
                         let _ = Request::to(("our", "chain", "app-store", "sys"))
                             .body(
@@ -345,10 +342,7 @@ fn handle_local_request(
                         LocalResponse::UninstallResponse(UninstallResponse::Success)
                     }
                     Err(e) => {
-                        println!(
-                            "error uninstalling package {}: {e}",
-                            &process_lib_package_id
-                        );
+                        println!("error uninstalling package {process_lib_package_id}: {e}");
                         LocalResponse::UninstallResponse(UninstallResponse::Failure)
                     }
                 },
