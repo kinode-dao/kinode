@@ -45,7 +45,8 @@ struct ActiveProviders {
 struct UrlProvider {
     pub trusted: bool,
     pub url: String,
-    pub pubsub: Option<RootProvider<PubSubFrontend>>,
+    /// a list, in case we build multiple providers for the same url
+    pub pubsub: Vec<RootProvider<PubSubFrontend>>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +85,7 @@ impl ActiveProviders {
                     UrlProvider {
                         trusted: new.trusted,
                         url,
-                        pubsub: None,
+                        pubsub: vec![],
                     },
                 );
             }
@@ -743,7 +744,7 @@ async fn fulfill_request(
     let Some(method) = valid_method(&method) else {
         return EthResponse::Err(EthError::InvalidMethod(method.to_string()));
     };
-    let mut urls = {
+    let urls = {
         // in code block to drop providers lock asap to avoid deadlock
         let Some(aps) = providers.get(&chain_id) else {
             return EthResponse::Err(EthError::NoRpcForChain);
@@ -756,17 +757,17 @@ async fn fulfill_request(
     // finally, if no provider works, return an error.
 
     // bump the successful provider to the front of the list for future requests
-    for url_provider in urls.iter_mut() {
-        let pubsub = match &url_provider.pubsub {
-            Some(pubsub) => pubsub,
+    for mut url_provider in urls.into_iter() {
+        let (pubsub, newly_activated) = match url_provider.pubsub.first() {
+            Some(pubsub) => (pubsub, false),
             None => {
-                if let Ok(()) = activate_url_provider(url_provider).await {
+                if let Ok(()) = activate_url_provider(&mut url_provider).await {
                     verbose_print(
                         print_tx,
                         &format!("eth: activated url provider {}", url_provider.url),
                     )
                     .await;
-                    url_provider.pubsub.as_ref().unwrap()
+                    (url_provider.pubsub.last().unwrap(), true)
                 } else {
                     verbose_print(
                         print_tx,
@@ -788,11 +789,11 @@ async fn fulfill_request(
                         is_replacement_successful = false;
                         return ();
                     };
-                    let old_provider = aps.urls.remove(index);
-                    match old_provider.pubsub {
-                        None => aps.urls.insert(0, url_provider.clone()),
-                        Some(_) => aps.urls.insert(0, old_provider),
+                    let mut old_provider = aps.urls.remove(index);
+                    if newly_activated {
+                        old_provider.pubsub.push(url_provider.pubsub.pop().unwrap());
                     }
+                    aps.urls.insert(0, old_provider);
                 });
                 if !is_replacement_successful {
                     verbose_print(
@@ -825,26 +826,28 @@ async fn fulfill_request(
                         serde_json::to_value(err).unwrap_or_else(|_| serde_json::Value::Null);
                     return EthResponse::Err(EthError::RpcError(err_value));
                 }
-                // this provider failed and needs to be reset
-                let mut is_reset_successful = true;
-                providers.entry(chain_id.clone()).and_modify(|aps| {
-                    let Some(index) = find_index(
-                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
-                        &url_provider.url,
-                    ) else {
-                        is_reset_successful = false;
-                        return ();
-                    };
-                    let mut url = aps.urls.remove(index);
-                    url.pubsub = None;
-                    aps.urls.insert(index, url);
-                });
-                if !is_reset_successful {
-                    verbose_print(
-                        print_tx,
-                        &format!("eth: unexpectedly couldn't find provider to be modified"),
-                    )
-                    .await;
+                if !newly_activated {
+                    // this provider failed and needs to be reset
+                    let mut is_reset_successful = true;
+                    providers.entry(chain_id.clone()).and_modify(|aps| {
+                        let Some(index) = find_index(
+                            &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                            &url_provider.url,
+                        ) else {
+                            is_reset_successful = false;
+                            return ();
+                        };
+                        let mut url = aps.urls.remove(index);
+                        url.pubsub = vec![];
+                        aps.urls.insert(index, url);
+                    });
+                    if !is_reset_successful {
+                        verbose_print(
+                            print_tx,
+                            &format!("eth: unexpectedly couldn't find provider to be modified"),
+                        )
+                        .await;
+                    }
                 }
             }
         }

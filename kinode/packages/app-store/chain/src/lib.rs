@@ -353,7 +353,7 @@ CREATE TABLE IF NOT EXISTS published (
 call_init!(init);
 fn init(our: Address) {
     loop {
-        println!("indexing apps...");
+        println!("started");
 
         let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
 
