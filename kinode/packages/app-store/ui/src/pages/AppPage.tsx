@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash, FaSync, FaChevronDown, FaChevronUp, FaRocket } from "react-icons/fa";
+import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash, FaSync, FaChevronDown, FaChevronUp } from "react-icons/fa";
 import useAppsStore from "../store";
 import { AppListing, PackageState, ManifestResponse } from "../types/Apps";
 import { compareVersions } from "../utils/compareVersions";
@@ -19,7 +19,6 @@ export default function AppPage() {
     downloadApp,
     downloads,
     activeDownloads,
-    fetchData,
     installApp,
     clearAllActiveDownloads
   } = useAppsStore();
@@ -31,6 +30,7 @@ export default function AppPage() {
   const [upToDate, setUpToDate] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInstalling, setIsInstalling] = useState(false);
   const [isUninstalling, setIsUninstalling] = useState(false);
   const [isTogglingAutoUpdate, setIsTogglingAutoUpdate] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -39,51 +39,37 @@ export default function AppPage() {
   const [isMirrorOnline, setIsMirrorOnline] = useState<boolean | null>(null);
   const [showCapApproval, setShowCapApproval] = useState(false);
   const [manifestResponse, setManifestResponse] = useState<ManifestResponse | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
   const [canLaunch, setCanLaunch] = useState(false);
 
   const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
 
   const sortedVersions = useMemo(() => {
-    if (!app || !app.metadata?.properties?.code_hashes) return [];
+    if (!app?.metadata?.properties?.code_hashes) return [];
     return app.metadata.properties.code_hashes
       .map(([version, hash]) => ({ version, hash }))
-      .sort((a, b) => {
-        const vA = a.version.split('.').map(Number);
-        const vB = b.version.split('.').map(Number);
-        for (let i = 0; i < Math.max(vA.length, vB.length); i++) {
-          if (vA[i] > vB[i]) return -1;
-          if (vA[i] < vB[i]) return 1;
-        }
-        return 0;
-      });
+      .sort((a, b) => compareVersions(b.version, a.version));
   }, [app]);
 
   const isDownloaded = useMemo(() => {
     if (!app || !selectedVersion) return false;
     const versionData = sortedVersions.find(v => v.version === selectedVersion);
-    if (!versionData) return false;
-    return appDownloads.some(d => d.File && d.File.name === `${versionData.hash}.zip`);
+    return versionData ? appDownloads.some(d => d.File?.name === `${versionData.hash}.zip`) : false;
   }, [app, selectedVersion, sortedVersions, appDownloads]);
 
   const isDownloading = useMemo(() => {
-    if (!app || !selectedVersion) return false;
-    const versionData = sortedVersions.find(v => v.version === selectedVersion);
-    if (!versionData) return false;
+    if (!app) return false;
     return Object.keys(activeDownloads).some(key => key.startsWith(`${app.package_id.package_name}:`));
-  }, [app, selectedVersion, sortedVersions, activeDownloads]);
+  }, [app, activeDownloads]);
 
   const downloadProgress = useMemo(() => {
-    if (!isDownloading || !app || !selectedVersion) return null;
-    const versionData = sortedVersions.find(v => v.version === selectedVersion);
-    if (!versionData) return null;
+    if (!isDownloading || !app) return null;
     const activeDownloadKey = Object.keys(activeDownloads).find(key =>
       key.startsWith(`${app.package_id.package_name}:`)
     );
     if (!activeDownloadKey) return null;
     const progress = activeDownloads[activeDownloadKey];
     return progress ? Math.round((progress.downloaded / progress.total) * 100) : 0;
-  }, [isDownloading, app, selectedVersion, sortedVersions, activeDownloads]);
+  }, [isDownloading, app, activeDownloads]);
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -96,129 +82,108 @@ export default function AppPage() {
         fetchInstalledApp(id)
       ]);
 
-      setApp(appData);
-      setInstalledApp(installedAppData);
-
-      if (appData) {
-        await fetchHomepageApps();
-        setCanLaunch(!!getLaunchUrl(`${appData.package_id.package_name}:${appData.package_id.publisher_node}`));
+      if (!appData) {
+        setError("App not found");
+        return;
       }
 
-      if (appData?.metadata?.properties?.code_hashes) {
-        const versions = appData.metadata.properties.code_hashes;
-        if (versions.length > 0) {
-          const latestVer = versions.reduce((latest, current) =>
-            compareVersions(current[0], latest[0]) > 0 ? current : latest
-          )[0];
-          setLatestVersion(latestVer);
-          setSelectedVersion(latestVer);
+      setApp(appData);
+      setInstalledApp(installedAppData);
+      setCanLaunch(!!getLaunchUrl(`${appData.package_id.package_name}:${appData.package_id.publisher_node}`));
 
-          if (installedAppData) {
-            const installedVersion = versions.find(([_, hash]) => hash === installedAppData.our_version_hash);
-            if (installedVersion) {
-              setCurrentVersion(installedVersion[0]);
-            }
-            if (installedVersion && installedVersion[0] === latestVer) {
-              setUpToDate(true);
-            } else {
-              setUpToDate(false);
-            }
+      const versions = appData.metadata?.properties?.code_hashes || [];
+      if (versions.length > 0) {
+        const latestVer = versions.reduce((latest, current) =>
+          compareVersions(current[0], latest[0]) > 0 ? current : latest
+        )[0];
+        setLatestVersion(latestVer);
+        setSelectedVersion(latestVer);
+
+        if (installedAppData) {
+          const installedVersion = versions.find(([_, hash]) => hash === installedAppData.our_version_hash);
+          if (installedVersion) {
+            setCurrentVersion(installedVersion[0]);
+            setUpToDate(installedVersion[0] === latestVer);
           }
         }
       }
+
+      await fetchHomepageApps();
     } catch (err) {
       setError("Failed to load app details. Please try again.");
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [id, fetchListing, fetchInstalledApp]);
+  }, [id, fetchListing, fetchInstalledApp, fetchHomepageApps, getLaunchUrl]);
 
   const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
     setSelectedMirror(mirror);
     setIsMirrorOnline(status === 'http' ? true : status);
   }, []);
 
-  const handleDownload = useCallback(async () => {
+  const handleInstallFlow = useCallback(async (isDownloadNeeded: boolean = false) => {
     if (!id || !selectedMirror || !app || !selectedVersion) return;
+
     const versionData = sortedVersions.find(v => v.version === selectedVersion);
-    if (versionData) {
-      await downloadApp(id, versionData.hash, selectedMirror);
-      // wait 1 second
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      // Fetch updated downloads data
+    if (!versionData) return;
+
+    try {
+      if (isDownloadNeeded) {
+        await downloadApp(id, versionData.hash, selectedMirror);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
       const downloads = await fetchDownloadsForApp(id);
-      // Now check for manifest in updated downloads
-      const download = downloads.find(d => d.File && d.File.name === `${versionData.hash}.zip`);
+      const download = downloads.find(d => d.File?.name === `${versionData.hash}.zip`);
 
       if (download?.File?.manifest) {
-        try {
-          const manifest_response: ManifestResponse = {
-            package_id: app.package_id,
-            version_hash: versionData.hash,
-            manifest: download.File.manifest
-          };
-          setManifestResponse(manifest_response);
-          setShowCapApproval(true);
-        } catch (error) {
-          console.error('Failed to parse manifest:', error);
-        }
+        const manifest_response: ManifestResponse = {
+          package_id: app.package_id,
+          version_hash: versionData.hash,
+          manifest: download.File.manifest
+        };
+        setManifestResponse(manifest_response);
+        setShowCapApproval(true);
       } else {
-        console.error('Manifest not found for the selected version');
+        throw new Error('Manifest not found for the selected version');
       }
+    } catch (error) {
+      console.error('Installation flow failed:', error);
+      setError('Installation failed. Please try again.');
     }
-  }, [id, selectedMirror, app, selectedVersion, sortedVersions, downloadApp]);
+  }, [id, selectedMirror, app, selectedVersion, sortedVersions, downloadApp, fetchDownloadsForApp]);
 
-  const handleInstall = useCallback(async () => {
-    if (!id || !selectedMirror || !app || !selectedVersion) return;
+  const confirmInstall = useCallback(async () => {
+    if (!id || !selectedVersion || !app) return;
+
     const versionData = sortedVersions.find(v => v.version === selectedVersion);
-    if (versionData) {
-      const downloads = await fetchDownloadsForApp(id);
-      // Now check for manifest in updated downloads
-      const download = downloads.find(d => d.File && d.File.name === `${versionData.hash}.zip`);
+    if (!versionData) return;
 
-      if (download?.File?.manifest) {
-        try {
-          const manifest_response: ManifestResponse = {
-            package_id: app.package_id,
-            version_hash: versionData.hash,
-            manifest: download.File.manifest
-          };
-          setManifestResponse(manifest_response);
-          setShowCapApproval(true);
-        } catch (error) {
-          console.error('Failed to parse manifest:', error);
-        }
-      } else {
-        console.error('Manifest not found for the selected version');
-      }
-    }
-  }, [id, selectedMirror, app, selectedVersion, sortedVersions, downloadApp]);
-
-  const confirmInstall = useCallback(() => {
-    if (!id || !selectedVersion) return;
-    const versionData = sortedVersions.find(v => v.version === selectedVersion);
-    if (versionData) {
-      installApp(id, versionData.hash).then(() => {
+    try {
+      setIsInstalling(true);
+      await installApp(id, versionData.hash);
+      // Refresh all relevant data after 3 seconds
+      setTimeout(async () => {
         setShowCapApproval(false);
         setManifestResponse(null);
-        fetchData(id);
-        fetchHomepageApps();
-        setIsPolling(true);
-        setTimeout(() => {
-          getLaunchUrl(`${app?.package_id.package_name}:${app?.package_id.publisher_node}`);
-          loadData();
-        }, 3000);
-      });
+        setIsInstalling(false);
+        await Promise.all([
+          fetchHomepageApps(),
+          loadData()
+        ]);
+      }, 3000);
+    } catch (error) {
+      console.error('Installation failed:', error);
+      setError('Installation failed. Please try again.');
     }
-  }, [id, selectedVersion, sortedVersions, installApp, fetchData, fetchHomepageApps, fetchInstalledApp]);
+  }, [id, selectedVersion, app, sortedVersions, installApp, fetchHomepageApps, loadData]);
 
   const handleLaunch = useCallback(() => {
-    if (app) {
-      const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
-      if (launchUrl) {
-        window.location.href = window.location.origin.replace('//app-store-sys.', '//') + launchUrl;
-      }
+    if (!app) return;
+    const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+    if (launchUrl) {
+      window.location.href = window.location.origin.replace('//app-store-sys.', '//') + launchUrl;
     }
   }, [app, getLaunchUrl]);
 
@@ -233,6 +198,7 @@ export default function AppPage() {
       setError(`Uninstallation failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsUninstalling(false);
+      window.location.reload();
     }
   };
 
@@ -240,8 +206,11 @@ export default function AppPage() {
     if (!app || !latestVersion) return;
     setIsTogglingAutoUpdate(true);
     try {
-      const newAutoUpdateState = !app.auto_update;
-      await setAutoUpdate(`${app.package_id.package_name}:${app.package_id.publisher_node}`, latestVersion, newAutoUpdateState);
+      await setAutoUpdate(
+        `${app.package_id.package_name}:${app.package_id.publisher_node}`,
+        latestVersion,
+        !app.auto_update
+      );
       await loadData();
     } catch (error) {
       console.error('Failed to toggle auto-update:', error);
@@ -253,24 +222,8 @@ export default function AppPage() {
 
   useEffect(() => {
     loadData();
-    fetchHomepageApps();
     clearAllActiveDownloads();
-  }, [loadData, fetchHomepageApps, clearAllActiveDownloads]);
-
-  useEffect(() => {
-    if (isPolling) {
-      const pollInterval = setInterval(() => {
-        fetchHomepageApps();
-      }, 1000);
-
-      setTimeout(() => {
-        setIsPolling(false);
-        clearInterval(pollInterval);
-      }, 5000);
-
-      return () => clearInterval(pollInterval);
-    }
-  }, [isPolling, fetchHomepageApps]);
+  }, [loadData, clearAllActiveDownloads]);
 
   if (isLoading) {
     return (
@@ -313,10 +266,14 @@ export default function AppPage() {
             <h3>Approve Capabilities</h3>
             <ManifestDisplay manifestResponse={manifestResponse} />
             <div className="approval-buttons">
-              <button onClick={() => setShowCapApproval(false)}>Cancel</button>
-              <button onClick={confirmInstall}>
-                Approve and Install
-              </button>
+              <button onClick={() => {
+                setShowCapApproval(false);
+                setIsInstalling(false);
+              }}>Cancel</button>
+              {isInstalling
+                ? <><FaSpinner className="fa-spin" /> Installing...</>
+                : <button onClick={confirmInstall}>Approve and Install</button>
+              }
             </div>
           </div>
         </div>
@@ -368,13 +325,13 @@ export default function AppPage() {
             </li>
           )}
           <li><span>Publisher:</span> <span>{app.package_id.publisher_node}</span></li>
-          {app.metadata?.properties?.license
-            ? <li><span>License:</span> <span>{app.metadata?.properties?.license}</span></li>
-            : <></>}
+          {app.metadata?.properties?.license && (
+            <li><span>License:</span> <span>{app.metadata.properties.license}</span></li>
+          )}
         </ul>
       </div>
 
-      {valid_wit_version ? <></> : <div className="app-warning">This app must be updated to 1.0</div>}
+      {!valid_wit_version && <div className="app-warning">This app must be updated to 1.0</div>}
 
       <div className="app-actions" style={{ minHeight: '50px' }}>
         {installedApp && (
@@ -395,27 +352,33 @@ export default function AppPage() {
         )}
         {valid_wit_version && !upToDate && (
           <div className="download-section">
-            {isDownloaded ? <button
-              onClick={handleInstall}
-              className="primary"
-            >
-              <FaDownload /> Install
-            </button> : (
+            {isDownloaded ? (
+              !showCapApproval && (
+                <button
+                  onClick={() => handleInstallFlow(false)}
+                  className="primary"
+                  disabled={isInstalling}
+                >
+                  {isInstalling ? (
+                    <><FaSpinner className="fa-spin" /> Installing...</>
+                  ) : (
+                    <><FaDownload /> Install</>
+                  )}
+                </button>
+              )
+            ) : (
               <button
-                onClick={handleDownload}
-                disabled={!canDownload}
+                onClick={() => handleInstallFlow(true)}
+                disabled={!canDownload || isInstalling}
                 className="primary"
               >
                 {isDownloading ? (
-                  <>
-                    <FaSpinner className="fa-spin" /> Downloading... {downloadProgress}%
-                  </>
+                  <><FaSpinner className="fa-spin" /> Downloading... {downloadProgress}%</>
                 ) : (
-                  <>
-                    <FaDownload /> Download
-                  </>
+                  <><FaDownload /> Download</>
                 )}
-              </button>)}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -472,5 +435,5 @@ export default function AppPage() {
         </>
       )}
     </div>
-  )
-};
+  );
+}
