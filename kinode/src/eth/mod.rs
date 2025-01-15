@@ -222,15 +222,16 @@ pub async fn provider(
     // and if so, which nodes are allowed to access it (public/whitelist/blacklist)
     let access_settings: AccessSettings =
         match tokio::fs::read_to_string(home_directory_path.join(".eth_access_settings")).await {
-            Ok(contents) => serde_json::from_str(&contents).unwrap(),
-            Err(_) => {
-                let access_settings = AccessSettings {
-                    public: false,
-                    allow: HashSet::new(),
-                    deny: HashSet::new(),
-                };
-                access_settings
-            }
+            Ok(contents) => serde_json::from_str(&contents).unwrap_or(AccessSettings {
+                public: false,
+                allow: HashSet::new(),
+                deny: HashSet::new(),
+            }),
+            Err(_) => AccessSettings {
+                public: false,
+                allow: HashSet::new(),
+                deny: HashSet::new(),
+            },
         };
     verbose_print(
         &print_tx,
@@ -1074,7 +1075,7 @@ async fn handle_eth_config_action(
     }
     if save_providers {
         if let Ok(()) = tokio::fs::write(
-            state.home_directory_path.join(".eth_access_settings"),
+            state.home_directory_path.join(".eth_providers"),
             serde_json::to_string(&providers_to_saved_configs(&state.providers)).unwrap(),
         )
         .await
