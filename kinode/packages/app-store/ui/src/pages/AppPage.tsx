@@ -40,6 +40,7 @@ export default function AppPage() {
   const [showCapApproval, setShowCapApproval] = useState(false);
   const [manifestResponse, setManifestResponse] = useState<ManifestResponse | null>(null);
   const [canLaunch, setCanLaunch] = useState(false);
+  const [attemptedDownload, setAttemptedDownload] = useState(false);
 
   const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
 
@@ -225,6 +226,13 @@ export default function AppPage() {
     clearAllActiveDownloads();
   }, [loadData, clearAllActiveDownloads]);
 
+  useEffect(() => {
+    if (attemptedDownload && selectedMirror && isMirrorOnline !== null) {
+      setAttemptedDownload(false);
+      handleInstallFlow(true);
+    }
+  }, [attemptedDownload, selectedMirror, isMirrorOnline, handleInstallFlow]);
+
   if (isLoading) {
     return (
       <div className="app-page" style={{ minHeight: '100vh' }}>
@@ -256,7 +264,7 @@ export default function AppPage() {
   }
 
   const valid_wit_version = app.metadata?.properties?.wit_version === 1;
-  const canDownload = selectedMirror && (isMirrorOnline === true || selectedMirror.startsWith('http')) && !isDownloading && !isDownloaded;
+  const canDownload = !isDownloading && !isDownloaded;
 
   return (
     <div className="app-page" style={{ minHeight: '100vh' }}>
@@ -368,12 +376,20 @@ export default function AppPage() {
               )
             ) : (
               <button
-                onClick={() => handleInstallFlow(true)}
-                disabled={!canDownload || isInstalling}
+                onClick={() => {
+                  if (!selectedMirror || isMirrorOnline === null) {
+                    setAttemptedDownload(true);
+                  } else {
+                    handleInstallFlow(true);
+                  }
+                }}
+                disabled={isInstalling}
                 className="primary"
               >
                 {isDownloading ? (
                   <><FaSpinner className="fa-spin" /> Downloading... {downloadProgress}%</>
+                ) : attemptedDownload && (!selectedMirror || isMirrorOnline === null) ? (
+                  <><FaSpinner className="fa-spin" /> Choosing mirrors...</>
                 ) : (
                   <><FaDownload /> Download</>
                 )}
