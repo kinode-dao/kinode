@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash, FaSync, FaChevronDown, FaChevronUp } from "react-icons/fa";
+import { FaDownload, FaCheck, FaTimes, FaPlay, FaSpinner, FaTrash, FaSync, FaChevronDown, FaChevronUp, FaStar } from "react-icons/fa";
 import useAppsStore from "../store";
-import { AppListing, PackageState, ManifestResponse } from "../types/Apps";
+import { AppListing, PackageState, ManifestResponse, Review } from "../types/Apps";
 import { compareVersions } from "../utils/compareVersions";
 import { MirrorSelector, ManifestDisplay } from '../components';
 
@@ -20,7 +20,9 @@ export default function AppPage() {
     downloads,
     activeDownloads,
     installApp,
-    clearAllActiveDownloads
+    clearAllActiveDownloads,
+    fetchReviews,
+    reviews
   } = useAppsStore();
 
   const [app, setApp] = useState<AppListing | null>(null);
@@ -41,6 +43,7 @@ export default function AppPage() {
   const [manifestResponse, setManifestResponse] = useState<ManifestResponse | null>(null);
   const [canLaunch, setCanLaunch] = useState(false);
   const [attemptedDownload, setAttemptedDownload] = useState(false);
+  const [showReviews, setShowReviews] = useState(false);
 
   const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
 
@@ -80,7 +83,8 @@ export default function AppPage() {
     try {
       const [appData, installedAppData] = await Promise.all([
         fetchListing(id),
-        fetchInstalledApp(id)
+        fetchInstalledApp(id),
+        fetchReviews(id)
       ]);
 
       if (!appData) {
@@ -116,7 +120,7 @@ export default function AppPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [id, fetchListing, fetchInstalledApp, fetchHomepageApps, getLaunchUrl]);
+  }, [id, fetchListing, fetchInstalledApp, fetchReviews, fetchHomepageApps, getLaunchUrl]);
 
   const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
     setSelectedMirror(mirror);
@@ -137,6 +141,14 @@ export default function AppPage() {
 
       const downloads = await fetchDownloadsForApp(id);
       const download = downloads.find(d => d.File?.name === `${versionData.hash}.zip`);
+
+
+      // // If not found, try 3 more times with 500ms delays
+      // for (let i = 0; i < 3 && !download?.File?.manifest; i++) {
+      //   await new Promise(resolve => setTimeout(resolve, 2200));
+      //   downloads = await fetchDownloadsForApp(id);
+      //   download = downloads.find(d => d.File?.name === `${versionData.hash}.zip`);
+      // }
 
       if (download?.File?.manifest) {
         const manifest_response: ManifestResponse = {
@@ -420,6 +432,42 @@ export default function AppPage() {
 
       <div className="app-description" style={{ minHeight: '100px' }}>
         {app.metadata?.description || "No description available"}
+      </div>
+
+      <button onClick={() => setShowReviews(!showReviews)} className="secondary">
+        {showReviews ? <FaChevronUp /> : <FaChevronDown />} Reviews
+      </button>
+      <div className="reviews-section" style={{
+        display: showReviews ? 'block' : 'none',
+        minHeight: showReviews ? '100px' : '0',
+        padding: '1rem',
+        marginBottom: '1rem'
+      }}>
+        {reviews[id || '']?.length > 0 ? (
+          <div className="reviews-list">
+            {reviews[id || '']?.map((review, index) => (
+              <div key={index} className="review-item" style={{
+                borderBottom: '1px solid #ddd',
+                paddingBottom: '1rem',
+                marginBottom: '1rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <strong>{review.reviewer}</strong>
+                  {review.stars && (
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      {[...Array(review.stars)].map((_, i) => (
+                        <FaStar key={i} style={{ color: '#ffd700' }} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>{review.review || 'No written review'}</div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div>No reviews yet</div>
+        )}
       </div>
 
       {valid_wit_version && !upToDate && (

@@ -1,4 +1,4 @@
-import { multicallAbi, kimapAbi, mechAbi, KIMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "./";
+import { multicallAbi, kimapAbi, mechAbi, KIMAP, MULTICALL, REVIEW_IMPL } from "./";
 import { encodeFunctionData, encodePacked, stringToHex } from "viem";
 
 export function encodeMulticalls(metadataUri: string, metadataHash: string) {
@@ -53,7 +53,7 @@ export function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${
             encodePacked(["bytes"], [stringToHex(app_name)]),
             initCall,
             "0x",
-            KINO_ACCOUNT_IMPL,
+            REVIEW_IMPL,
         ]
     })
     return mintCall;

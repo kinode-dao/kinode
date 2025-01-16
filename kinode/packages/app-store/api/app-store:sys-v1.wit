@@ -135,6 +135,10 @@ interface chain {
         ///
         /// lazy-load-blob: none.
         stop-auto-update(package-id),
+        /// Get reviews for an app
+        ///
+        /// lazy-load-blob: none.
+        get-reviews(package-id),
         /// Reset app-store db
         ///
         /// lazy-load-blob: none.
@@ -153,6 +157,8 @@ interface chain {
         auto-update-started,
         /// lazy-load-blob: none.
         auto-update-stopped,
+        /// lazy-load-blob: none
+        get-reviews(list<onchain-review>),
         /// lazy-load-blob: none.
         /// successful reset
         reset-ok,
@@ -195,6 +201,14 @@ interface chain {
         screenshots: option<list<string>>,
         wit-version: option<u32>,
         dependencies: option<list<string>>,
+    }
+
+    /// Review associated with an on-chain app
+    record onchain-review {
+        reviewer: string,
+        stars: option<u8>,
+        review: option<string>,
+        block: u64,
     }
 }
 

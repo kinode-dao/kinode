@@ -138,6 +138,13 @@ export type NotificationAction = {
     };
 };
 
+export interface Review {
+  reviewer: string
+  review: string | null
+  stars: number | null
+  block: number
+}
+
 export type Notification = {
     id: string;
     type: 'error' | 'success' | 'warning' | 'info' | 'download' | 'install' | 'update';

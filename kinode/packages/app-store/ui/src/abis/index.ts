@@ -4,7 +4,7 @@ export { encodeMulticalls, encodeIntoMintCall } from "./helpers";
 
 export const KIMAP: `0x${string}` = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
-export const KINO_ACCOUNT_IMPL: `0x${string}` = "0x38766C70a4FB2f23137D9251a1aA12b1143fC716";
+export const REVIEW_IMPL: `0x${string}` = "0x000000E09418Ee5B467e81cf1B250FF4FB660023";
 
 
 export const multicallAbi = parseAbi([

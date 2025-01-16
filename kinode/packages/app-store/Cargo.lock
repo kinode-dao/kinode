@@ -31,6 +31,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aho-corasick"
+version = "1.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e60d3430d3a69478ad0993f19238d2df97c507009a52b3c10addcd7f6bcb916"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -556,7 +565,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib",
+ "kinode_process_lib 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "rand",
  "serde",
@@ -922,7 +931,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib",
+ "kinode_process_lib 0.10.1 (git+https://github.com/kinode-dao/process_lib?rev=11630ce)",
  "process_macros",
  "rand",
  "serde",
@@ -1126,7 +1135,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib",
+ "kinode_process_lib 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "serde",
  "serde_json",
@@ -1138,7 +1147,7 @@ name = "downloads"
 version = "0.5.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib",
+ "kinode_process_lib 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "rand",
  "serde",
@@ -1314,7 +1323,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib",
+ "kinode_process_lib 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "rand",
  "serde",
@@ -1808,7 +1817,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib",
+ "kinode_process_lib 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "serde",
  "serde_json",
@@ -1902,6 +1911,29 @@ dependencies = [
  "http",
  "mime_guess",
  "rand",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.10.1"
+source = "git+https://github.com/kinode-dao/process_lib?rev=11630ce#11630cea54999548fec610ee41cd318cc6ab60b3"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http",
+ "mime_guess",
+ "rand",
+ "regex",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -2450,6 +2482,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03a862b389f93e68874fbf580b9de08dd02facb9a788ebadaf4a3fd33cf58834"
 dependencies = [
  "bitflags",
+]
+
+[[package]]
+name = "regex"
+version = "1.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.4.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -3260,7 +3315,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib",
+ "kinode_process_lib 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "process_macros",
  "serde",
  "serde_json",
