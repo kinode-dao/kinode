@@ -26,15 +26,19 @@
 //! metadata management and providing information about available apps.
 //!
 use crate::kinode::process::chain::{
-    ChainError, ChainRequest, OnchainApp, OnchainMetadata, OnchainProperties,
+    ChainError, ChainRequest, OnchainApp, OnchainMetadata, OnchainProperties, OnchainReview,
 };
 use crate::kinode::process::downloads::{AutoUpdateRequest, DownloadRequest};
 use alloy_primitives::keccak256;
-use alloy_sol_types::SolEvent;
+use alloy_sol_types::{sol, SolCall, SolEvent};
 use kinode::process::chain::ChainResponse;
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, http, kernel_types as kt, kimap, print_to_terminal,
-    println,
+    await_message, call_init,
+    eth::{self, TransactionRequest},
+    get_blob, http, kernel_types as kt,
+    kimap::{self, Note},
+    net::get_name,
+    print_to_terminal, println,
     sqlite::{self, Sqlite},
     timer, Address, Message, PackageId, Request, Response,
 };
@@ -62,6 +66,15 @@ const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
 const KIMAP_ADDRESS: &str = "0x9CE8cCD2932DC727c70f9ae4f8C2b68E6Abed58C";
 
 const DELAY_MS: u64 = 1_000; // 1s
+
+// todo: token addition to the process_lib
+sol! {
+    /// ERC6551 token method. enables us to find the namehash for a TBA.
+    function token(address account) internal view returns (uint256, address, uint256);
+
+    /// verify a review from the app TBA
+    function isValidTba(address tba) external view returns (bool);
+}
 
 pub struct State {
     /// the kimap helper we are using
@@ -96,6 +109,7 @@ impl DB {
         inner.write(CREATE_META_TABLE.into(), vec![], None)?;
         inner.write(CREATE_LISTINGS_TABLE.into(), vec![], None)?;
         inner.write(CREATE_PUBLISHED_TABLE.into(), vec![], None)?;
+        inner.write(CREATE_REVIEWS_TABLE.into(), vec![], None)?;
 
         Ok(Self { inner })
     }
@@ -322,6 +336,76 @@ impl DB {
         }
         Ok(result)
     }
+
+    pub fn insert_or_update_review(
+        &self,
+        target: &str,
+        reviewer: &str,
+        review: Option<String>,
+        stars: Option<u8>,
+        block: u64,
+    ) -> anyhow::Result<()> {
+        // Convert empty review to NULL, otherwise keep as is
+        let review_param = review
+            .as_ref()
+            .and_then(|r| if r.is_empty() { None } else { Some(r) });
+        // Convert 0 stars to NULL, otherwise keep as is
+        let stars_param = stars.and_then(|s| if s == 0 { None } else { Some(s as i64) });
+
+        let query = "INSERT INTO reviews (target, reviewer, review, stars, block)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(target, reviewer)
+            DO UPDATE SET
+              review = CASE 
+                WHEN ? IS NULL THEN reviews.review  -- Keep existing if not provided
+                ELSE ?                              -- Use new value (which might be NULL)
+              END,
+              stars = CASE
+                WHEN ? IS NULL THEN reviews.stars   -- Keep existing if not provided
+                ELSE ?                              -- Use new value (which might be NULL)
+              END,
+              block = ?";
+
+        let params = vec![
+            target.into(),
+            reviewer.into(),
+            review_param.map(|s| s.to_string()).into(),
+            stars_param.into(),
+            block.into(),
+            // For review CASE
+            review.is_some().into(),
+            review_param.map(|s| s.to_string()).into(),
+            // For stars CASE
+            stars.is_some().into(),
+            stars_param.into(),
+            // Block update
+            block.into(),
+        ];
+
+        self.inner.write(query.into(), params, None)?;
+        Ok(())
+    }
+
+    pub fn get_reviews(&self, target: &str) -> anyhow::Result<Vec<OnchainReview>> {
+        let query = "SELECT reviewer, review, stars, block FROM reviews WHERE target = ?";
+        let params = vec![target.into()];
+        let rows = self.inner.read(query.into(), params)?;
+        let mut reviews = Vec::new();
+        for row in rows {
+            let reviewer = row["reviewer"].as_str().unwrap_or("").to_string();
+            let review = row["review"].as_str().map(|s| s.to_string());
+            let stars = row["stars"].as_i64().map(|s| s as u8);
+            let block = row["block"].as_i64().unwrap_or(0) as u64;
+
+            reviews.push(OnchainReview {
+                reviewer,
+                review,
+                stars,
+                block,
+            });
+        }
+        Ok(reviews)
+    }
 }
 
 const CREATE_META_TABLE: &str = "
@@ -348,6 +432,16 @@ CREATE TABLE IF NOT EXISTS published (
     package_name TEXT NOT NULL,
     publisher_node TEXT NOT NULL,
     PRIMARY KEY (package_name, publisher_node)
+);";
+
+const CREATE_REVIEWS_TABLE: &str = "
+CREATE TABLE IF NOT EXISTS reviews (
+    target TEXT NOT NULL,
+    reviewer TEXT NOT NULL,
+    review TEXT,
+    stars INTEGER CHECK (stars >= 0 AND stars <= 5),
+    block INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (target, reviewer)
 );";
 
 call_init!(init);
@@ -393,7 +487,7 @@ fn init(our: Address) {
 
 /// returns true if we should re-index
 fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow::Result<bool> {
-    if !message.is_local(&our) {
+    if !message.is_local() {
         // networking is off: we will never get non-local messages
         return Ok(false);
     }
@@ -475,7 +569,7 @@ fn handle_local_request(state: &mut State, req: ChainRequest) -> anyhow::Result<
             }
         }
         ChainRequest::StopAutoUpdate(package_id) => {
-            let pid = package_id.to_process_lib();
+            let pid: PackageId = package_id.to_process_lib();
             if let Some(mut listing) = state.db.get_listing(&pid)? {
                 listing.auto_update = false;
                 state.db.insert_or_update_listing(&pid, &listing)?;
@@ -485,6 +579,14 @@ fn handle_local_request(state: &mut State, req: ChainRequest) -> anyhow::Result<
                 let error_response = ChainResponse::Err(ChainError::NoPackage);
                 Response::new().body(&error_response).send()?;
             }
+        }
+        ChainRequest::GetReviews(package_id) => {
+            let pid: PackageId = package_id.to_process_lib();
+            let target = format!("{}.{}", pid.package_name, pid.publisher_node);
+
+            let reviews = state.db.get_reviews(&target)?;
+            let response = ChainResponse::GetReviews(reviews);
+            Response::new().body(&response).send()?;
         }
         ChainRequest::Reset => {
             // state.db.reset(&our);
@@ -509,6 +611,32 @@ fn handle_eth_log(
         // ignore invalid logs here -- they're not actionable
         return Ok(());
     };
+
+    if note.note == "~review" || note.note == "~stars" {
+        let (reviewer, target) = note
+            .parent_path
+            .split_once('.')
+            .ok_or(anyhow::anyhow!("invalid reviewer name"))
+            .and_then(|(reviewer, target)| {
+                if reviewer.is_empty() || target.is_empty() {
+                    Err(anyhow::anyhow!("invalid reviewer name"))
+                } else {
+                    Ok((reviewer, target))
+                }
+            })?;
+
+        // get the hex encoded tba from "review-tba.<target>"
+        let reviewer_hex = reviewer
+            .strip_prefix("review-")
+            .ok_or(anyhow::anyhow!("invalid reviewer prefix"))?;
+
+        // parse the hex string into an eth::Address
+        let reviewer_address = eth::Address::from_str(&format!("0x{}", reviewer_hex))
+            .map_err(|e| anyhow::anyhow!("invalid reviewer address: {}", e))?;
+
+        handle_review_or_stars(state, target, reviewer_address, &note, block_number)?;
+        return Ok(());
+    }
 
     let package_id = note
         .parent_path
@@ -619,6 +747,65 @@ fn handle_eth_log(
     if !startup {
         state.last_saved_block = block_number - 1;
         state.db.set_last_saved_block(block_number - 1)?;
+    }
+
+    Ok(())
+}
+
+/// handle review or stars
+/// verifies that the reviewer is a TBA
+/// gets the reviewer's name
+fn handle_review_or_stars(
+    state: &mut State,
+    target: &str,
+    reviewer_address: eth::Address,
+    note: &Note,
+    block_number: u64,
+) -> anyhow::Result<()> {
+    // Verify TBA and get reviewer name
+    let (target_tba, _, _) = state.kimap.get(&target)?;
+    let verify_call = isValidTbaCall {
+        tba: reviewer_address,
+    }
+    .abi_encode();
+    let tx = TransactionRequest::default()
+        .to(target_tba)
+        .input(verify_call.into());
+    let result = state.kimap.provider.call(tx, None)?;
+    let is_valid_review = isValidTbaCall::abi_decode_returns(&result, false)?._0;
+    if !is_valid_review {
+        return Ok(());
+    }
+
+    // Get reviewer name
+    let reviewer_namehash = state.kimap.get_namehash_from_tba(reviewer_address)?;
+    let Some(reviewer_name) = get_name(&reviewer_namehash, None, None) else {
+        return Ok(());
+    };
+
+    // Handle review or stars
+    match note.note.as_str() {
+        "~review" => {
+            let review = String::from_utf8_lossy(&note.data).to_string();
+            state.db.insert_or_update_review(
+                &target,
+                &reviewer_name,
+                Some(review),
+                None,
+                block_number,
+            )?;
+        }
+        "~stars" => {
+            let stars = if note.data.len() != 1 {
+                return Err(anyhow::anyhow!("Invalid stars data length"));
+            } else {
+                Some(note.data[0])
+            };
+            state
+                .db
+                .insert_or_update_review(&target, &reviewer_name, None, stars, block_number)?;
+        }
+        _ => return Ok(()),
     }
 
     Ok(())
@@ -739,13 +926,18 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
 }
 
 /// create the filter used for app store getLogs and subscription.
-/// the app store exclusively looks for ~metadata-uri postings: if one is
-/// observed, we then *query* for ~metadata-hash to verify the content
-/// at the URI.
 ///
-/// this means that ~metadata-hash should be *posted before or at the same time* as ~metadata-uri!
+/// we're looking for three types of notes:
+///
+/// 1. ~metadata-uri: a URI pointing to the metadata for a package (~metadata-hash is manually fetched here.)
+/// 2. ~review: a user review of a package
+/// 3. ~stars: a user's rating of a package
 pub fn app_store_filter(state: &State) -> eth::Filter {
-    let notes = vec![keccak256("~metadata-uri")];
+    let notes = vec![
+        keccak256("~metadata-uri"),
+        keccak256("~review"),
+        keccak256("~stars"),
+    ];
 
     eth::Filter::new()
         .address(*state.kimap.address())

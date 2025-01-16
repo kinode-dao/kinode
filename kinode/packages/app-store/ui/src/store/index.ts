@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { PackageState, AppListing, MirrorCheckFile, DownloadItem, HomepageApp, ManifestResponse, Notification, UpdateInfo } from '../types/Apps'
+import { PackageState, AppListing, MirrorCheckFile, DownloadItem, HomepageApp, ManifestResponse, Notification, UpdateInfo, Review } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http'
 import KinodeClientApi from "@kinode/client-api"
 import { WEBSOCKET_URL } from '../utils/ws'
@@ -17,6 +17,7 @@ interface AppsStore {
   homepageApps: HomepageApp[]
   activeDownloads: Record<string, { downloaded: number, total: number }>
   updates: Record<string, UpdateInfo>
+  reviews: Record<string, Review[]>
 
   fetchData: (id: string) => Promise<void>
   fetchListings: () => Promise<void>
@@ -52,6 +53,7 @@ interface AppsStore {
 
   fetchUpdates: () => Promise<void>
   clearUpdates: (packageId: string) => Promise<void>
+  fetchReviews: (id: string) => Promise<Review[]>
 }
 
 const useAppsStore = create<AppsStore>()((set, get) => ({
@@ -63,6 +65,7 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
   homepageApps: [],
   notifications: [],
   updates: {},
+  reviews: {},
 
   fetchData: async (id: string) => {
     if (!id) return;
@@ -407,6 +410,23 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
       });
     } catch (error) {
       console.error("Error clearing updates:", error);
+    }
+  },
+
+  fetchReviews: async (id: string) => {
+    try {
+      const res = await fetch(`${BASE_URL}/reviews/${id}`);
+      if (res.status === HTTP_STATUS.OK) {
+        const reviews: Review[] = await res.json();
+        set(state => ({
+          reviews: { ...state.reviews, [id]: reviews }
+        }));
+        return reviews;
+      }
+      return [];
+    } catch (error) {
+      console.error("Error fetching reviews:", error);
+      return [];
     }
   },
 

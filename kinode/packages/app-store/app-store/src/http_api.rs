@@ -35,6 +35,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         "/apps/:id",      // detail about an on-chain app
         "/downloads/:id", // local downloads for an app
         "/installed/:id", // detail about an installed app
+        "/reviews/:id",   // reviews for an app
         "/manifest",      // manifest of a downloaded app, id & version hash in query params
         // actions
         "/apps/:id/download",     // download a listed app
@@ -732,6 +733,27 @@ fn serve_paths(
                     None,
                     format!("Invalid response from chain: {:?}", msg).into_bytes(),
                 )),
+            }
+        }
+        "/reviews/:id" => {
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+            let resp = Request::to(("our", "chain", "app-store", "sys"))
+                .body(&ChainRequest::GetReviews(
+                    crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                ))
+                .send_and_await_response(5)??;
+            let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
+            match msg {
+                ChainResponse::GetReviews(reviews) => {
+                    Ok((StatusCode::OK, None, serde_json::to_vec(&reviews)?))
+                }
+                _ => Err(anyhow::anyhow!("Invalid response from chain: {:?}", msg)),
             }
         }
         // GET all failed/pending auto_updates
