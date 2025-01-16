@@ -90,7 +90,6 @@ export default function AppPage() {
 
       setApp(appData);
       setInstalledApp(installedAppData);
-      setCanLaunch(!!getLaunchUrl(`${appData.package_id.package_name}:${appData.package_id.publisher_node}`));
 
       const versions = appData.metadata?.properties?.code_hashes || [];
       if (versions.length > 0) {
@@ -110,6 +109,7 @@ export default function AppPage() {
       }
 
       await fetchHomepageApps();
+      setCanLaunch(!!getLaunchUrl(`${appData.package_id.package_name}:${appData.package_id.publisher_node}`));
     } catch (err) {
       setError("Failed to load app details. Please try again.");
       console.error(err);
@@ -131,8 +131,17 @@ export default function AppPage() {
 
     try {
       if (isDownloadNeeded) {
+        const appId = `${id}:${versionData.hash}`;
         await downloadApp(id, versionData.hash, selectedMirror);
-        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Poll activeDownloads until this download is complete
+        while (true) {
+          const activeDownloads = useAppsStore.getState().activeDownloads;
+          if (!activeDownloads[appId]) {
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
       }
 
       const downloads = await fetchDownloadsForApp(id);
