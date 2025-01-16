@@ -427,7 +427,7 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
             }
         } else {
             let req = serde_json::from_slice::<ChainRequest>(message.body())?;
-            handle_local_request(state, req)?;
+            return handle_local_request(state, req);
         }
     }
     Ok(false)
