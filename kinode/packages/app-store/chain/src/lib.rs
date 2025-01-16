@@ -767,6 +767,13 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
     }
 
     update_all_metadata(state, last_saved_block);
+    // save updated last_saved_block
+    if let Ok(block_number) = state.kimap.provider.get_block_number() {
+        state.last_saved_block = block_number;
+        if let Err(e) = state.db.set_last_saved_block(block_number) {
+            print_to_terminal(0, &format!("error saving last block after startup: {e}"));
+        }
+    }
 }
 
 /// fetch logs from the chain with a given filter
