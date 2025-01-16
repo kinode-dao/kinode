@@ -20,7 +20,8 @@ export default function AppPage() {
     downloads,
     activeDownloads,
     installApp,
-    clearAllActiveDownloads
+    clearAllActiveDownloads,
+    checkMirrors
   } = useAppsStore();
 
   const [app, setApp] = useState<AppListing | null>(null);
@@ -41,6 +42,7 @@ export default function AppPage() {
   const [manifestResponse, setManifestResponse] = useState<ManifestResponse | null>(null);
   const [canLaunch, setCanLaunch] = useState(false);
   const [attemptedDownload, setAttemptedDownload] = useState(false);
+  const [mirrorError, setMirrorError] = useState<string | null>(null);
 
   const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
 
@@ -121,6 +123,13 @@ export default function AppPage() {
   const handleMirrorSelect = useCallback((mirror: string, status: boolean | null | 'http') => {
     setSelectedMirror(mirror);
     setIsMirrorOnline(status === 'http' ? true : status);
+    setMirrorError(null);  
+  }, []);
+
+  const handleMirrorError = useCallback((error: string) => {
+    setMirrorError(error);
+    setIsMirrorOnline(false);
+    setAttemptedDownload(false); 
   }, []);
 
   const handleInstallFlow = useCallback(async (isDownloadNeeded: boolean = false) => {
@@ -231,10 +240,16 @@ export default function AppPage() {
   };
 
   useEffect(() => {
-    loadData();
-    clearAllActiveDownloads();
-    window.scrollTo(0, 0);
-  }, [loadData, clearAllActiveDownloads]);
+    if (attemptedDownload && !selectedMirror) {
+      const checkMirrorsAndStart = async () => {
+        const result = await checkMirrors(id!, handleMirrorSelect);
+        if ('error' in result) {
+          handleMirrorError(result.error);
+        }
+      };
+      checkMirrorsAndStart();
+    }
+  }, [attemptedDownload, selectedMirror, id, checkMirrors, handleMirrorSelect, handleMirrorError]);
 
   useEffect(() => {
     if (attemptedDownload && selectedMirror && isMirrorOnline !== null) {
@@ -242,6 +257,12 @@ export default function AppPage() {
       handleInstallFlow(true);
     }
   }, [attemptedDownload, selectedMirror, isMirrorOnline, handleInstallFlow]);
+
+  useEffect(() => {
+    loadData();
+    clearAllActiveDownloads();
+    window.scrollTo(0, 0);
+  }, [loadData, clearAllActiveDownloads]);
 
   if (isLoading) {
     return (
@@ -359,10 +380,10 @@ export default function AppPage() {
                 <FaPlay /> Launch
               </button>
             )}
-            <button onClick={handleUninstall} className="secondary" disabled={isUninstalling}>
+            <button onClick={handleUninstall} className="secondary">
               {isUninstalling ? <FaSpinner className="fa-spin" /> : <FaTrash />} Uninstall
             </button>
-            <button onClick={handleToggleAutoUpdate} className="secondary" disabled={isTogglingAutoUpdate}>
+            <button onClick={handleToggleAutoUpdate} className="secondary">
               {isTogglingAutoUpdate ? <FaSpinner className="fa-spin" /> : <FaSync />}
               {app.auto_update ? " Disable" : " Enable"} Auto Update
             </button>
@@ -375,7 +396,6 @@ export default function AppPage() {
                 <button
                   onClick={() => handleInstallFlow(false)}
                   className="primary"
-                  disabled={isInstalling}
                 >
                   {isInstalling ? (
                     <><FaSpinner className="fa-spin" /> Installing...</>
@@ -393,12 +413,13 @@ export default function AppPage() {
                     handleInstallFlow(true);
                   }
                 }}
-                disabled={isInstalling}
-                className="primary"
+                className={`primary ${isDownloading ? 'loading' : ''}`}
               >
                 {isDownloading ? (
                   <><FaSpinner className="fa-spin" /> Downloading... {downloadProgress}%</>
-                ) : attemptedDownload && (!selectedMirror || isMirrorOnline === null) ? (
+                ) : mirrorError ? (
+                  <><FaTimes /> {mirrorError}</>
+                ) : !selectedMirror && attemptedDownload ? (
                   <><FaSpinner className="fa-spin" /> Choosing mirrors...</>
                 ) : (
                   <><FaDownload /> Download</>
@@ -437,27 +458,39 @@ export default function AppPage() {
           <button onClick={() => setShowAdvanced(!showAdvanced)} className="secondary">
             {showAdvanced ? <FaChevronUp /> : <FaChevronDown />} Advanced Download Options
           </button>
-          <div className="advanced-options" style={{
-            display: showAdvanced ? 'block' : 'none',
-            minHeight: showAdvanced ? '100px' : '0'
-          }}>
-            <select
-              value={selectedVersion}
-              onChange={(e) => setSelectedVersion(e.target.value)}
-              className="version-selector"
-            >
-              <option value="">Select version</option>
-              {sortedVersions.map((version) => (
-                <option key={version.version} value={version.version}>
-                  {version.version}
-                </option>
-              ))}
-            </select>
-            <MirrorSelector
-              packageId={id}
-              onMirrorSelect={handleMirrorSelect}
-            />
-          </div>
+          {showAdvanced && (
+            <div className="mt-4">
+              <h3 className="text-lg font-semibold mb-2">Advanced Options</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Mirror Selection</label>
+                  <MirrorSelector 
+                    packageId={id} 
+                    onMirrorSelect={handleMirrorSelect} 
+                    onError={handleMirrorError}
+                  />
+                  {mirrorError && (
+                    <p className="mt-1 text-sm text-red-600">{mirrorError}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Version Selection</label>
+                  <select
+                    value={selectedVersion}
+                    onChange={(e) => setSelectedVersion(e.target.value)}
+                    className="version-selector"
+                  >
+                    <option value="">Select version</option>
+                    {sortedVersions.map((version) => (
+                      <option key={version.version} value={version.version}>
+                        {version.version}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

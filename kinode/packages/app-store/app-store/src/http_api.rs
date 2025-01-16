@@ -816,7 +816,7 @@ fn serve_paths(
                             package_id_parsed,
                         ),
                     ))
-                    .send_and_await_response(10)
+                    .send_and_await_response(5)
                     .unwrap()
             {
                 match kind {
