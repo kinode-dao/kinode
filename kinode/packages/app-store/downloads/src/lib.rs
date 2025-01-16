@@ -437,6 +437,29 @@ fn handle_message(
                         process_lib_package_id.to_string(), current_version)
                 )?;
 
+                // only auto-update if the target version hash is actually different from the one
+                // that we have installed.
+                // if we have the target version hash.zip downloaded, we can skip this
+                let file = vfs::File::new(
+                    format!(
+                        "{}/{}/{}.zip",
+                        downloads.path,
+                        process_lib_package_id.to_string(),
+                        version_hash
+                    ),
+                    60,
+                );
+                if let Ok(_exists) = file.metadata() {
+                    print_to_terminal(
+                        1,
+                        &format!(
+                            "auto_update: skipping download for {} with version {} because it already exists",
+                            process_lib_package_id, version_hash
+                        ),
+                    );
+                    return Ok(());
+                };
+
                 let download_from = metadata.properties.mirrors
                     .first()
                     .ok_or_else(||
