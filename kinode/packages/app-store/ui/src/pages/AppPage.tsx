@@ -233,6 +233,7 @@ export default function AppPage() {
   useEffect(() => {
     loadData();
     clearAllActiveDownloads();
+    window.scrollTo(0, 0);
   }, [loadData, clearAllActiveDownloads]);
 
   useEffect(() => {
