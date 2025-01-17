@@ -461,6 +461,14 @@ pub fn uninstall(our: &Address, state: &mut State, package_id: &PackageId) -> an
     // If this package had an API, remove it from installed_apis
     state.installed_apis.remove(package_id);
 
+    // set auto_update to false
+    Request::to(("our", "chain", "app-store", "sys"))
+        .body(&ChainRequest::StopAutoUpdate(
+            crate::kinode::process::main::PackageId::from_process_lib(package_id.clone()),
+        ))
+        .send()
+        .unwrap();
+
     Ok(())
 }
 
