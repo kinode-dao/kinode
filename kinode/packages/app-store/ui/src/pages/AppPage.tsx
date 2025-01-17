@@ -91,6 +91,7 @@ export default function AppPage() {
       }
 
       setApp(appData);
+      console.log('app data loaded: ', appData);
       setInstalledApp(installedAppData);
 
       const versions = appData.metadata?.properties?.code_hashes || [];

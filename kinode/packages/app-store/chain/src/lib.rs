@@ -100,12 +100,6 @@ impl DB {
         Ok(Self { inner })
     }
 
-    // pub fn reset(&self, our: &Address) {
-    //     if let Err(e) = sqlite::remove_db(our.package_id(), "app_store_chain.sqlite", None) {
-    //         println!("failed to reset app-store DB: {e}");
-    //     }
-    // }
-
     pub fn get_last_saved_block(&self) -> anyhow::Result<u64> {
         let query = "SELECT value FROM meta WHERE key = 'last_saved_block'";
         let rows = self.inner.read(query.into(), vec![])?;
@@ -234,7 +228,7 @@ impl DB {
     ) -> anyhow::Result<Vec<(PackageId, PackageListing)>> {
         let query = "SELECT package_name, publisher_node, tba, metadata_uri, metadata_hash, metadata_json, auto_update, block
                      FROM listings
-                     WHERE block > ?";
+                     WHERE block >= ?";
         let params = vec![block_number.into()];
         let rows = self.inner.read(query.into(), params)?;
         let mut listings = Vec::new();
@@ -487,9 +481,11 @@ fn handle_local_request(state: &mut State, req: ChainRequest) -> anyhow::Result<
             }
         }
         ChainRequest::Reset => {
-            // state.db.reset(&our);
             Response::new().body(&ChainResponse::ResetOk).send()?;
             println!("re-indexing state!");
+            // set last_saved_block to 0 to force re-index
+            state.last_saved_block = 0;
+            let _ = state.db.set_last_saved_block(0);
             return Ok(true);
         }
     }
@@ -601,7 +597,10 @@ fn handle_eth_log(
     listing.tba = tba;
     listing.metadata_uri = metadata_uri;
     listing.metadata_hash = metadata_hash;
-    listing.metadata = metadata.clone();
+    listing.block = block_number;
+    if !startup {
+        listing.metadata = metadata.clone();
+    }
 
     state.db.insert_or_update_listing(&package_id, &listing)?;
 
