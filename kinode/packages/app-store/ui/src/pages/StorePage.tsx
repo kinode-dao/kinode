@@ -3,6 +3,7 @@ import useAppsStore from "../store";
 import { AppListing } from "../types/Apps";
 import { Link } from "react-router-dom";
 import { FaSearch } from "react-icons/fa";
+import { ResetButton } from "../components";
 
 export default function StorePage() {
   const { listings, fetchListings, fetchUpdates } = useAppsStore();
@@ -36,57 +37,51 @@ export default function StorePage() {
           />
           <FaSearch />
         </div>
+        <ResetButton />
       </div>
-      <div className="app-list">
-        {!listings ? (
-          <p>Loading...</p>
-        ) : filteredApps.length === 0 ? (
-          <p>No apps available.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th></th>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Publisher</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredApps.map((app) => (
-                <AppRow key={`${app.package_id?.package_name}:${app.package_id?.publisher_node}`} app={app} />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {!listings ? (
+        <p>Loading...</p>
+      ) : filteredApps.length === 0 ? (
+        <p>No apps available.</p>
+      ) : (
+        <div className="app-grid">
+          {filteredApps.map((app) => (
+            <AppCard key={`${app.package_id?.package_name}:${app.package_id?.publisher_node}`} app={app} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-const AppRow: React.FC<{ app: AppListing }> = ({ app }) => {
+const AppCard: React.FC<{ app: AppListing }> = ({ app }) => {
   if (!app || !app.package_id) return null;
 
   return (
-    <tr className="app-row">
-      <td>
-        {app.metadata?.image && (
-          <img
-            src={app.metadata.image}
-            alt={`${app.metadata?.name || app.package_id.package_name} icon`}
-            className="app-icon"
-            width="32"
-            height="32"
-          />
-        )}
-      </td>
-      <td>
-        <Link to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`} className="app-name">
-          {app.metadata?.name || app.package_id.package_name}
-        </Link>
-      </td>
-      <td>{app.metadata?.description || "No description available"}</td>
-      <td>{app.package_id.publisher_node}</td>
-    </tr>
+    <Link
+      to={`/app/${app.package_id.package_name}:${app.package_id.publisher_node}`}
+      className="app-card"
+    >
+      <div className="app-icon-wrapper">
+        <img
+          src={app.metadata?.image || '/bird-orange.svg'}
+          alt={`${app.metadata?.name || app.package_id.package_name} icon`}
+          className="app-icon"
+        />
+      </div>
+      <h3 className="app-name">
+        {app.metadata?.name || app.package_id.package_name}
+      </h3>
+      <p className="app-publisher">
+        {app.package_id.publisher_node}
+      </p>
+      {app.metadata?.description && (
+        <p className="app-description">
+          {app.metadata.description.length > 100
+            ? `${app.metadata.description.substring(0, 100)}...`
+            : app.metadata.description}
+        </p>
+      )}
+    </Link>
   );
 };

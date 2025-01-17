@@ -91,6 +91,11 @@ fn make_widget() -> String {
             overflow: hidden;
         }
 
+        h3 {
+            padding-left: 1rem;
+            padding-top: 8px;
+        }
+
         #latest-apps {
             display: flex;
             flex-wrap: wrap;
@@ -100,7 +105,7 @@ fn make_widget() -> String {
             height: 100vh;
             width: 100vw;
             overflow-y: auto;
-            padding-bottom: 30px;
+            padding-bottom: 4rem;
         }
 
         .app {
@@ -144,6 +149,7 @@ fn make_widget() -> String {
     </style>
 </head>
 <body>
+    <h3>Top Apps</h3>
     <div id="latest-apps"></div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -153,6 +159,18 @@ fn make_widget() -> String {
                     .then(data => {
                         const container = document.getElementById('latest-apps');
                         container.innerHTML = '';
+                        // Sort to ensure dial, memedeck, dartfrog are first in that order
+                        const topApps = ['dial', 'memedeck', 'dartfrog'];
+                        data.sort((a, b) => {
+                            const aIndex = topApps.indexOf(a.package_id.package_name);
+                            const bIndex = topApps.indexOf(b.package_id.package_name);
+                            if (aIndex !== -1 && bIndex !== -1) {
+                                return aIndex - bIndex;
+                            }
+                            if (aIndex !== -1) return -1;
+                            if (bIndex !== -1) return 1;
+                            return 0;
+                        });
                         data.forEach(app => {
                             if (app.metadata) {
                                 const a = document.createElement('a');
@@ -251,7 +269,6 @@ fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
         },
         "our_version_hash": state.our_version_hash,
         "publisher": id.publisher(),
-        "our_version_hash": state.our_version_hash,
         "verified": state.verified,
         "caps_approved": state.caps_approved,
     })
@@ -744,10 +761,8 @@ fn serve_paths(
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
                 ));
             }
-            let chain = Address::from_str("our@chain:app-store:sys")?;
-
             let resp = Request::new()
-                .target(chain)
+                .target(("our", "chain", "app-store", "sys"))
                 .body(&ChainRequest::Reset)
                 .send_and_await_response(5)??;
             let msg = serde_json::from_slice::<ChainResponse>(resp.body())?;
@@ -794,7 +809,7 @@ fn serve_paths(
                             package_id_parsed,
                         ),
                     ))
-                    .send_and_await_response(3)
+                    .send_and_await_response(5)
                     .unwrap()
             {
                 match kind {

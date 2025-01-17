@@ -26,7 +26,7 @@ interface AppsStore {
   fetchDownloads: () => Promise<DownloadItem[]>
   fetchOurApps: () => Promise<void>
   fetchDownloadsForApp: (id: string) => Promise<DownloadItem[]>
-  checkMirror: (node: string) => Promise<MirrorCheckFile | null>
+  checkMirror: (id: string, node: string) => Promise<MirrorCheckFile | null>
   resetStore: () => Promise<void>
 
   fetchHomepageApps: () => Promise<void>
@@ -52,6 +52,7 @@ interface AppsStore {
 
   fetchUpdates: () => Promise<void>
   clearUpdates: (packageId: string) => Promise<void>
+  checkMirrors: (packageId: string, onMirrorSelect: (mirror: string, status: boolean | null | 'http') => void) => Promise<{ mirror: string, status: boolean | null | 'http', mirrors: string[] } | { error: string, mirrors: string[] }>
 }
 
 const useAppsStore = create<AppsStore>()((set, get) => ({
@@ -407,6 +408,48 @@ const useAppsStore = create<AppsStore>()((set, get) => ({
       });
     } catch (error) {
       console.error("Error clearing updates:", error);
+    }
+  },
+
+  checkMirrors: async (packageId: string, onMirrorSelect: (mirror: string, status: boolean | null | 'http') => void) => {
+    try {
+      onMirrorSelect("", null); // Signal checking started
+
+      const appData = await get().fetchListing(packageId);
+      if (!appData) {
+        onMirrorSelect("", false);
+        return { error: "Failed to fetch app data", mirrors: [] };
+      }
+
+      const mirrors = Array.from(new Set([
+        appData.package_id.publisher_node,
+        ...(appData.metadata?.properties?.mirrors || [])
+      ]));
+      
+      // check for http mirrors 
+      const httpMirrors = mirrors.filter(m => m.startsWith('http'));
+      for (const mirror of httpMirrors) {
+        onMirrorSelect(mirror, 'http');
+        return { mirror, status: 'http' as const, mirrors };
+      }
+
+      // check node mirrors
+      const nodeMirrors = mirrors.filter(m => !m.startsWith('http'));
+      for (const mirror of nodeMirrors) {
+        const status = await get().checkMirror(packageId, mirror);
+        if (status?.is_online) {
+          onMirrorSelect(mirror, true);
+          return { mirror, status: true as const, mirrors };
+        }
+      }
+
+      // upon reaching this, no online mirrors found.
+      onMirrorSelect("", false);
+      return { error: "No available mirrors found", mirrors };
+    } catch (error) {
+      console.error("Mirror check error:", error);
+      onMirrorSelect("", false);
+      return { error: "Failed to check mirrors", mirrors: [] };
     }
   },
 

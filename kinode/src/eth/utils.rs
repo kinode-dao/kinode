@@ -17,7 +17,7 @@ pub async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
                 ProviderBuilder::new().on_ws(ws),
             )
             .await??;
-            provider.pubsub = Some(client);
+            provider.pubsub.push(client);
             Ok(())
         }
         _ => Err(anyhow::anyhow!(
