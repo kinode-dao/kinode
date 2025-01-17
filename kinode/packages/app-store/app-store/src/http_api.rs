@@ -585,13 +585,6 @@ fn serve_paths(
                         "successfully installed {}:{}",
                         process_package_id.package_name, process_package_id.publisher_node
                     );
-                    // TODO handle?
-                    let _ = Request::to(("our", "chain", "app-store", "sys"))
-                        .body(
-                            serde_json::to_vec(&ChainRequest::StartAutoUpdate(process_package_id))
-                                .unwrap(),
-                        )
-                        .send_and_await_response(5)??;
                     Ok((StatusCode::CREATED, None, vec![]))
                 }
                 Err(e) => Ok((

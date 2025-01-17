@@ -327,6 +327,11 @@ pub fn install(
             capabilities: requested_capabilities,
         })
         .send()?;
+
+        Request::to(("our", "chain", "app-store", "sys"))
+            .body(&ChainRequest::StartAutoUpdate(package_id.clone()))
+            .send()
+            .unwrap();
     }
 
     // THEN, *after* all processes have been initialized, grant caps in manifest

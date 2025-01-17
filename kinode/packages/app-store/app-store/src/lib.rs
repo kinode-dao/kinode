@@ -311,12 +311,6 @@ fn handle_local_request(
                         "successfully installed {}:{}",
                         package_id.package_name, package_id.publisher_node
                     );
-                    // TODO handle?
-                    let _ = Request::to(("our", "chain", "app-store", "sys"))
-                        .body(
-                            serde_json::to_vec(&ChainRequest::StartAutoUpdate(package_id)).unwrap(),
-                        )
-                        .send_and_await_response(5);
                     LocalResponse::InstallResponse(InstallResponse::Success)
                 }
                 Err(e) => {
@@ -332,13 +326,6 @@ fn handle_local_request(
                 match utils::uninstall(our, state, &process_lib_package_id) {
                     Ok(()) => {
                         println!("successfully uninstalled package {process_lib_package_id}");
-                        // TODO handle?
-                        let _ = Request::to(("our", "chain", "app-store", "sys"))
-                            .body(
-                                serde_json::to_vec(&ChainRequest::StopAutoUpdate(package_id))
-                                    .unwrap(),
-                            )
-                            .send_and_await_response(5);
                         LocalResponse::UninstallResponse(UninstallResponse::Success)
                     }
                     Err(e) => {
