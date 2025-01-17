@@ -401,7 +401,7 @@ export default function AppPage() {
                   {isInstalling ? (
                     <><FaSpinner className="fa-spin" /> Installing...</>
                   ) : (
-                    <><FaDownload /> Install</>
+                    <>{installedApp ? <><FaDownload /> Update</> : <><FaDownload /> Download</>}</>
                   )}
                 </button>
               )
@@ -423,7 +423,7 @@ export default function AppPage() {
                 ) : !selectedMirror && attemptedDownload ? (
                   <><FaSpinner className="fa-spin" /> Choosing mirrors...</>
                 ) : (
-                  <><FaDownload /> Download</>
+                  <>{installedApp ? <><FaDownload /> Update</> : <><FaDownload /> Download</>}</>
                 )}
               </button>
             )}
