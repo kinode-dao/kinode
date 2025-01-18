@@ -255,7 +255,7 @@ pub async fn provider(
     };
 
     // convert saved configs into data structure that we will use to route queries
-    for entry in configs {
+    for entry in configs.0.into_iter().rev() {
         let mut ap = state
             .providers
             .entry(entry.chain_id)
@@ -1017,7 +1017,7 @@ async fn handle_eth_config_action(
         }
         EthConfigAction::SetProviders(new_providers) => {
             let new_map = DashMap::new();
-            for entry in new_providers {
+            for entry in new_providers.0.into_iter().rev() {
                 let mut aps = new_map.entry(entry.chain_id).or_insert(ActiveProviders {
                     urls: vec![],
                     nodes: vec![],
