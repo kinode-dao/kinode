@@ -1,79 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import useAppsStore from "../store";
 
 interface PackageSelectorProps {
     onPackageSelect: (packageName: string, publisherId: string) => void;
+    publisherId: string;
 }
 
-const PackageSelector: React.FC<PackageSelectorProps> = ({ onPackageSelect }) => {
+const PackageSelector: React.FC<PackageSelectorProps> = ({ onPackageSelect, publisherId }) => {
     const { installed, fetchInstalled } = useAppsStore();
     const [selectedPackage, setSelectedPackage] = useState<string>("");
-    const [customPackage, setCustomPackage] = useState<string>("");
-    const [isCustomPackageSelected, setIsCustomPackageSelected] = useState(false);
-
-    useEffect(() => {
-        if (selectedPackage && selectedPackage !== "custom") {
-            const [packageName, publisherId] = selectedPackage.split(':');
-            onPackageSelect(packageName, publisherId);
-        }
-    }, [selectedPackage, onPackageSelect]);
 
     useEffect(() => {
         fetchInstalled();
     }, []);
 
-    const handlePackageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const value = e.target.value;
-        if (value === "custom") {
-            setIsCustomPackageSelected(true);
-        } else {
-            setSelectedPackage(value);
-            setIsCustomPackageSelected(false);
-            setCustomPackage("");
-        }
-    };
+    const filteredPackages = useMemo(() => 
+        Object.keys(installed).filter(packageFullName => 
+            packageFullName.endsWith(publisherId)
+        ), [installed, publisherId]
+    );
 
-    const handleSetCustomPackage = () => {
-        if (customPackage) {
-            const [packageName, publisherId] = customPackage.split(':');
-            if (packageName && publisherId) {
-                onPackageSelect(packageName, publisherId);
-                setSelectedPackage(customPackage);
-                setIsCustomPackageSelected(false);
-            } else {
-                alert("Please enter the package name and publisher ID in the format 'packageName:publisherId'");
-            }
+    useEffect(() => {
+        if (selectedPackage) {
+            const packageName = selectedPackage.split(':')[0];
+            onPackageSelect(packageName, publisherId);
         }
+    }, [selectedPackage, onPackageSelect, publisherId]);
+
+    useEffect(() => {
+        if (filteredPackages.length > 0 && !selectedPackage) {
+            setSelectedPackage(filteredPackages[0]);
+        }
+    }, [filteredPackages, selectedPackage]);
+
+    const handlePackageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setSelectedPackage(e.target.value);
     };
 
     return (
         <div className="package-selector">
-            <select value={selectedPackage} onChange={handlePackageChange}>
-                <option value="">Select a package</option>
-                <option value="custom">Custom package</option>
-                {!isCustomPackageSelected && customPackage && (
-                    <option value={customPackage}>{customPackage}</option>
-                )}
-                {Object.keys(installed).map((packageFullName) => (
-                    <option key={packageFullName} value={packageFullName}>
-                        {packageFullName}
+            <select 
+                value={selectedPackage} 
+                onChange={handlePackageChange} 
+                style={{ width: '100%' }}
+            >
+                {filteredPackages.length === 0 ? (
+                    <option disabled value="">
+                        No apps installed with publisher {publisherId}
                     </option>
-                ))}
+                ) : (
+                    filteredPackages.map(packageFullName => (
+                        <option key={packageFullName} value={packageFullName}>
+                            {packageFullName}
+                        </option>
+                    ))
+                )}
             </select>
-            {isCustomPackageSelected && (
-                <div className="custom-package-input">
-                    <input
-                        type="text"
-                        value={customPackage}
-                        onChange={(e) => setCustomPackage(e.target.value)}
-                        placeholder="Enter as packageName:publisherId"
-                        style={{ width: '100%', marginBottom: '10px' }}
-                    />
-                    <button onClick={handleSetCustomPackage} disabled={!customPackage}>
-                        Set Custom Package
-                    </button>
-                </div>
-            )}
         </div>
     );
 };

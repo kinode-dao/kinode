@@ -29,6 +29,7 @@
 //! Note: This process does not directly handle file transfers or on-chain operations.
 //! It delegates these responsibilities to the downloads and chain processes respectively.
 //!
+use crate::kinode::process::chain::ChainRequest;
 use crate::kinode::process::downloads::{
     AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponse, ProgressUpdate,
 };
@@ -38,7 +39,7 @@ use crate::kinode::process::main::{
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
-    LazyLoadBlob, Message, PackageId, Response,
+    LazyLoadBlob, Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{State, UpdateInfo, Updates};
@@ -319,25 +320,22 @@ fn handle_local_request(
             },
             None,
         ),
-        LocalRequest::Uninstall(package_id) => (
-            match utils::uninstall(our, state, &package_id.clone().to_process_lib()) {
-                Ok(()) => {
-                    println!(
-                        "successfully uninstalled package: {:?}",
-                        &package_id.to_process_lib()
-                    );
-                    LocalResponse::UninstallResponse(UninstallResponse::Success)
-                }
-                Err(e) => {
-                    println!(
-                        "error uninstalling package: {:?}: {e}",
-                        &package_id.to_process_lib()
-                    );
-                    LocalResponse::UninstallResponse(UninstallResponse::Failure)
-                }
-            },
-            None,
-        ),
+        LocalRequest::Uninstall(package_id) => {
+            let process_lib_package_id = package_id.clone().to_process_lib();
+            (
+                match utils::uninstall(our, state, &process_lib_package_id) {
+                    Ok(()) => {
+                        println!("successfully uninstalled package {process_lib_package_id}");
+                        LocalResponse::UninstallResponse(UninstallResponse::Success)
+                    }
+                    Err(e) => {
+                        println!("error uninstalling package {process_lib_package_id}: {e}");
+                        LocalResponse::UninstallResponse(UninstallResponse::Failure)
+                    }
+                },
+                None,
+            )
+        }
         LocalRequest::Apis => (list_apis(state), None),
         LocalRequest::GetApi(package_id) => get_api(state, &package_id.to_process_lib()),
     }

@@ -47,10 +47,18 @@ function EnterKnsName({
       let validities: string[] = [];
       setIsPunyfied('');
 
-      if (!/^[a-z0-9-]*$/.test(name)) {
-        validities.push(NAME_URL);
-        setNameValidities(validities);
-        return;
+      if (fixedTlz) {
+        if (!/^[a-z0-9-]*$/.test(name)) {
+          validities.push(NAME_URL);
+          setNameValidities(validities);
+          return;
+        }
+      } else {
+        if (!/^[a-z0-9-.]*$/.test(name)) {
+          validities.push(NAME_URL);
+          setNameValidities(validities);
+          return;
+        }
       }
 
       let normalized = ''

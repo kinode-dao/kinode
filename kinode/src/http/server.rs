@@ -1198,7 +1198,7 @@ async fn handle_app_message(
                     let path = utils::format_path_with_process(&km.source.process, &path);
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
-                        2,
+                        3,
                         HTTP_SERVER_PROCESS_ID.clone(),
                         format!(
                             "http: binding {path}, {}, {}, {}",
@@ -1265,7 +1265,7 @@ async fn handle_app_message(
                     let subdomain = utils::generate_secure_subdomain(&km.source.process);
                     let mut path_bindings = path_bindings.write().await;
                     Printout::new(
-                        2,
+                        3,
                         HTTP_SERVER_PROCESS_ID.clone(),
                         format!(
                             "http: binding subdomain {subdomain} with path {path}, {}",

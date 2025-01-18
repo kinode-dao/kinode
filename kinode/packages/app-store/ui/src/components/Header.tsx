@@ -18,12 +18,12 @@ const Header: React.FC = () => {
                     <button onClick={() => window.location.href = window.location.origin.replace('//app-store-sys.', '//') + '/'} className="home-button">
                         <FaHome />
                     </button>
-                    <Link to={STORE_PATH} className={location.pathname === STORE_PATH ? 'active' : ''}>Apps</Link>
-                    <Link to={PUBLISH_PATH} className={location.pathname === PUBLISH_PATH ? 'active' : ''}>Publish</Link>
+                    <Link to={STORE_PATH} className={location.pathname === STORE_PATH ? 'active' : ''}>Store</Link>
                     <Link to={MY_APPS_PATH} className={location.pathname === MY_APPS_PATH ? 'active' : ''}>
                         My Apps
                         {updateCount > 0 && <span className="update-badge">{updateCount}</span>}
                     </Link>
+                    <Link to={PUBLISH_PATH} className={location.pathname === PUBLISH_PATH ? 'active' : ''}>Publish</Link>
                 </nav>
             </div>
             <div className="header-right">

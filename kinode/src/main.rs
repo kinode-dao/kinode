@@ -123,11 +123,14 @@ async fn main() {
         serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap()
     };
     if let Some(rpc) = rpc {
-        eth_provider_config.insert(lib::eth::ProviderConfig {
-            chain_id: CHAIN_ID,
-            trusted: true,
-            provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
-        });
+        eth_provider_config.insert(
+            0,
+            lib::eth::ProviderConfig {
+                chain_id: CHAIN_ID,
+                trusted: true,
+                provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
+            },
+        );
         // save the new provider config
         tokio::fs::write(
             home_directory_path.join(".eth_providers"),
@@ -357,6 +360,7 @@ async fn main() {
         // getting PKI info ("bootstrap")
         eth_provider_config
             .clone()
+            .0
             .into_iter()
             .filter_map(|config| {
                 if let lib::eth::NodeOrRpcUrl::Node { kns_update, .. } = config.provider {

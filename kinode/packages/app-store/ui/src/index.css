@@ -91,7 +91,7 @@ a:hover {
 
 .header-left nav {
     display: flex;
-    gap: 1rem;
+    gap: 1.5rem;
 }
 
 .header-left nav a {
@@ -195,6 +195,29 @@ button.danger:hover {
     background: var(--surface-hover);
 } */
 
+/* App Grid */
+.app-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+}
+
+.app-grid .app-card {
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    background: light-dark(var(--surface-light), var(--surface-dark)) !important;
+}
+
+.app-card .app-name {
+    text-align: center;
+    margin-bottom: 0.3rem;
+}
+
+.app-card .app-publisher {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
 /* Tables */
 table {
     width: 100%;
@@ -210,11 +233,16 @@ td {
 }
 
 /* App Icon */
+.app-icon-wrapper {
+    margin: 0 auto;
+    width: fit-content;
+}
+
 .app-icon {
-    width: 64px;
-    height: 64px;
-    min-width: 64px;
-    min-height: 64px;
+    max-width: 128px;
+    max-height: 128px;
+    min-width: 128px;
+    min-height: 128px;
     object-fit: cover;
     border-radius: var(--border-radius);
 }
@@ -308,6 +336,7 @@ td {
     display: flex;
     justify-content: space-between;
     margin-bottom: 0.5rem;
+    gap: 0.5rem;
 }
 
 /* Error Message */
@@ -328,12 +357,9 @@ td {
 .publish-page {
     padding: 1rem;
     background: light-dark(var(--bg-light), var(--bg-dark));
-    margin: 0 1vw;
     border-radius: var(--border-radius);
-}
-
-.app-info {
-    max-width: 20rem;
+    max-width: 960px;
+    margin: 0 auto;
 }
 
 .app-header {
@@ -343,29 +369,26 @@ td {
     margin-bottom: 1.5rem;
 }
 
+div.app-header {
+    background: transparent !important;
+}
+
 .app-warning {
     background: var(--orange) !important;
     color: var(--text-light);
-    padding: 1em;
+    padding: 1rem;
+    margin-bottom: 1rem;
 }
 
 .app-description {
-    margin-bottom: 2rem;
+    margin-bottom: 0.5rem;
     line-height: 1.6;
-    padding: 1em;
-}
-
-.app-info {
-    background: light-dark(var(--surface-light), var(--surface-dark));
-    border-radius: var(--border-radius);
-    padding: 1.5rem;
-    margin-bottom: 2rem;
+    word-wrap: break-word;
+    color: light-dark(var(--text-light), var(--text-dark));
 }
 
 /* Components with secondary backgrounds */
 .app-header,
-.app-info,
-.app-description,
 .form-group,
 .search-bar input,
 .version-selector,
@@ -383,6 +406,15 @@ td {
     gap: 1rem;
     margin-bottom: 2rem;
     max-width: 20rem;
+}
+
+.advanced-options {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+    margin-bottom: 2rem;
+    max-width: 360px;
 }
 
 .version-selector,
@@ -527,10 +559,22 @@ td {
     margin-top: 1rem;
 }
 
+.store-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.store-header .search-bar {
+    flex: 1;
+    margin: 0;
+}
+
 /* Search bar */
 .search-bar {
     width: 100%;
-    margin: 1rem auto 2rem;
     position: relative;
 }
 
@@ -575,10 +619,6 @@ td {
 
     .app-actions {
         flex-direction: column;
-    }
-
-    .download-section {
-        max-width: 100%;
     }
 }
 
@@ -1084,8 +1124,6 @@ td {
 
 /* App Page Layout */
 .app-page {
-    max-width: 80rem;
-    margin: 0 auto;
     padding: 2rem 1rem;
 }
 
@@ -1173,6 +1211,7 @@ td {
     padding: 1rem;
     border-radius: var(--border-radius);
     background: light-dark(var(--surface-light), var(--surface-dark));
+    margin-bottom: 1rem;
 }
 
 .file-explorer h3 {
@@ -1184,9 +1223,21 @@ td {
 }
 
 .downloads-table {
-    width: 100%;
+    display: inline-block;
+    max-width: calc(960px - 2rem);
     border-radius: var(--border-radius);
-    overflow: hidden;
+    overflow-x: scroll;
+}
+
+::-webkit-scrollbar {
+    -webkit-appearance: none;
+    width: 7px;
+}
+
+::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background-color: rgba(0, 0, 0, .5);
+    -webkit-box-shadow: 0 0 1px rgba(255, 255, 255, .5);
 }
 
 .downloads-table th {
@@ -1234,8 +1285,10 @@ td {
 
 .tooltip-content {
     position: absolute;
-    left: 24px;
-    top: -4px;
+    right: calc(100% + 8px);
+    /* Position to the left with 8px gap */
+    top: 50%;
+    transform: translateY(-50%);
     background: #333;
     color: white;
     padding: 8px 12px;
@@ -1247,18 +1300,6 @@ td {
     visibility: hidden;
     transition: opacity 0.3s ease, visibility 0.3s ease;
     min-width: max-content;
-}
-
-/* Create an invisible bridge between icon and content */
-.tooltip-content::after {
-    content: '';
-    position: absolute;
-    left: -20px;
-    /* Cover the gap between icon and content */
-    top: 0;
-    width: 20px;
-    height: 100%;
-    background: transparent;
 }
 
 .tooltip-container:hover .tooltip-content {

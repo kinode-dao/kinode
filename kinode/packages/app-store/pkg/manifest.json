@@ -5,10 +5,9 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "http-client:distro:sys",
-            "http-server:distro:sys",
-            "main:app-store:sys",
             "chain:app-store:sys",
+            "http-client:distro:sys",
+            "main:app-store:sys",
             "terminal:terminal:sys",
             "vfs:distro:sys",
             {
@@ -19,10 +18,9 @@
             }
         ],
         "grant_capabilities": [
-            "http-server:distro:sys",
-            "vfs:distro:sys",
+            "http-client:distro:sys",
             "terminal:terminal:sys",
-            "http-client:distro:sys"
+            "vfs:distro:sys"
         ],
         "public": false
     },
@@ -30,16 +28,15 @@
         "process_name": "chain",
         "process_wasm_path": "/chain.wasm",
         "on_exit": "Restart",
-        "request_networking": true,
+        "request_networking": false,
         "request_capabilities": [
-            "main:app-store:sys",
             "downloads:app-store:sys",
-            "vfs:distro:sys",
-            "kns-indexer:kns-indexer:sys",
             "eth:distro:sys",
-            "http-server:distro:sys",
             "http-client:distro:sys",
+            "kns-indexer:kns-indexer:sys",
+            "main:app-store:sys",
             "sqlite:distro:sys",
+            "terminal:terminal:sys",
             {
                 "process": "vfs:distro:sys",
                 "params": {
@@ -48,12 +45,11 @@
             }
         ],
         "grant_capabilities": [
-            "http-server:distro:sys",
-            "kns-indexer:kns-indexer:sys",
-            "vfs:distro:sys",
-            "http-client:distro:sys",
             "eth:distro:sys",
+            "http-client:distro:sys",
+            "kns-indexer:kns-indexer:sys",
             "sqlite:distro:sys",
+            "terminal:terminal:sys",
             "timer:distro:sys"
         ],
         "public": false
@@ -64,30 +60,27 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "terminal:terminal:sys",
-            "filesystem:distro:sys",
-            "homepage:homepage:sys",
-            "http-server:distro:sys",
-            "http-client:distro:sys",
-            {
-                "process": "homepage:homepage:sys",
-                "params": "RemoveOther"
-            },
-            "downloads:app-store:sys",
             "chain:app-store:sys",
-            "vfs:distro:sys",
-            "kernel:distro:sys",
-            "eth:distro:sys",
+            "downloads:app-store:sys",
             {
                 "process": "eth:distro:sys",
                 "params": {
                     "root": true
                 }
             },
-            "sqlite:distro:sys",
-            "kv:distro:sys",
-            "chess:chess:sys",
+            "filesystem:distro:sys",
+            "homepage:homepage:sys",
+            {
+                "process": "homepage:homepage:sys",
+                "params": "RemoveOther"
+            },
+            "http-server:distro:sys",
+            "kernel:distro:sys",
             "kns-indexer:kns-indexer:sys",
+            "kv:distro:sys",
+            "sqlite:distro:sys",
+            "terminal:terminal:sys",
+            "vfs:distro:sys",
             {
                 "process": "vfs:distro:sys",
                 "params": {
@@ -96,11 +89,10 @@
             }
         ],
         "grant_capabilities": [
-            "eth:distro:sys",
-            "http-client:distro:sys",
             "http-server:distro:sys",
             "kns-indexer:kns-indexer:sys",
             "terminal:terminal:sys",
+            "homepage:homepage:sys",
             "vfs:distro:sys"
         ],
         "public": false
