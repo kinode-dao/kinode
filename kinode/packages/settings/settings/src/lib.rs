@@ -79,7 +79,7 @@ impl SettingsState {
         // identity
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
             .body(rmp_serde::to_vec(&net::NetAction::GetPeer(self.our.node.clone())).unwrap())
-            .send_and_await_response(5)
+            .send_and_await_response(60)
         else {
             return Err(anyhow::anyhow!("failed to get identity from net"));
         };
@@ -91,7 +91,7 @@ impl SettingsState {
         // diagnostics string
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
             .body(rmp_serde::to_vec(&net::NetAction::GetDiagnostics).unwrap())
-            .send_and_await_response(5)
+            .send_and_await_response(60)
         else {
             return Err(anyhow::anyhow!("failed to get diagnostics from net"));
         };
@@ -104,7 +104,7 @@ impl SettingsState {
         // eth rpc providers
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "eth", "distro", "sys"))
             .body(serde_json::to_vec(&eth::EthConfigAction::GetProviders).unwrap())
-            .send_and_await_response(5)
+            .send_and_await_response(60)
         else {
             return Err(anyhow::anyhow!("failed to get providers from eth"));
         };
@@ -116,7 +116,7 @@ impl SettingsState {
         // eth rpc access settings
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "eth", "distro", "sys"))
             .body(serde_json::to_vec(&eth::EthConfigAction::GetAccessSettings).unwrap())
-            .send_and_await_response(5)
+            .send_and_await_response(60)
         else {
             return Err(anyhow::anyhow!("failed to get access settings from eth"));
         };
@@ -136,7 +136,7 @@ impl SettingsState {
                     ))
                     .unwrap(),
                 )
-                .send_and_await_response(5)
+                .send_and_await_response(60)
         else {
             return Err(anyhow::anyhow!(
                 "failed to get running processes from kernel"
@@ -153,7 +153,7 @@ impl SettingsState {
         // stylesheet
         if let Ok(bytes) = (kinode_process_lib::vfs::File {
             path: "/homepage:sys/pkg/kinode.css".to_string(),
-            timeout: 5,
+            timeout: 60,
         }
         .read())
         {
@@ -161,7 +161,7 @@ impl SettingsState {
         }
 
         // kimap
-        let kimap = kimap::Kimap::default(5);
+        let kimap = kimap::Kimap::default(60);
         let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
             return Err(anyhow::anyhow!("failed to get kimap node"));
         };
@@ -200,7 +200,7 @@ fn initialize(our: Address) {
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
 
-    let mut http_server = http::server::HttpServer::new(5);
+    let mut http_server = http::server::HttpServer::new(60);
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
     // Serving securely at `settings-sys` subdomain
@@ -282,7 +282,7 @@ fn handle_request(
                         println!("error handling HTTP request: {e}");
                         (
                             http::server::HttpResponse {
-                                status: 500,
+                                status: 6000,
                                 headers: HashMap::new(),
                             },
                             Some(LazyLoadBlob {
@@ -488,7 +488,7 @@ fn handle_settings_request(
         SettingsRequest::SetStylesheet(stylesheet) => {
             let Ok(()) = kinode_process_lib::vfs::File {
                 path: "/homepage:sys/pkg/kinode.css".to_string(),
-                timeout: 5,
+                timeout: 60,
             }
             .write(stylesheet.as_bytes()) else {
                 return SettingsResponse::Err(SettingsError::KernelNonresponsive);

@@ -22,13 +22,18 @@ const ResetButton: React.FC = () => {
 
     return (
         <>
-            <button
-                onClick={() => setIsOpen(true)}
-                className="button danger"
-                style={{ fontSize: '0.9rem' }}
-            >
-                Reset Store
-            </button>
+            <div className="tooltip-container">
+                <button
+                    onClick={() => setIsOpen(true)}
+                    className="button danger"
+                    style={{ fontSize: '0.9rem' }}
+                >
+                    Reset Store
+                </button>
+                <div className="tooltip-content">
+                    Use this if the app store state seems incomplete or out of sync.
+                </div>
+            </div>
 
             {isOpen && (
                 <div className="modal-overlay" onClick={() => setIsOpen(false)}>
@@ -40,7 +45,7 @@ const ResetButton: React.FC = () => {
                         </div>
 
                         <p style={{ marginBottom: '1.5rem' }}>
-                            This action will re-index all apps and reset the store state. 
+                            This action will re-index all apps and reset the store state.
                             Only proceed if you know what you're doing.
                         </p>
 

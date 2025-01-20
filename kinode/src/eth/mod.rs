@@ -45,7 +45,8 @@ struct ActiveProviders {
 struct UrlProvider {
     pub trusted: bool,
     pub url: String,
-    pub pubsub: Option<RootProvider<PubSubFrontend>>,
+    /// a list, in case we build multiple providers for the same url
+    pub pubsub: Vec<RootProvider<PubSubFrontend>>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,7 +85,7 @@ impl ActiveProviders {
                     UrlProvider {
                         trusted: new.trusted,
                         url,
-                        pubsub: None,
+                        pubsub: vec![],
                     },
                 );
             }
@@ -221,15 +222,16 @@ pub async fn provider(
     // and if so, which nodes are allowed to access it (public/whitelist/blacklist)
     let access_settings: AccessSettings =
         match tokio::fs::read_to_string(home_directory_path.join(".eth_access_settings")).await {
-            Ok(contents) => serde_json::from_str(&contents).unwrap(),
-            Err(_) => {
-                let access_settings = AccessSettings {
-                    public: false,
-                    allow: HashSet::new(),
-                    deny: HashSet::new(),
-                };
-                access_settings
-            }
+            Ok(contents) => serde_json::from_str(&contents).unwrap_or(AccessSettings {
+                public: false,
+                allow: HashSet::new(),
+                deny: HashSet::new(),
+            }),
+            Err(_) => AccessSettings {
+                public: false,
+                allow: HashSet::new(),
+                deny: HashSet::new(),
+            },
         };
     verbose_print(
         &print_tx,
@@ -253,7 +255,7 @@ pub async fn provider(
     };
 
     // convert saved configs into data structure that we will use to route queries
-    for entry in configs {
+    for entry in configs.0.into_iter().rev() {
         let mut ap = state
             .providers
             .entry(entry.chain_id)
@@ -743,7 +745,7 @@ async fn fulfill_request(
     let Some(method) = valid_method(&method) else {
         return EthResponse::Err(EthError::InvalidMethod(method.to_string()));
     };
-    let mut urls = {
+    let urls = {
         // in code block to drop providers lock asap to avoid deadlock
         let Some(aps) = providers.get(&chain_id) else {
             return EthResponse::Err(EthError::NoRpcForChain);
@@ -756,17 +758,17 @@ async fn fulfill_request(
     // finally, if no provider works, return an error.
 
     // bump the successful provider to the front of the list for future requests
-    for url_provider in urls.iter_mut() {
-        let pubsub = match &url_provider.pubsub {
-            Some(pubsub) => pubsub,
+    for mut url_provider in urls.into_iter() {
+        let (pubsub, newly_activated) = match url_provider.pubsub.first() {
+            Some(pubsub) => (pubsub, false),
             None => {
-                if let Ok(()) = activate_url_provider(url_provider).await {
+                if let Ok(()) = activate_url_provider(&mut url_provider).await {
                     verbose_print(
                         print_tx,
                         &format!("eth: activated url provider {}", url_provider.url),
                     )
                     .await;
-                    url_provider.pubsub.as_ref().unwrap()
+                    (url_provider.pubsub.last().unwrap(), true)
                 } else {
                     verbose_print(
                         print_tx,
@@ -788,11 +790,11 @@ async fn fulfill_request(
                         is_replacement_successful = false;
                         return ();
                     };
-                    let old_provider = aps.urls.remove(index);
-                    match old_provider.pubsub {
-                        None => aps.urls.insert(0, url_provider.clone()),
-                        Some(_) => aps.urls.insert(0, old_provider),
+                    let mut old_provider = aps.urls.remove(index);
+                    if newly_activated {
+                        old_provider.pubsub.push(url_provider.pubsub.pop().unwrap());
                     }
+                    aps.urls.insert(0, old_provider);
                 });
                 if !is_replacement_successful {
                     verbose_print(
@@ -825,26 +827,28 @@ async fn fulfill_request(
                         serde_json::to_value(err).unwrap_or_else(|_| serde_json::Value::Null);
                     return EthResponse::Err(EthError::RpcError(err_value));
                 }
-                // this provider failed and needs to be reset
-                let mut is_reset_successful = true;
-                providers.entry(chain_id.clone()).and_modify(|aps| {
-                    let Some(index) = find_index(
-                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
-                        &url_provider.url,
-                    ) else {
-                        is_reset_successful = false;
-                        return ();
-                    };
-                    let mut url = aps.urls.remove(index);
-                    url.pubsub = None;
-                    aps.urls.insert(index, url);
-                });
-                if !is_reset_successful {
-                    verbose_print(
-                        print_tx,
-                        &format!("eth: unexpectedly couldn't find provider to be modified"),
-                    )
-                    .await;
+                if !newly_activated {
+                    // this provider failed and needs to be reset
+                    let mut is_reset_successful = true;
+                    providers.entry(chain_id.clone()).and_modify(|aps| {
+                        let Some(index) = find_index(
+                            &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                            &url_provider.url,
+                        ) else {
+                            is_reset_successful = false;
+                            return ();
+                        };
+                        let mut url = aps.urls.remove(index);
+                        url.pubsub = vec![];
+                        aps.urls.insert(index, url);
+                    });
+                    if !is_reset_successful {
+                        verbose_print(
+                            print_tx,
+                            &format!("eth: unexpectedly couldn't find provider to be modified"),
+                        )
+                        .await;
+                    }
                 }
             }
         }
@@ -1013,7 +1017,7 @@ async fn handle_eth_config_action(
         }
         EthConfigAction::SetProviders(new_providers) => {
             let new_map = DashMap::new();
-            for entry in new_providers {
+            for entry in new_providers.0.into_iter().rev() {
                 let mut aps = new_map.entry(entry.chain_id).or_insert(ActiveProviders {
                     urls: vec![],
                     nodes: vec![],
@@ -1071,7 +1075,7 @@ async fn handle_eth_config_action(
     }
     if save_providers {
         if let Ok(()) = tokio::fs::write(
-            state.home_directory_path.join(".eth_access_settings"),
+            state.home_directory_path.join(".eth_providers"),
             serde_json::to_string(&providers_to_saved_configs(&state.providers)).unwrap(),
         )
         .await

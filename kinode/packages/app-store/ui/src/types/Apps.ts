@@ -84,7 +84,7 @@ export interface ManifestResponse {
 export interface HomepageApp {
     id: string;
     process: string;
-    package: string;
+    package_name: string;
     publisher: string;
     path?: string;
     label: string;

@@ -85,13 +85,6 @@ pub struct PackageListing {
     pub block: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, process_macros::SerdeJsonInto)]
-#[serde(untagged)] // untagged as a meta-type for all incoming requests
-pub enum Req {
-    Eth(eth::EthSubResult),
-    Request(ChainRequest),
-}
-
 pub struct DB {
     inner: Sqlite,
 }
@@ -105,12 +98,6 @@ impl DB {
         inner.write(CREATE_PUBLISHED_TABLE.into(), vec![], None)?;
 
         Ok(Self { inner })
-    }
-
-    pub fn reset(&self, our: &Address) {
-        if let Err(e) = sqlite::remove_db(our.package_id(), "app_store_chain.sqlite", None) {
-            println!("failed to reset app-store DB: {e}");
-        }
     }
 
     pub fn get_last_saved_block(&self) -> anyhow::Result<u64> {
@@ -241,7 +228,7 @@ impl DB {
     ) -> anyhow::Result<Vec<(PackageId, PackageListing)>> {
         let query = "SELECT package_name, publisher_node, tba, metadata_uri, metadata_hash, metadata_json, auto_update, block
                      FROM listings
-                     WHERE block > ?";
+                     WHERE block >= ?";
         let params = vec![block_number.into()];
         let rows = self.inner.read(query.into(), params)?;
         let mut listings = Vec::new();
@@ -359,81 +346,88 @@ CREATE TABLE IF NOT EXISTS published (
 
 call_init!(init);
 fn init(our: Address) {
-    let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
-
-    let db = DB::connect(&our).expect("failed to open DB");
-    let kimap_helper =
-        kimap::Kimap::new(eth_provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap());
-    let last_saved_block = db.get_last_saved_block().unwrap_or(0);
-
-    let mut state = State {
-        kimap: kimap_helper,
-        last_saved_block,
-        db,
-    };
-
-    fetch_and_subscribe_logs(&our, &mut state, last_saved_block);
-
     loop {
-        match await_message() {
-            Err(send_error) => {
-                print_to_terminal(1, &format!("chain: got network error: {send_error}"));
-            }
-            Ok(message) => {
-                if let Err(e) = handle_message(&our, &mut state, &message) {
-                    print_to_terminal(1, &format!("chain: error handling message: {:?}", e));
+        println!("started");
+
+        let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
+
+        let db = DB::connect(&our).expect("failed to open DB");
+        let kimap_helper =
+            kimap::Kimap::new(eth_provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap());
+        let last_saved_block = db.get_last_saved_block().unwrap_or(0);
+
+        let mut state = State {
+            kimap: kimap_helper,
+            last_saved_block,
+            db,
+        };
+
+        fetch_and_subscribe_logs(&our, &mut state, last_saved_block);
+
+        loop {
+            match await_message() {
+                Ok(message) => match handle_message(&our, &mut state, &message) {
+                    Ok(true) => {
+                        // reset state
+                        break;
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        print_to_terminal(0, &format!("chain indexer: error handling message: {e}"))
+                    }
+                },
+                Err(send_error) => {
+                    // we never send requests, so this is never expected
+                    print_to_terminal(0, &format!("chain indexer: got send error: {send_error}"));
                 }
             }
         }
     }
 }
 
-fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow::Result<()> {
+/// returns true if we should re-index
+fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow::Result<bool> {
+    if !message.is_local(&our) {
+        // networking is off: we will never get non-local messages
+        return Ok(false);
+    }
     if !message.is_request() {
-        if message.is_local(&our) && message.source().process == "timer:distro:sys" {
+        // all responses should come from the timer process because it's the only process we request to
+        if message.source().process == "timer:distro:sys" {
             let Some(context) = message.context() else {
                 return Err(anyhow::anyhow!("No context in timer message"));
             };
             let log = serde_json::from_slice(context)?;
             handle_eth_log(our, state, log, false)?;
-            return Ok(());
+            return Ok(false);
         }
     } else {
-        match serde_json::from_slice::<Req>(message.body())? {
-            Req::Eth(eth_result) => {
-                if !message.is_local(our) || message.source().process != "eth:distro:sys" {
-                    return Err(anyhow::anyhow!(
-                        "eth sub event from unexpected address: {}",
-                        message.source()
-                    ));
+        if message.source().process == "eth:distro:sys" {
+            let eth_result = serde_json::from_slice::<eth::EthSubResult>(message.body())?;
+            if let Ok(eth::EthSub { result, .. }) = eth_result {
+                if let Ok(eth::SubscriptionResult::Log(ref log)) =
+                    serde_json::from_value::<eth::SubscriptionResult>(result)
+                {
+                    // delay handling of ETH RPC subscriptions by DELAY_MS
+                    // to allow kns to have a chance to process block
+                    timer::set_timer(DELAY_MS, Some(serde_json::to_vec(log)?));
                 }
-
-                if let Ok(eth::EthSub { result, .. }) = eth_result {
-                    if let Ok(eth::SubscriptionResult::Log(ref log)) =
-                        serde_json::from_value::<eth::SubscriptionResult>(result)
-                    {
-                        // delay handling of ETH RPC subscriptions by DELAY_MS
-                        // to allow kns to have a chance to process block
-                        timer::set_timer(DELAY_MS, Some(serde_json::to_vec(log)?));
-                    }
-                } else {
-                    // re-subscribe if error
-                    state
-                        .kimap
-                        .provider
-                        .subscribe_loop(1, app_store_filter(state), 1, 0);
-                }
+            } else {
+                // re-subscribe if error
+                state
+                    .kimap
+                    .provider
+                    .subscribe_loop(1, app_store_filter(state), 1, 0);
             }
-            Req::Request(chains) => {
-                handle_local_request(our, state, chains)?;
-            }
+        } else {
+            let req = serde_json::from_slice::<ChainRequest>(message.body())?;
+            return handle_local_request(state, req);
         }
     }
-
-    Ok(())
+    Ok(false)
 }
 
-fn handle_local_request(our: &Address, state: &mut State, req: ChainRequest) -> anyhow::Result<()> {
+fn handle_local_request(state: &mut State, req: ChainRequest) -> anyhow::Result<bool> {
     match req {
         ChainRequest::GetApp(package_id) => {
             let pid = package_id.clone().to_process_lib();
@@ -487,12 +481,15 @@ fn handle_local_request(our: &Address, state: &mut State, req: ChainRequest) -> 
             }
         }
         ChainRequest::Reset => {
-            state.db.reset(&our);
             Response::new().body(&ChainResponse::ResetOk).send()?;
-            panic!("resetting state, restarting!");
+            println!("re-indexing state!");
+            // set last_saved_block to 0 to force re-index
+            state.last_saved_block = 0;
+            let _ = state.db.set_last_saved_block(0);
+            return Ok(true);
         }
     }
-    Ok(())
+    Ok(false)
 }
 
 fn handle_eth_log(
@@ -539,8 +536,8 @@ fn handle_eth_log(
                 eth::EthError::RpcError(_) => {
                     // retry on RpcError after DELAY_MS sleep
                     // sleep here rather than with, e.g., a message to
-                    //  `timer:distro:sys` so that events are processed in
-                    //  order of receipt
+                    // `timer:distro:sys` so that events are processed in
+                    // order of receipt!
                     std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
                     state.kimap.get(&hash_note)
                 }
@@ -555,8 +552,10 @@ fn handle_eth_log(
                 if metadata_uri.is_empty() {
                     state.db.delete_published(&package_id)?;
                     state.db.delete_listing(&package_id)?;
-                    state.last_saved_block = block_number;
-                    state.db.set_last_saved_block(block_number)?;
+                    if !startup {
+                        state.last_saved_block = block_number - 1;
+                        state.db.set_last_saved_block(block_number - 1)?;
+                    }
                     return Ok(());
                 }
                 return Err(anyhow::anyhow!(
@@ -598,17 +597,18 @@ fn handle_eth_log(
     listing.tba = tba;
     listing.metadata_uri = metadata_uri;
     listing.metadata_hash = metadata_hash;
-    listing.metadata = metadata.clone();
+    listing.block = block_number;
+    if !startup {
+        listing.metadata = metadata.clone();
+    }
 
     state.db.insert_or_update_listing(&package_id, &listing)?;
 
     if !startup && listing.auto_update {
-        println!("kicking off auto-update for: {}", package_id);
+        println!("kicking off auto-update for {package_id}");
         Request::to(("our", "downloads", "app-store", "sys"))
             .body(&DownloadRequest::AutoUpdate(AutoUpdateRequest {
-                package_id: crate::kinode::process::main::PackageId::from_process_lib(
-                    package_id.clone(),
-                ),
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
                 metadata: metadata.unwrap().into(),
             }))
             .send()
@@ -616,8 +616,8 @@ fn handle_eth_log(
     }
 
     if !startup {
-        state.last_saved_block = block_number;
-        state.db.set_last_saved_block(block_number)?;
+        state.last_saved_block = block_number - 1;
+        state.db.set_last_saved_block(block_number - 1)?;
     }
 
     Ok(())
@@ -631,7 +631,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
         Ok(listings) => listings,
         Err(e) => {
             print_to_terminal(
-                1,
+                0,
                 &format!("error fetching updated listings since block {last_saved_block}: {e}"),
             );
             return;
@@ -641,7 +641,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
     for (pid, mut listing) in updated_listings {
         let hash_note = format!("~metadata-hash.{}.{}", pid.package(), pid.publisher());
         let (tba, metadata_hash) = match state.kimap.get(&hash_note) {
-            Ok((t, _o, data)) => {
+            Ok((t, _owner, data)) => {
                 match data {
                     None => {
                         // If metadata_uri empty, unpublish
@@ -663,7 +663,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                 if let eth::EthError::RpcError(_) = e {
                     std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
                     match state.kimap.get(&hash_note) {
-                        Ok((t, _o, data)) => {
+                        Ok((t, _owner, data)) => {
                             if let Some(hash_note) = data {
                                 (t, String::from_utf8_lossy(&hash_note).to_string())
                             } else {
@@ -708,19 +708,19 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
             match fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30) {
                 Ok(md) => Some(md),
                 Err(err) => {
-                    print_to_terminal(1, &format!("error fetching metadata for {}: {err}", pid));
+                    print_to_terminal(0, &format!("error fetching metadata for {pid}: {err}"));
                     None
                 }
             };
         listing.metadata = metadata.clone();
 
         if let Err(e) = state.db.insert_or_update_listing(&pid, &listing) {
-            print_to_terminal(1, &format!("error updating listing {}: {e}", pid));
+            print_to_terminal(0, &format!("error updating listing {pid}: {e}"));
         }
 
         if listing.auto_update {
             if let Some(md) = metadata {
-                print_to_terminal(0, &format!("kicking off auto-update for: {}", pid));
+                print_to_terminal(0, &format!("kicking off auto-update for {pid}"));
                 if let Err(e) = Request::to(("our", "downloads", "app-store", "sys"))
                     .body(&DownloadRequest::AutoUpdate(AutoUpdateRequest {
                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
@@ -730,7 +730,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                     }))
                     .send()
                 {
-                    print_to_terminal(1, &format!("error sending auto-update request: {e}"));
+                    print_to_terminal(0, &format!("error sending auto-update request: {e}"));
                 }
             }
         }
@@ -769,9 +769,10 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
     // save updated last_saved_block
     if let Ok(block_number) = state.kimap.provider.get_block_number() {
         state.last_saved_block = block_number;
-        state.db.set_last_saved_block(block_number).unwrap();
+        if let Err(e) = state.db.set_last_saved_block(block_number) {
+            print_to_terminal(0, &format!("error saving last block after startup: {e}"));
+        }
     }
-    // println!("up to date to block {}", state.last_saved_block);
 }
 
 /// fetch logs from the chain with a given filter

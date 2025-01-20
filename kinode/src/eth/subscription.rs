@@ -17,6 +17,7 @@ pub async fn create_new_subscription(
     let providers = state.providers.clone();
     let response_channels = state.response_channels.clone();
     let print_tx = state.print_tx.clone();
+
     tokio::spawn(async move {
         match tokio::time::timeout(
             std::time::Duration::from_secs(30),
@@ -189,40 +190,40 @@ async fn build_subscription(
     else {
         return Err(EthError::PermissionDenied); // will never hit
     };
+
     if *kind == SubscriptionKind::NewHeads {
         Printout::new(
             0,
             ETH_PROCESS_ID.clone(),
-            format!("newHeads subscription requested by {target}!"),
+            format!("warning: newHeads subscription (expensive!) requested by {target}"),
         )
         .send(print_tx)
         .await;
     }
-    let mut urls = {
+    let urls = {
         // in code block to drop providers lock asap to avoid deadlock
         let Some(aps) = providers.get(&chain_id) else {
             return Err(EthError::NoRpcForChain);
         };
         aps.urls.clone()
     };
-    let chain_id = chain_id.clone();
 
     // first, try any url providers we have for this chain,
     // then if we have none or they all fail, go to node providers.
     // finally, if no provider works, return an error.
 
     // bump the successful provider to the front of the list for future requests
-    for url_provider in urls.iter_mut() {
-        let pubsub = match &url_provider.pubsub {
-            Some(pubsub) => pubsub,
+    for mut url_provider in urls.into_iter() {
+        let (pubsub, newly_activated) = match url_provider.pubsub.first() {
+            Some(pubsub) => (pubsub, false),
             None => {
-                if let Ok(()) = activate_url_provider(url_provider).await {
+                if let Ok(()) = activate_url_provider(&mut url_provider).await {
                     verbose_print(
                         &print_tx,
                         &format!("eth: activated url provider {}", url_provider.url),
                     )
                     .await;
-                    url_provider.pubsub.as_ref().unwrap()
+                    (url_provider.pubsub.last().unwrap(), true)
                 } else {
                     verbose_print(
                         &print_tx,
@@ -241,7 +242,7 @@ async fn build_subscription(
             Ok(sub) => {
                 let rx = sub.into_raw();
                 let mut is_replacement_successful = true;
-                providers.entry(chain_id).and_modify(|aps| {
+                providers.entry(*chain_id).and_modify(|aps| {
                     let Some(index) = find_index(
                         &aps.urls.iter().map(|u| u.url.as_str()).collect(),
                         &url_provider.url,
@@ -249,11 +250,11 @@ async fn build_subscription(
                         is_replacement_successful = false;
                         return ();
                     };
-                    let old_provider = aps.urls.remove(index);
-                    match old_provider.pubsub {
-                        None => aps.urls.insert(0, url_provider.clone()),
-                        Some(_) => aps.urls.insert(0, old_provider),
+                    let mut old_provider = aps.urls.remove(index);
+                    if newly_activated {
+                        old_provider.pubsub.push(url_provider.pubsub.pop().unwrap());
                     }
+                    aps.urls.insert(0, old_provider);
                 });
                 if !is_replacement_successful {
                     verbose_print(
@@ -262,7 +263,7 @@ async fn build_subscription(
                     )
                     .await;
                 }
-                return Ok(Ok((rx, chain_id)));
+                return Ok(Ok((rx, *chain_id)));
             }
             Err(rpc_error) => {
                 verbose_print(
@@ -273,26 +274,28 @@ async fn build_subscription(
                     ),
                 )
                 .await;
-                // this provider failed and needs to be reset
-                let mut is_reset_successful = true;
-                providers.entry(chain_id).and_modify(|aps| {
-                    let Some(index) = find_index(
-                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
-                        &url_provider.url,
-                    ) else {
-                        is_reset_successful = false;
-                        return ();
-                    };
-                    let mut url = aps.urls.remove(index);
-                    url.pubsub = None;
-                    aps.urls.insert(index, url);
-                });
-                if !is_reset_successful {
-                    verbose_print(
-                        print_tx,
-                        &format!("eth: unexpectedly couldn't find provider to be modified"),
-                    )
-                    .await;
+                if !newly_activated {
+                    // this provider failed and needs to be reset
+                    let mut is_reset_successful = true;
+                    providers.entry(*chain_id).and_modify(|aps| {
+                        let Some(index) = find_index(
+                            &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                            &url_provider.url,
+                        ) else {
+                            is_reset_successful = false;
+                            return ();
+                        };
+                        let mut old_provider = aps.urls.remove(index);
+                        old_provider.pubsub = vec![];
+                        aps.urls.insert(index, old_provider);
+                    });
+                    if !is_reset_successful {
+                        verbose_print(
+                            print_tx,
+                            &format!("eth: unexpectedly couldn't find provider to be modified"),
+                        )
+                        .await;
+                    }
                 }
             }
         }
@@ -423,7 +426,7 @@ async fn maintain_local_subscription(
 
     Err(EthSubError {
         id: sub_id,
-        error: format!("subscription ({target}) closed unexpectedly {e}"),
+        error: format!("subscription ({target}) closed unexpectedly: {e}"),
     })
 }
 

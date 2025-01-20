@@ -109,26 +109,35 @@ pub async fn vfs(
                 let (km_id, km_rsvp) =
                     (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
+                let expects_response = match km.message {
+                    Message::Request(Request {
+                        expects_response, ..
+                    }) => expects_response.is_some(),
+                    _ => false,
+                };
+
                 if let Err(e) =
                     handle_request(&our_node, km, &mut files, &send_to_caps_oracle, &vfs_path).await
                 {
-                    KernelMessage::builder()
-                        .id(km_id)
-                        .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
-                        .target(km_rsvp)
-                        .message(Message::Response((
-                            Response {
-                                inherit: false,
-                                body: serde_json::to_vec(&VfsResponse::Err(e)).unwrap(),
-                                metadata: None,
-                                capabilities: vec![],
-                            },
-                            None,
-                        )))
-                        .build()
-                        .unwrap()
-                        .send(&files.send_to_loop)
-                        .await;
+                    if expects_response {
+                        KernelMessage::builder()
+                            .id(km_id)
+                            .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
+                            .target(km_rsvp)
+                            .message(Message::Response((
+                                Response {
+                                    inherit: false,
+                                    body: serde_json::to_vec(&VfsResponse::Err(e)).unwrap(),
+                                    metadata: None,
+                                    capabilities: vec![],
+                                },
+                                None,
+                            )))
+                            .build()
+                            .unwrap()
+                            .send(&files.send_to_loop)
+                            .await;
+                    }
                 }
             }
         });

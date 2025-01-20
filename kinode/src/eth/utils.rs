@@ -17,7 +17,7 @@ pub async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
                 ProviderBuilder::new().on_ws(ws),
             )
             .await??;
-            provider.pubsub = Some(client);
+            provider.pubsub.push(client);
             Ok(())
         }
         _ => Err(anyhow::anyhow!(
@@ -27,29 +27,31 @@ pub async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
 }
 
 pub fn providers_to_saved_configs(providers: &Providers) -> SavedConfigs {
-    providers
-        .iter()
-        .map(|entry| {
-            entry
-                .urls
-                .iter()
-                .map(|url_provider| ProviderConfig {
-                    chain_id: *entry.key(),
-                    provider: NodeOrRpcUrl::RpcUrl(url_provider.url.clone()),
-                    trusted: url_provider.trusted,
-                })
-                .chain(entry.nodes.iter().map(|node_provider| ProviderConfig {
-                    chain_id: *entry.key(),
-                    provider: NodeOrRpcUrl::Node {
-                        kns_update: node_provider.kns_update.clone(),
-                        use_as_provider: node_provider.usable,
-                    },
-                    trusted: node_provider.trusted,
-                }))
-                .collect::<Vec<_>>()
-        })
-        .flatten()
-        .collect()
+    SavedConfigs(
+        providers
+            .iter()
+            .map(|entry| {
+                entry
+                    .urls
+                    .iter()
+                    .map(|url_provider| ProviderConfig {
+                        chain_id: *entry.key(),
+                        provider: NodeOrRpcUrl::RpcUrl(url_provider.url.clone()),
+                        trusted: url_provider.trusted,
+                    })
+                    .chain(entry.nodes.iter().map(|node_provider| ProviderConfig {
+                        chain_id: *entry.key(),
+                        provider: NodeOrRpcUrl::Node {
+                            kns_update: node_provider.kns_update.clone(),
+                            use_as_provider: node_provider.usable,
+                        },
+                        trusted: node_provider.trusted,
+                    }))
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .collect(),
+    )
 }
 
 pub async fn check_for_root_cap(

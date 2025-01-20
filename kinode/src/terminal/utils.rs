@@ -104,7 +104,8 @@ pub fn splash(
  a general purpose sovereign cloud computer
  public IP {}
  home dir at {}
- net pubkey: {}{}\n"#,
+ net pubkey: {}{}
+"#,
                 our.name,
                 if our.is_direct() {
                     "direct"

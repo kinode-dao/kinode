@@ -19,6 +19,7 @@ export default function DownloadPage() {
         clearAllActiveDownloads,
         fetchHomepageApps,
         getLaunchUrl,
+        homepageApps,
     } = useAppsStore();
 
     const [showMetadata, setShowMetadata] = useState(false);
@@ -29,8 +30,7 @@ export default function DownloadPage() {
     const [showCapApproval, setShowCapApproval] = useState(false);
     const [manifestResponse, setManifestResponse] = useState<ManifestResponse | null>(null);
     const [isInstalling, setIsInstalling] = useState(false);
-    const [isCheckingLaunch, setIsCheckingLaunch] = useState(false);
-    const [launchPath, setLaunchPath] = useState<string | null>(null);
+    const [isPolling, setIsPolling] = useState(false);
 
     const app = useMemo(() => listings[id || ""], [listings, id]);
     const appDownloads = useMemo(() => downloads[id || ""] || [], [downloads, id]);
@@ -70,6 +70,24 @@ export default function DownloadPage() {
         }
     }, [sortedVersions, selectedVersion]);
 
+    useEffect(() => {
+        if (isPolling) {
+            const pollInterval = setInterval(() => {
+                fetchHomepageApps();
+            }, 1000);
+
+            // Stop polling after 5 seconds
+            const timeout = setTimeout(() => {
+                setIsPolling(false);
+            }, 5000);
+
+            return () => {
+                clearInterval(pollInterval);
+                clearTimeout(timeout);
+            };
+        }
+    }, [isPolling, fetchHomepageApps]);
+
     const isDownloaded = useMemo(() => {
         if (!app || !selectedVersion) return false;
         const versionData = sortedVersions.find(v => v.version === selectedVersion);
@@ -104,35 +122,19 @@ export default function DownloadPage() {
         return versionData ? installedApp.our_version_hash === versionData.hash : false;
     }, [app, selectedVersion, installedApp, sortedVersions]);
 
-    const checkLaunchPath = useCallback(() => {
-        if (!app) return;
-        setIsCheckingLaunch(true);
-        const appId = `${app.package_id.package_name}:${app.package_id.publisher_node}`;
-        fetchHomepageApps().then(() => {
-            const path = getLaunchUrl(appId);
-            setLaunchPath(path);
-            setIsCheckingLaunch(false);
-            if (path) {
-                setIsInstalling(false);
+    const canLaunch = useMemo(() => {
+        if (!app) return false;
+        return !!getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+    }, [app, getLaunchUrl, homepageApps]);
+
+    const handleLaunch = useCallback(() => {
+        if (app) {
+            const launchUrl = getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
+            if (launchUrl) {
+                window.location.href = window.location.origin.replace('//app-store-sys.', '//') + launchUrl;
             }
-        });
-    }, [app, fetchHomepageApps, getLaunchUrl]);
-
-    useEffect(() => {
-        if (isInstalling) {
-            const checkInterval = setInterval(checkLaunchPath, 500);
-            const timeout = setTimeout(() => {
-                clearInterval(checkInterval);
-                setIsInstalling(false);
-                setIsCheckingLaunch(false);
-            }, 5000);
-
-            return () => {
-                clearInterval(checkInterval);
-                clearTimeout(timeout);
-            };
         }
-    }, [isInstalling, checkLaunchPath]);
+    }, [app, getLaunchUrl]);
 
     const handleDownload = useCallback(() => {
         if (!id || !selectedMirror || !app || !selectedVersion) return;
@@ -172,32 +174,23 @@ export default function DownloadPage() {
         const versionData = sortedVersions.find(v => v.version === selectedVersion);
         if (versionData) {
             setIsInstalling(true);
-            setLaunchPath(null);
             installApp(id, versionData.hash).then(() => {
                 setShowCapApproval(false);
                 setManifestResponse(null);
                 fetchData(id);
+                fetchHomepageApps();
+                setIsPolling(true);  // Start polling
+                setIsInstalling(false);
             });
         }
-    }, [id, selectedVersion, sortedVersions, installApp, fetchData]);
-
-    const handleLaunch = useCallback(() => {
-        if (launchPath) {
-            window.location.href = window.location.origin.replace('//app-store-sys.', '//') + launchPath;
-        }
-    }, [launchPath]);
-
-    const canLaunch = useMemo(() => {
-        if (!app) return false;
-        return !!getLaunchUrl(`${app.package_id.package_name}:${app.package_id.publisher_node}`);
-    }, [app, getLaunchUrl]);
+    }, [id, selectedVersion, sortedVersions, installApp, fetchData, fetchHomepageApps]);
 
     const canDownload = useMemo(() => {
         return selectedMirror && (isMirrorOnline === true || selectedMirror.startsWith('http')) && !isDownloading && !isDownloaded;
     }, [selectedMirror, isMirrorOnline, isDownloading, isDownloaded]);
 
     const renderActionButton = () => {
-        if (isCurrentVersionInstalled || launchPath) {
+        if (isCurrentVersionInstalled) {
             return (
                 <button className="action-button installed-button" disabled>
                     <FaRocket /> Installed
@@ -205,7 +198,7 @@ export default function DownloadPage() {
             );
         }
 
-        if (isInstalling || isCheckingLaunch) {
+        if (isInstalling) {
             return (
                 <button className="action-button installing-button" disabled>
                     <FaSpinner className="fa-spin" /> Installing...
@@ -264,20 +257,16 @@ export default function DownloadPage() {
                         <p className="app-id">{`${app.package_id.package_name}.${app.package_id.publisher_node}`}</p>
                     </div>
                 </div>
-                {launchPath ? (
+                {canLaunch ? (
                     <button
                         onClick={handleLaunch}
                         className="launch-button"
                     >
                         <FaPlay /> Launch
                     </button>
-                ) : isInstalling || isCheckingLaunch ? (
+                ) : (isInstalling || isPolling) ? (
                     <button className="launch-button" disabled>
-                        <FaSpinner className="fa-spin" /> Checking...
-                    </button>
-                ) : installedApp ? (
-                    <button className="launch-button" disabled>
-                        No UI found for app
+                        <FaSpinner className="fa-spin" /> {isInstalling ? 'Installing...' : 'Checking...'}
                     </button>
                 ) : null}
             </div>

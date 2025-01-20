@@ -183,7 +183,18 @@ pub struct AccessSettings {
     pub deny: HashSet<String>,
 }
 
-pub type SavedConfigs = HashSet<ProviderConfig>;
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct SavedConfigs(pub Vec<ProviderConfig>);
+
+impl SavedConfigs {
+    /// insert while enforcing that each config is unique
+    pub fn insert(&mut self, index: usize, config: ProviderConfig) {
+        // filter out any configs which are the same as incoming config
+        self.0.retain(|c| c != &config);
+        self.0.insert(index, config);
+    }
+}
 
 /// Provider config. Can currently be a node or a ws provider instance.
 #[derive(Clone, Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
