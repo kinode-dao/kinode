@@ -146,14 +146,17 @@ async fn main() {
             .get_one::<u16>("fakechain-port")
             .cloned()
             .unwrap_or(8545);
-        eth_provider_config.insert(lib::eth::ProviderConfig {
-            chain_id: 31337,
-            trusted: true,
-            provider: lib::eth::NodeOrRpcUrl::RpcUrl(format!(
-                "ws://localhost:{}",
-                local_chain_port
-            )),
-        });
+        eth_provider_config.insert(
+            0,
+            lib::eth::ProviderConfig {
+                chain_id: 31337,
+                trusted: true,
+                provider: lib::eth::NodeOrRpcUrl::RpcUrl(format!(
+                    "ws://localhost:{}",
+                    local_chain_port
+                )),
+            },
+        );
     }
 
     // kernel receives system messages via this channel, all other modules send messages
