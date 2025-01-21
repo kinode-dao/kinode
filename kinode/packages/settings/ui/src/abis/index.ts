@@ -2,7 +2,7 @@ import { parseAbi } from "viem";
 
 export { noteFunction } from "./helpers";
 
-export const KIMAP: `0x${string}` = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
+export const KIMAP: `0x${string}` = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
 export const KINO_ACCOUNT_IMPL: `0x${string}` = "0x58790D9957ECE58607A4b58308BBD5FE1a2e4789";
 
