@@ -74,11 +74,17 @@ pub async fn register(
         routing: NodeRouting::Both {
             ip: ip.clone(),
             ports: ports_map,
-            routers: vec![
-                "default-router-1.os".into(),
-                "default-router-2.os".into(),
-                "default-router-3.os".into(),
-            ],
+            routers: {
+                // select 3 random routers from this list
+                use rand::prelude::SliceRandom;
+                let routers = (1..=12)
+                    .map(|i| format!("default-router-{}.kino", i))
+                    .collect::<Vec<_>>()
+                    .choose_multiple(&mut rand::thread_rng(), 3)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                routers
+            },
         },
     });
 
