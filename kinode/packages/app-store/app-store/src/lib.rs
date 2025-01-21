@@ -29,7 +29,6 @@
 //! Note: This process does not directly handle file transfers or on-chain operations.
 //! It delegates these responsibilities to the downloads and chain processes respectively.
 //!
-use crate::kinode::process::chain::ChainRequest;
 use crate::kinode::process::downloads::{
     AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponse, ProgressUpdate,
 };
@@ -39,7 +38,7 @@ use crate::kinode::process::main::{
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
-    LazyLoadBlob, Message, PackageId, Request, Response,
+    LazyLoadBlob, Message, PackageId, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{State, UpdateInfo, Updates};

@@ -36,5 +36,17 @@
             "main:app-store:sys"
         ],
         "wit_version": 1
+    },
+    "reset-store.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "chain:app-store:sys"
+        ],
+        "grant_capabilities": [
+            "chain:app-store:sys"
+        ],
+        "wit_version": 1
     }
 }

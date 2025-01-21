@@ -8,6 +8,7 @@ members = [
     "ft-worker",
     "install",
     "uninstall",
+    "reset-store",
 ]
 
 [profile.release]
