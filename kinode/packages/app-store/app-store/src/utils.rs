@@ -262,7 +262,7 @@ pub fn install(
 
         let process_id = format!("{}:{}", entry.process_name, process_package_id);
         let Ok(process_id) = process_id.parse::<ProcessId>() else {
-            return Err(anyhow::anyhow!("invalid process id!"));
+            return Err(anyhow::anyhow!("invalid process id \"{process_id}\"!"));
         };
         // kill process if it already exists
         kernel_request(kt::KernelCommand::KillProcess(process_id.clone())).send()?;

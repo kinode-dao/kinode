@@ -13,7 +13,8 @@ interface EditNoteProps {
 
 const EditNote: React.FC<EditNoteProps> = ({ label: initialLabel, tba, field_placeholder }) => {
     const [value, setValue] = useState('');
-    const [label, setLabel] = useState(initialLabel || '');
+    // Ensure initial label has tilde
+    const [label, setLabel] = useState(initialLabel ? (initialLabel.startsWith('~') ? initialLabel : `~${initialLabel}`) : '~');
     const editMode = !initialLabel;
 
     const { address } = useAccount();
@@ -61,7 +62,22 @@ const EditNote: React.FC<EditNoteProps> = ({ label: initialLabel, tba, field_pla
 
     return (
         <div className="edit-note">
-            {editMode && <input type="text" placeholder="label" value={label} onChange={(e) => setLabel(e.target.value)} className="note-input" style={{ minWidth: '200px' }} />}
+            {editMode && <input
+                type="text"
+                placeholder="label"
+                value={label}
+                onChange={(e) => {
+                    // Ensure tilde is always present
+                    const newValue = e.target.value;
+                    if (!newValue.startsWith('~')) {
+                        setLabel(`~${newValue}`);
+                    } else {
+                        setLabel(newValue);
+                    }
+                }}
+                className="note-input"
+                style={{ minWidth: '200px' }}
+            />}
             <input type="text" placeholder={field_placeholder} value={value} onChange={(e) => setValue(e.target.value)} className="note-input" style={{ minWidth: '400px' }} />
             <button
                 onClick={handleAddNote}
