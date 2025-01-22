@@ -13,9 +13,9 @@ export const multicallAbi = parseAbi([
 ]);
 
 export const kimapAbi = parseAbi([
-    "function mint(address, bytes calldata, bytes calldata, bytes calldata, address) external returns (address tba)",
+    "function mint(address, bytes calldata, bytes calldata, address) external returns (address tba)",
     "function note(bytes calldata,bytes calldata) external returns (bytes32)",
-    "function get(bytes32 node) external view returns (address tokenBoundAccount, address tokenOwner, bytes memory note)",
+    "function get(bytes32 namehash) external view returns (address tokenBoundAccount, address tokenOwner, bytes memory note)",
 ]);
 
 export const mechAbi = parseAbi([

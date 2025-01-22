@@ -23,17 +23,17 @@ wit_bindgen::generate!({
 });
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // base
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &'static str = "0x9CE8cCD2932DC727c70f9ae4f8C2b68E6Abed58C"; // local
 
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID; // optimism
+const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID; // base
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // optimism
+const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // base
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1; // local
 
@@ -252,8 +252,8 @@ fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
         };
 
         // if true, time to go check current block number and handle pending notes.
-        let tick = message.is_local(&our) && message.source().process == "timer:distro:sys";
-        let checkpoint = message.is_local(&our)
+        let tick = message.is_local() && message.source().process == "timer:distro:sys";
+        let checkpoint = message.is_local()
             && message.source().process == "timer:distro:sys"
             && message.context() == Some(b"checkpoint");
 

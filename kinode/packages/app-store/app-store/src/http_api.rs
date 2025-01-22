@@ -22,7 +22,7 @@ const ICON: &str = include_str!("icon");
 
 /// Bind static and dynamic HTTP paths for the app store,
 /// bind to our WS updates path, and add icon and widget to homepage.
-pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
+pub fn init_frontend(http_server: &mut server::HttpServer) {
     let config = server::HttpBindingConfig::default().secure_subdomain(true);
 
     for path in [
@@ -58,7 +58,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         .expect("failed to bind http path");
 
     http_server
-        .serve_ui(&our, "ui", vec!["/"], config.clone())
+        .serve_ui("ui", vec!["/"], config.clone())
         .expect("failed to serve static UI");
 
     http_server

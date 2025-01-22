@@ -9,7 +9,7 @@ import {
 } from '@rainbow-me/rainbowkit';
 import { WagmiProvider, http } from 'wagmi';
 import {
-  optimism,
+  base,
 } from 'wagmi/chains';
 import {
   QueryClientProvider,
@@ -22,10 +22,10 @@ import './index.css'
 const config = getDefaultConfig({
   appName: 'Kinode App Store',
   projectId: '1307513d16d359871023f1f78ac03361',
-  chains: [optimism],
+  chains: [base],
   ssr: false,
   transports: {
-    [optimism.id]: http(),
+    [base.id]: http(),
   }
 });
 

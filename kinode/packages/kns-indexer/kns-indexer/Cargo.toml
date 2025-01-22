@@ -11,7 +11,7 @@ anyhow = "1.0"
 alloy-primitives = "0.8.15"
 alloy-sol-types = "0.8.15"
 hex = "0.4.3"
-kinode_process_lib = "0.10.1"
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", rev = "81d6c64" }
 process_macros = "0.1"
 rmp-serde = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }

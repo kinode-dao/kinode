@@ -206,7 +206,6 @@ fn initialize(our: Address) {
     // Serving securely at `settings-sys` subdomain
     http_server
         .serve_ui(
-            &state.our,
             "ui",
             vec!["/"],
             http::server::HttpBindingConfig::default().secure_subdomain(true),

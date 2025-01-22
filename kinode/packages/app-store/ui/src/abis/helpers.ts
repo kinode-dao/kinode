@@ -52,7 +52,6 @@ export function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${
             our_address,
             encodePacked(["bytes"], [stringToHex(app_name)]),
             initCall,
-            "0x",
             KINO_ACCOUNT_IMPL,
         ]
     })

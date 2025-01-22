@@ -54,9 +54,9 @@ const DEFAULT_MAX_PASSTHROUGHS: u64 = 0;
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
-pub const CHAIN_ID: u64 = 10;
+pub const CHAIN_ID: u64 = 8453; // base
 #[cfg(feature = "simulation-mode")]
-pub const CHAIN_ID: u64 = 31337;
+pub const CHAIN_ID: u64 = 31337; // fakenet
 #[cfg(not(feature = "simulation-mode"))]
 pub const KIMAP_ADDRESS: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 #[cfg(feature = "simulation-mode")]

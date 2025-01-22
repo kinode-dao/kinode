@@ -140,7 +140,6 @@ pub async fn mint_local(
                 who: wallet_address,
                 label: Bytes::from(label.as_bytes().to_vec()),
                 initialization: execute_call.into(),
-                erc721Data: vec![].into(),
                 implementation: Address::from_str(KINO_ACCOUNT_IMPL).unwrap(),
             }
             .abi_encode(),

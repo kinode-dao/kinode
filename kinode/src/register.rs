@@ -249,7 +249,7 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubS
     let url = if let Some(rpc_url) = maybe_rpc {
         rpc_url
     } else {
-        "wss://optimism-rpc.publicnode.com".to_string()
+        "wss://base-rpc.publicnode.com".to_string()
     };
 
     let client = match ProviderBuilder::new().on_ws(WsConnect::new(url)).await {
@@ -346,7 +346,7 @@ async fn handle_boot(
 
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
 
-    let get_call = getCall { node: namehash }.abi_encode();
+    let get_call = getCall { namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(get_call));
 
     let tx = TransactionRequest::default().to(kimap).input(tx_input);
@@ -367,7 +367,7 @@ async fn handle_boot(
                 };
                 let owner = node_info.owner;
 
-                let chain_id: u64 = 10;
+                let chain_id: u64 = 8453; // base
 
                 let domain = eip712_domain! {
                     name: "Kimap",
@@ -583,19 +583,24 @@ pub async fn assign_routing(
     let multicalls = vec![
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: netkey_hash }.abi_encode()),
+            callData: Bytes::from(
+                getCall {
+                    namehash: netkey_hash,
+                }
+                .abi_encode(),
+            ),
         },
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: ws_hash }.abi_encode()),
+            callData: Bytes::from(getCall { namehash: ws_hash }.abi_encode()),
         },
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: tcp_hash }.abi_encode()),
+            callData: Bytes::from(getCall { namehash: tcp_hash }.abi_encode()),
         },
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: ip_hash }.abi_encode()),
+            callData: Bytes::from(getCall { namehash: ip_hash }.abi_encode()),
         },
     ];
 
