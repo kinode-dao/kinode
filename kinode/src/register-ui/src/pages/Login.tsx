@@ -4,8 +4,6 @@ import Loader from "../components/Loader";
 import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
-// REMOVE IN 1.0.0
-import { sha256, toBytes } from "viem";
 
 interface LoginProps extends PageProps { }
 
@@ -73,22 +71,6 @@ function Login({
           console.log("This node was instantiated before the switch to argon2");
         }
 
-        // REMOVE IN 1.0.0 - Try SHA256 hash if argon2 fails
-        const sha256_hash = sha256(toBytes(pw));
-        result = await fetch("/login", {
-          method: "POST",
-          credentials: 'include',
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password_hash: sha256_hash }),
-        });
-
-        if (result.status < 399) {
-          redirectToHomepage();
-          return;
-        }
-        // END REMOVE IN 1.0.0
-
-        // Only throw error if both attempts failed
         throw new Error(result ? await result.text() : "Login failed");
 
       } catch (err) {

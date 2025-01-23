@@ -220,6 +220,23 @@ pub fn bytes_to_port(bytes: &[u8]) -> Result<u16, String> {
     }
 }
 
+/// Decodes bytes under ~routers in kimap into an array of keccak256 hashes (32 bytes each)
+pub fn decode_routers(data: &[u8]) -> Vec<String> {
+    if data.len() % 32 != 0 {
+        println!("got invalid data length for router hashes: {}", data.len());
+        println!("{data:?}");
+        return vec![];
+    }
+
+    let mut routers = Vec::new();
+    for chunk in data.chunks(32) {
+        let hash_str = format!("0x{}", hex::encode(chunk));
+        routers.push(hash_str);
+    }
+
+    routers
+}
+
 /// randomly generated key to encrypt file chunks,
 pub fn generate_file_key() -> Vec<u8> {
     use ring::rand::SecureRandom;
