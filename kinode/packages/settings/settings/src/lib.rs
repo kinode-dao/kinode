@@ -163,7 +163,11 @@ impl SettingsState {
         // kimap
         let kimap = kimap::Kimap::default(60);
         let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
-            return Err(anyhow::anyhow!("failed to get kimap node"));
+            return Err(anyhow::anyhow!(
+                "failed to get kimap node {} on kimap {}",
+                self.our.node(),
+                kimap.address()
+            ));
         };
         self.our_tba = tba;
         self.our_owner = owner;
@@ -220,9 +224,15 @@ fn initialize(our: Address) {
 
     // populate state
     // this will add ourselves to the homepage
-    if let Err(e) = state.fetch() {
-        println!("failed to fetch settings: {e}");
-        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
+    while let Err(e) = state.fetch() {
+        println!("failed to fetch settings: {e}, trying again in 5s...");
+        homepage::add_to_homepage(
+            "Settings",
+            Some(ICON),
+            Some("/"),
+            Some(&make_widget(&state)),
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5000));
     }
 
     main_loop(&mut state, &mut http_server);
