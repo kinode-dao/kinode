@@ -62,7 +62,7 @@ pub async fn mint_local(
     let namehash: [u8; 32] = keygen::namehash(name);
 
     let get_call = getCall {
-        node: namehash.into(),
+        namehash: namehash.into(),
     }
     .abi_encode();
 
@@ -137,7 +137,7 @@ pub async fn mint_local(
         // name is not registered, mint it with multicall in initialization param
         (
             mintCall {
-                who: wallet_address,
+                to: wallet_address,
                 label: Bytes::from(label.as_bytes().to_vec()),
                 initialization: execute_call.into(),
                 implementation: Address::from_str(KINO_ACCOUNT_IMPL).unwrap(),
@@ -217,15 +217,20 @@ pub async fn assign_ws_local_helper(
     let multicalls = vec![
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: netkey_hash }.abi_encode()),
+            callData: Bytes::from(
+                getCall {
+                    namehash: netkey_hash,
+                }
+                .abi_encode(),
+            ),
         },
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: ws_hash }.abi_encode()),
+            callData: Bytes::from(getCall { namehash: ws_hash }.abi_encode()),
         },
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: ip_hash }.abi_encode()),
+            callData: Bytes::from(getCall { namehash: ip_hash }.abi_encode()),
         },
     ];
 
