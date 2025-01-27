@@ -15,7 +15,8 @@ lib = { path = "lib" }
 members = [
     "lib", "kinode",
     "kinode/packages/app-store/app-store", "kinode/packages/app-store/ft-worker",
-    "kinode/packages/app-store/download", "kinode/packages/app-store/install", "kinode/packages/app-store/uninstall", "kinode/packages/app-store/downloads", "kinode/packages/app-store/chain",
+    "kinode/packages/app-store/downloads", "kinode/packages/app-store/chain",
+    "kinode/packages/app-store/download", "kinode/packages/app-store/install", "kinode/packages/app-store/uninstall", "kinode/packages/app-store/reset-store",
     "kinode/packages/chess/chess",
     "kinode/packages/contacts/contacts",
     "kinode/packages/homepage/homepage",
