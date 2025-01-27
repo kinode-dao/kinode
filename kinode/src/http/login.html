@@ -156,9 +156,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/argon2-browser/1.18.0/argon2-bundled.min.js"
     integrity="sha512-Alrh8vbmKDc5xiq7I/y8LTDwy9nw1nT9S/yR73HMMoWrpX4S1kizNPdWM896c/CDIGILNwAiaih627A94kRhYQ=="
     crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <!-- REMOVE IN 1.0.0 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
-  <!--------------------->
   <script>
     let isInitialized = false;
 
@@ -188,17 +185,19 @@
       document.getElementById("login-form").style.display = "none";
       document.getElementById("loading").style.display = "flex";
 
-      argon2.hash({
-        pass: password,
-        salt: '${node}',
-        hashLen: 32,
-        time: 2,
-        mem: 19456,
-        type: argon2.ArgonType.Argon2id
-      }).then(async h => {
+      try {
+        const h = await argon2.hash({
+          pass: password,
+          salt: '${node}',
+          hashLen: 32,
+          time: 2,
+          mem: 19456,
+          type: argon2.ArgonType.Argon2id
+        });
+
         const hashed_password_hex = `0x${h.hashHex}`;
 
-        const result = await fetch("/login", {
+        let result = await fetch("/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -207,36 +206,20 @@
           }),
         });
 
-        if (result.status == 200) {
+        if (result.status < 399) {
           window.location.reload();
-        } else {
-
-          // REMOVE IN 1.0.0
-          const hashHex = '0x' + CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex);
-          const result = await fetch("/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              password_hash: hashHex,
-              subdomain: isSecureSubdomain ? firstPathItem : '',
-            }),
-          });
-          if (result.status == 200) {
-            window.location.reload();
-          } else {
-            throw new Error("Login failed");
-          }
-          // END REMOVE IN 1.0.0
-
-          throw new Error("Login failed");
+          return;
         }
-      }).catch(err => {
+
+        throw new Error("Login failed");
+
+      } catch (err) {
         document.getElementById("login-form").style.display = "flex";
         document.getElementById("loading").style.display = "none";
         document.getElementById("password").value = "";
         document.getElementById("password-err").style.display = "flex";
         document.getElementById("password").focus();
-      });
+      }
     }
 
     function generateSecureSubdomain(processString) {

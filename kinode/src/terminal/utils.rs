@@ -61,14 +61,14 @@ pub fn splash(
                >^#########@      888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
                  `>#######`      888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
                 .>######%
-               /###%^#%          {} ({})
-             /##%@#  `           runtime version {}
-          ./######`              a general purpose sovereign cloud computer
+               /###%^#%       {} ({})
+             /##%@#  `        runtime version {}
+          ./######`           a general purpose sovereign cloud computer
         /.^`.#^#^`
-       `   ,#`#`#,               public IP {}
-          ,/ /` `                home directory at {}
+       `   ,#`#`#,          public IP {}
+          ,/ /` `           home directory at {}
         .*`
- networking public key: {}{}
+ networking pubkey: {}{}
 "#,
                 our.name,
                 if our.is_direct() {
@@ -104,7 +104,8 @@ pub fn splash(
  a general purpose sovereign cloud computer
  public IP {}
  home dir at {}
- net pubkey: {}{}\n"#,
+ net pubkey: {}{}
+"#,
                 our.name,
                 if our.is_direct() {
                     "direct"

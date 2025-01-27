@@ -54,11 +54,11 @@ const DEFAULT_MAX_PASSTHROUGHS: u64 = 0;
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
-pub const CHAIN_ID: u64 = 10;
+pub const CHAIN_ID: u64 = 8453; // base
 #[cfg(feature = "simulation-mode")]
-pub const CHAIN_ID: u64 = 31337;
+pub const CHAIN_ID: u64 = 31337; // fakenet
 #[cfg(not(feature = "simulation-mode"))]
-pub const KIMAP_ADDRESS: &str = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
+pub const KIMAP_ADDRESS: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 #[cfg(feature = "simulation-mode")]
 pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -123,11 +123,14 @@ async fn main() {
         serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap()
     };
     if let Some(rpc) = rpc {
-        eth_provider_config.insert(lib::eth::ProviderConfig {
-            chain_id: CHAIN_ID,
-            trusted: true,
-            provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
-        });
+        eth_provider_config.insert(
+            0,
+            lib::eth::ProviderConfig {
+                chain_id: CHAIN_ID,
+                trusted: true,
+                provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
+            },
+        );
         // save the new provider config
         tokio::fs::write(
             home_directory_path.join(".eth_providers"),
@@ -143,14 +146,17 @@ async fn main() {
             .get_one::<u16>("fakechain-port")
             .cloned()
             .unwrap_or(8545);
-        eth_provider_config.insert(lib::eth::ProviderConfig {
-            chain_id: 31337,
-            trusted: true,
-            provider: lib::eth::NodeOrRpcUrl::RpcUrl(format!(
-                "ws://localhost:{}",
-                local_chain_port
-            )),
-        });
+        eth_provider_config.insert(
+            0,
+            lib::eth::ProviderConfig {
+                chain_id: 31337,
+                trusted: true,
+                provider: lib::eth::NodeOrRpcUrl::RpcUrl(format!(
+                    "ws://localhost:{}",
+                    local_chain_port
+                )),
+            },
+        );
     }
 
     // kernel receives system messages via this channel, all other modules send messages
@@ -357,6 +363,7 @@ async fn main() {
         // getting PKI info ("bootstrap")
         eth_provider_config
             .clone()
+            .0
             .into_iter()
             .filter_map(|config| {
                 if let lib::eth::NodeOrRpcUrl::Node { kns_update, .. } = config.provider {
@@ -876,20 +883,8 @@ async fn login_with_password(
 
     let password_hash_hex = format!("0x{}", password_hash);
 
-    // SWITCH BACK TO THIS IN 1.0.0
-    // let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
-    //     .expect("could not decode keyfile, password incorrect");
-
-    // REMOVE IN 1.0.0
-    let k = match keygen::decode_keyfile(&disk_keyfile, &password_hash_hex) {
-        Ok(k) => k,
-        Err(_) => {
-            use sha2::{Digest, Sha256};
-            let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
-            keygen::decode_keyfile(&disk_keyfile, &password_hash)
-                .expect("could not decode keyfile, password incorrect")
-        }
-    };
+    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
+        .expect("could not decode keyfile, password incorrect");
 
     let mut our = Identity {
         name: k.username.clone(),

@@ -24,7 +24,7 @@ const CHAIN_ID: u64 = 31337; // local
 const CHAIN_TIMEOUT: u64 = 60; // 60s
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // base
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
 
@@ -153,7 +153,6 @@ fn initialize(our: Address) {
     // serve the frontend on a secure subdomain
     http_server
         .serve_ui(
-            state.our(),
             "ui",
             vec!["/"],
             http::server::HttpBindingConfig::default().secure_subdomain(true),

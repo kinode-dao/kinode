@@ -12,7 +12,7 @@ import {
 } from '@rainbow-me/rainbowkit';
 import { WagmiProvider, http } from 'wagmi';
 import {
-  optimism,
+  base,
   anvil,
   mainnet
 } from 'wagmi/chains';
@@ -27,11 +27,11 @@ window.Buffer = Buffer;
 const config = getDefaultConfig({
   appName: 'Kinode Register UI',
   projectId: 'c6da298e8ee4e4b00ea32cd4c20c40af',
-  chains: [optimism],
+  chains: [base],
   ssr: false,
   transports: {
     [anvil.id]: http(),
-    [optimism.id]: http(),
+    [base.id]: http(),
     [mainnet.id]: http(),
   }
 });

@@ -57,7 +57,7 @@ const CHAIN_ID: u64 = 31337; // local
 const CHAIN_TIMEOUT: u64 = 60; // 60s
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // base
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &str = "0x9CE8cCD2932DC727c70f9ae4f8C2b68E6Abed58C";
 
@@ -425,7 +425,7 @@ fn init(our: Address) {
 
 /// returns true if we should re-index
 fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow::Result<bool> {
-    if !message.is_local(&our) {
+    if !message.is_local() {
         // networking is off: we will never get non-local messages
         return Ok(false);
     }
