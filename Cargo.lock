@@ -5215,11 +5215,11 @@ name = "reset-store"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.10.1",
+ "kinode_process_lib 1.0.0",
  "process_macros",
  "serde",
  "serde_json",
- "wit-bindgen 0.36.0",
+ "wit-bindgen",
 ]
 
 [[package]]
