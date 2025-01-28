@@ -4,12 +4,15 @@ use crate::kinode::process::settings::{
     Request as SettingsRequest, Response as SettingsResponse, SettingsData, SettingsError,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_capability, homepage, http, kernel_types, kimap,
+    await_message, call_init,
+    eth::{self, Provider},
+    get_blob, get_capability, homepage, http, kernel_types,
+    kimap::{self, KIMAP_ADDRESS},
     net, println, Address, Capability, LazyLoadBlob, Message, ProcessId, Request, Response,
     SendError, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, str::FromStr, vec};
 
 const ICON: &str = include_str!("icon");
 
@@ -161,9 +164,22 @@ impl SettingsState {
         }
 
         // kimap
-        let kimap = kimap::Kimap::default(60);
+        let kimap = if cfg!(feature = "simulation-mode") {
+            let fake_provider = Provider::new(31337, 60);
+            kimap::Kimap::new(
+                fake_provider,
+                eth::Address::from_str(KIMAP_ADDRESS).unwrap(),
+            )
+        } else {
+            kimap::Kimap::default(60)
+        };
+
         let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
-            return Err(anyhow::anyhow!("failed to get kimap node"));
+            return Err(anyhow::anyhow!(
+                "failed to get kimap node {} on kimap {}",
+                self.our.node(),
+                kimap.address()
+            ));
         };
         self.our_tba = tba;
         self.our_owner = owner;
@@ -206,7 +222,6 @@ fn initialize(our: Address) {
     // Serving securely at `settings-sys` subdomain
     http_server
         .serve_ui(
-            &state.our,
             "ui",
             vec!["/"],
             http::server::HttpBindingConfig::default().secure_subdomain(true),
@@ -221,9 +236,15 @@ fn initialize(our: Address) {
 
     // populate state
     // this will add ourselves to the homepage
-    if let Err(e) = state.fetch() {
-        println!("failed to fetch settings: {e}");
-        homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
+    while let Err(e) = state.fetch() {
+        println!("failed to fetch settings: {e}, trying again in 5s...");
+        homepage::add_to_homepage(
+            "Settings",
+            Some(ICON),
+            Some("/"),
+            Some(&make_widget(&state)),
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5000));
     }
 
     main_loop(&mut state, &mut http_server);

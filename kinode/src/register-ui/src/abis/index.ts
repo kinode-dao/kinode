@@ -2,11 +2,11 @@ import { parseAbi } from "viem";
 
 export { generateNetworkingKeys } from "./helpers";
 
-// move to constants? // also for anvil/optimism
-export const KIMAP: `0x${string}` = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
+// move to constants? // also for anvil/base
+export const KIMAP: `0x${string}` = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
-export const KINO_ACCOUNT_IMPL: `0x${string}` = "0x38766C70a4FB2f23137D9251a1aA12b1143fC716";
-export const DOTOS: `0x${string}` = "0x9BD054E4c7753791FA0C138b9713319F62ed235D";
+export const KINO_ACCOUNT_IMPL: `0x${string}` = "0x000000000012d439e33aAD99149d52A5c6f980Dc";
+export const DOTOS: `0x${string}` = "0x091684B4C62DE83b864Db9591600f3751C2025c4";
 
 export const multicallAbi = parseAbi([
     `function aggregate(Call[] calls) external payable returns (uint256 blockNumber, bytes[] returnData)`,
@@ -26,9 +26,8 @@ export const mechAbi = parseAbi([
 
 export const dotOsAbi = parseAbi([
     "function commit(bytes32 _commit) external",
-    "function mint(address who, bytes calldata name, bytes calldata initialization, bytes calldata erc721Data, address implementation, bytes32 secret) external returns (address)"
 ]);
 
-export const customAbi = parseAbi([
-    "function mint(address who, bytes calldata name, bytes calldata initialization, bytes calldata erc721Data, address implementation) external returns (address)"
+export const tbaMintAbi = parseAbi([
+    "function mint(address who, bytes calldata name, bytes calldata initialization, address implementation) external returns (address)"
 ]);

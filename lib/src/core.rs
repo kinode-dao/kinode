@@ -1,4 +1,4 @@
-use crate::wit;
+use crate::v1::wit;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
@@ -137,35 +137,7 @@ impl ProcessId {
             publisher_node: self.publisher_node.clone(),
         }
     }
-    pub fn en_wit_v0(&self) -> crate::v0::wit::ProcessId {
-        crate::v0::wit::ProcessId {
-            process_name: self.process_name.clone(),
-            package_name: self.package_name.clone(),
-            publisher_node: self.publisher_node.clone(),
-        }
-    }
-    pub fn en_wit_v1(&self) -> crate::v1::wit::ProcessId {
-        crate::v1::wit::ProcessId {
-            process_name: self.process_name.clone(),
-            package_name: self.package_name.clone(),
-            publisher_node: self.publisher_node.clone(),
-        }
-    }
     pub fn de_wit(wit: wit::ProcessId) -> Self {
-        ProcessId {
-            process_name: wit.process_name,
-            package_name: wit.package_name,
-            publisher_node: wit.publisher_node,
-        }
-    }
-    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> Self {
-        ProcessId {
-            process_name: wit.process_name,
-            package_name: wit.package_name,
-            publisher_node: wit.publisher_node,
-        }
-    }
-    pub fn de_wit_v1(wit: crate::v1::wit::ProcessId) -> Self {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
@@ -342,39 +314,7 @@ impl Address {
             process: self.process.en_wit(),
         }
     }
-    pub fn en_wit_v0(&self) -> crate::v0::wit::Address {
-        crate::v0::wit::Address {
-            node: self.node.clone(),
-            process: self.process.en_wit_v0(),
-        }
-    }
-    pub fn en_wit_v1(&self) -> crate::v1::wit::Address {
-        crate::v1::wit::Address {
-            node: self.node.clone(),
-            process: self.process.en_wit_v1(),
-        }
-    }
     pub fn de_wit(wit: wit::Address) -> Address {
-        Address {
-            node: wit.node,
-            process: ProcessId {
-                process_name: wit.process.process_name,
-                package_name: wit.process.package_name,
-                publisher_node: wit.process.publisher_node,
-            },
-        }
-    }
-    pub fn de_wit_v0(wit: crate::v0::wit::Address) -> Address {
-        Address {
-            node: wit.node,
-            process: ProcessId {
-                process_name: wit.process.process_name,
-                package_name: wit.process.package_name,
-                publisher_node: wit.process.publisher_node,
-            },
-        }
-    }
-    pub fn de_wit_v1(wit: crate::v1::wit::Address) -> Address {
         Address {
             node: wit.node,
             process: ProcessId {
@@ -652,42 +592,6 @@ impl OnExit {
         }
     }
 
-    pub fn en_wit_v0(&self) -> crate::v0::wit::OnExit {
-        match self {
-            OnExit::None => crate::v0::wit::OnExit::None,
-            OnExit::Restart => crate::v0::wit::OnExit::Restart,
-            OnExit::Requests(reqs) => crate::v0::wit::OnExit::Requests(
-                reqs.iter()
-                    .map(|(address, request, blob)| {
-                        (
-                            address.en_wit_v0(),
-                            en_wit_request_v0(request.clone()),
-                            en_wit_blob_v0(blob.clone()),
-                        )
-                    })
-                    .collect(),
-            ),
-        }
-    }
-
-    pub fn en_wit_v1(&self) -> crate::v1::wit::OnExit {
-        match self {
-            OnExit::None => crate::v1::wit::OnExit::None,
-            OnExit::Restart => crate::v1::wit::OnExit::Restart,
-            OnExit::Requests(reqs) => crate::v1::wit::OnExit::Requests(
-                reqs.iter()
-                    .map(|(address, request, blob)| {
-                        (
-                            address.en_wit_v1(),
-                            en_wit_request_v1(request.clone()),
-                            en_wit_blob_v1(blob.clone()),
-                        )
-                    })
-                    .collect(),
-            ),
-        }
-    }
-
     pub fn de_wit(wit: wit::OnExit) -> Self {
         match wit {
             wit::OnExit::None => OnExit::None,
@@ -699,42 +603,6 @@ impl OnExit {
                             Address::de_wit(address),
                             de_wit_request(request),
                             de_wit_blob(blob),
-                        )
-                    })
-                    .collect(),
-            ),
-        }
-    }
-
-    pub fn de_wit_v0(wit: crate::v0::wit::OnExit) -> Self {
-        match wit {
-            crate::v0::wit::OnExit::None => OnExit::None,
-            crate::v0::wit::OnExit::Restart => OnExit::Restart,
-            crate::v0::wit::OnExit::Requests(reqs) => OnExit::Requests(
-                reqs.into_iter()
-                    .map(|(address, request, blob)| {
-                        (
-                            Address::de_wit_v0(address),
-                            de_wit_request_v0(request),
-                            de_wit_blob_v0(blob),
-                        )
-                    })
-                    .collect(),
-            ),
-        }
-    }
-
-    pub fn de_wit_v1(wit: crate::v1::wit::OnExit) -> Self {
-        match wit {
-            crate::v1::wit::OnExit::None => OnExit::None,
-            crate::v1::wit::OnExit::Restart => OnExit::Restart,
-            crate::v1::wit::OnExit::Requests(reqs) => OnExit::Requests(
-                reqs.into_iter()
-                    .map(|(address, request, blob)| {
-                        (
-                            Address::de_wit_v1(address),
-                            de_wit_request_v1(request),
-                            de_wit_blob_v1(blob),
                         )
                     })
                     .collect(),
@@ -854,34 +722,6 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
     }
 }
 
-pub fn de_wit_request_v0(wit: crate::v0::wit::Request) -> Request {
-    Request {
-        inherit: wit.inherit,
-        expects_response: wit.expects_response,
-        body: wit.body,
-        metadata: wit.metadata,
-        capabilities: wit
-            .capabilities
-            .into_iter()
-            .map(|cap| de_wit_capability_v0(cap))
-            .collect(),
-    }
-}
-
-pub fn de_wit_request_v1(wit: crate::v1::wit::Request) -> Request {
-    Request {
-        inherit: wit.inherit,
-        expects_response: wit.expects_response,
-        body: wit.body,
-        metadata: wit.metadata,
-        capabilities: wit
-            .capabilities
-            .into_iter()
-            .map(|cap| de_wit_capability_v1(cap))
-            .collect(),
-    }
-}
-
 pub fn en_wit_request(request: Request) -> wit::Request {
     wit::Request {
         inherit: request.inherit,
@@ -892,34 +732,6 @@ pub fn en_wit_request(request: Request) -> wit::Request {
             .capabilities
             .into_iter()
             .map(|cap| en_wit_capability(cap))
-            .collect(),
-    }
-}
-
-pub fn en_wit_request_v0(request: Request) -> crate::v0::wit::Request {
-    crate::v0::wit::Request {
-        inherit: request.inherit,
-        expects_response: request.expects_response,
-        body: request.body,
-        metadata: request.metadata,
-        capabilities: request
-            .capabilities
-            .into_iter()
-            .map(|cap| en_wit_capability_v0(cap))
-            .collect(),
-    }
-}
-
-pub fn en_wit_request_v1(request: Request) -> crate::v1::wit::Request {
-    crate::v1::wit::Request {
-        inherit: request.inherit,
-        expects_response: request.expects_response,
-        body: request.body,
-        metadata: request.metadata,
-        capabilities: request
-            .capabilities
-            .into_iter()
-            .map(|cap| en_wit_capability_v1(cap))
             .collect(),
     }
 }
@@ -937,32 +749,6 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
     }
 }
 
-pub fn de_wit_response_v0(wit: crate::v0::wit::Response) -> Response {
-    Response {
-        inherit: wit.inherit,
-        body: wit.body,
-        metadata: wit.metadata,
-        capabilities: wit
-            .capabilities
-            .into_iter()
-            .map(|cap| de_wit_capability_v0(cap))
-            .collect(),
-    }
-}
-
-pub fn de_wit_response_v1(wit: crate::v1::wit::Response) -> Response {
-    Response {
-        inherit: wit.inherit,
-        body: wit.body,
-        metadata: wit.metadata,
-        capabilities: wit
-            .capabilities
-            .into_iter()
-            .map(|cap| de_wit_capability_v1(cap))
-            .collect(),
-    }
-}
-
 pub fn en_wit_response(response: Response) -> wit::Response {
     wit::Response {
         inherit: response.inherit,
@@ -972,32 +758,6 @@ pub fn en_wit_response(response: Response) -> wit::Response {
             .capabilities
             .into_iter()
             .map(|cap| en_wit_capability(cap))
-            .collect(),
-    }
-}
-
-pub fn en_wit_response_v0(response: Response) -> crate::v0::wit::Response {
-    crate::v0::wit::Response {
-        inherit: response.inherit,
-        body: response.body,
-        metadata: response.metadata,
-        capabilities: response
-            .capabilities
-            .into_iter()
-            .map(|cap| en_wit_capability_v0(cap))
-            .collect(),
-    }
-}
-
-pub fn en_wit_response_v1(response: Response) -> crate::v1::wit::Response {
-    crate::v1::wit::Response {
-        inherit: response.inherit,
-        body: response.body,
-        metadata: response.metadata,
-        capabilities: response
-            .capabilities
-            .into_iter()
-            .map(|cap| en_wit_capability_v1(cap))
             .collect(),
     }
 }
@@ -1012,50 +772,10 @@ pub fn de_wit_blob(wit: Option<wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
     }
 }
 
-pub fn de_wit_blob_v0(wit: Option<crate::v0::wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
-    match wit {
-        None => None,
-        Some(wit) => Some(LazyLoadBlob {
-            mime: wit.mime,
-            bytes: wit.bytes,
-        }),
-    }
-}
-
-pub fn de_wit_blob_v1(wit: Option<crate::v1::wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
-    match wit {
-        None => None,
-        Some(wit) => Some(LazyLoadBlob {
-            mime: wit.mime,
-            bytes: wit.bytes,
-        }),
-    }
-}
-
 pub fn en_wit_blob(load: Option<LazyLoadBlob>) -> Option<wit::LazyLoadBlob> {
     match load {
         None => None,
         Some(load) => Some(wit::LazyLoadBlob {
-            mime: load.mime,
-            bytes: load.bytes,
-        }),
-    }
-}
-
-pub fn en_wit_blob_v0(load: Option<LazyLoadBlob>) -> Option<crate::v0::wit::LazyLoadBlob> {
-    match load {
-        None => None,
-        Some(load) => Some(crate::v0::wit::LazyLoadBlob {
-            mime: load.mime,
-            bytes: load.bytes,
-        }),
-    }
-}
-
-pub fn en_wit_blob_v1(load: Option<LazyLoadBlob>) -> Option<crate::v1::wit::LazyLoadBlob> {
-    match load {
-        None => None,
-        Some(load) => Some(crate::v1::wit::LazyLoadBlob {
             mime: load.mime,
             bytes: load.bytes,
         }),
@@ -1079,57 +799,9 @@ pub fn de_wit_capability(wit: wit::Capability) -> (Capability, Vec<u8>) {
     )
 }
 
-pub fn de_wit_capability_v0(wit: crate::v0::wit::Capability) -> (Capability, Vec<u8>) {
-    (
-        Capability {
-            issuer: Address {
-                node: wit.issuer.node,
-                process: ProcessId {
-                    process_name: wit.issuer.process.process_name,
-                    package_name: wit.issuer.process.package_name,
-                    publisher_node: wit.issuer.process.publisher_node,
-                },
-            },
-            params: wit.params,
-        },
-        vec![],
-    )
-}
-
-pub fn de_wit_capability_v1(wit: crate::v1::wit::Capability) -> (Capability, Vec<u8>) {
-    (
-        Capability {
-            issuer: Address {
-                node: wit.issuer.node,
-                process: ProcessId {
-                    process_name: wit.issuer.process.process_name,
-                    package_name: wit.issuer.process.package_name,
-                    publisher_node: wit.issuer.process.publisher_node,
-                },
-            },
-            params: wit.params,
-        },
-        vec![],
-    )
-}
-
 pub fn en_wit_capability(cap: (Capability, Vec<u8>)) -> wit::Capability {
     wit::Capability {
         issuer: cap.0.issuer.en_wit(),
-        params: cap.0.params,
-    }
-}
-
-pub fn en_wit_capability_v0(cap: (Capability, Vec<u8>)) -> crate::v0::wit::Capability {
-    crate::v0::wit::Capability {
-        issuer: cap.0.issuer.en_wit_v0(),
-        params: cap.0.params,
-    }
-}
-
-pub fn en_wit_capability_v1(cap: (Capability, Vec<u8>)) -> crate::v1::wit::Capability {
-    crate::v1::wit::Capability {
-        issuer: cap.0.issuer.en_wit_v1(),
         params: cap.0.params,
     }
 }
@@ -1143,47 +815,12 @@ pub fn en_wit_message(message: Message) -> wit::Message {
     }
 }
 
-pub fn en_wit_message_v0(message: Message) -> crate::v0::wit::Message {
-    match message {
-        Message::Request(request) => crate::v0::wit::Message::Request(en_wit_request_v0(request)),
-        Message::Response((response, context)) => {
-            crate::v0::wit::Message::Response((en_wit_response_v0(response), context))
-        }
-    }
-}
-
-pub fn en_wit_message_v1(message: Message) -> crate::v1::wit::Message {
-    match message {
-        Message::Request(request) => crate::v1::wit::Message::Request(en_wit_request_v1(request)),
-        Message::Response((response, context)) => {
-            crate::v1::wit::Message::Response((en_wit_response_v1(response), context))
-        }
-    }
-}
-
 pub fn en_wit_send_error(error: SendError) -> wit::SendError {
     wit::SendError {
         kind: en_wit_send_error_kind(error.kind),
+        target: error.target.en_wit(),
         message: en_wit_message(error.message),
         lazy_load_blob: en_wit_blob(error.lazy_load_blob),
-    }
-}
-
-pub fn en_wit_send_error_v0(error: SendError) -> crate::v0::wit::SendError {
-    crate::v0::wit::SendError {
-        kind: en_wit_send_error_kind_v0(error.kind),
-        target: error.target.en_wit_v0(),
-        message: en_wit_message_v0(error.message),
-        lazy_load_blob: en_wit_blob_v0(error.lazy_load_blob),
-    }
-}
-
-pub fn en_wit_send_error_v1(error: SendError) -> crate::v1::wit::SendError {
-    crate::v1::wit::SendError {
-        kind: en_wit_send_error_kind_v1(error.kind),
-        target: error.target.en_wit_v1(),
-        message: en_wit_message_v1(error.message),
-        lazy_load_blob: en_wit_blob_v1(error.lazy_load_blob),
     }
 }
 
@@ -1191,19 +828,5 @@ pub fn en_wit_send_error_kind(kind: SendErrorKind) -> wit::SendErrorKind {
     match kind {
         SendErrorKind::Offline => wit::SendErrorKind::Offline,
         SendErrorKind::Timeout => wit::SendErrorKind::Timeout,
-    }
-}
-
-pub fn en_wit_send_error_kind_v0(kind: SendErrorKind) -> crate::v0::wit::SendErrorKind {
-    match kind {
-        SendErrorKind::Offline => crate::v0::wit::SendErrorKind::Offline,
-        SendErrorKind::Timeout => crate::v0::wit::SendErrorKind::Timeout,
-    }
-}
-
-pub fn en_wit_send_error_kind_v1(kind: SendErrorKind) -> crate::v1::wit::SendErrorKind {
-    match kind {
-        SendErrorKind::Offline => crate::v1::wit::SendErrorKind::Offline,
-        SendErrorKind::Timeout => crate::v1::wit::SendErrorKind::Timeout,
     }
 }

@@ -57,7 +57,7 @@ const CHAIN_ID: u64 = 31337; // local
 const CHAIN_TIMEOUT: u64 = 60; // 60s
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // base
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &str = "0x9CE8cCD2932DC727c70f9ae4f8C2b68E6Abed58C";
 
@@ -89,6 +89,8 @@ pub struct DB {
     inner: Sqlite,
 }
 
+const DB_VERSION: u64 = 1;
+
 impl DB {
     pub fn connect(our: &Address) -> anyhow::Result<Self> {
         let inner = sqlite::open(our.package_id(), "app_store_chain.sqlite", Some(10))?;
@@ -97,7 +99,18 @@ impl DB {
         inner.write(CREATE_LISTINGS_TABLE.into(), vec![], None)?;
         inner.write(CREATE_PUBLISHED_TABLE.into(), vec![], None)?;
 
-        Ok(Self { inner })
+        let db = Self { inner };
+
+        // versions and migrations
+        let version = db.get_version()?;
+
+        if let None = version {
+            // clean up inconsistent state by re-indexing from block 0
+            db.set_last_saved_block(0)?;
+            db.set_version(DB_VERSION)?;
+        }
+
+        Ok(db)
     }
 
     pub fn get_last_saved_block(&self) -> anyhow::Result<u64> {
@@ -316,6 +329,31 @@ impl DB {
         }
         Ok(result)
     }
+
+    pub fn get_version(&self) -> anyhow::Result<Option<u64>> {
+        let rows = self.inner.read(
+            "SELECT value FROM meta WHERE key = 'version'".into(),
+            vec![],
+        )?;
+
+        if let Some(row) = rows.first() {
+            if let Some(value) = row.get("value") {
+                if let serde_json::Value::String(version_str) = value {
+                    return Ok(Some(version_str.parse()?));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    pub fn set_version(&self, version: u64) -> anyhow::Result<()> {
+        self.inner.write(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('version', ?)".into(),
+            vec![serde_json::Value::String(version.to_string())],
+            None,
+        )?;
+        Ok(())
+    }
 }
 
 const CREATE_META_TABLE: &str = "
@@ -387,7 +425,7 @@ fn init(our: Address) {
 
 /// returns true if we should re-index
 fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow::Result<bool> {
-    if !message.is_local(&our) {
+    if !message.is_local() {
         // networking is off: we will never get non-local messages
         return Ok(false);
     }

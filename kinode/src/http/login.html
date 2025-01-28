@@ -156,9 +156,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/argon2-browser/1.18.0/argon2-bundled.min.js"
     integrity="sha512-Alrh8vbmKDc5xiq7I/y8LTDwy9nw1nT9S/yR73HMMoWrpX4S1kizNPdWM896c/CDIGILNwAiaih627A94kRhYQ=="
     crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <!-- REMOVE IN 1.0.0 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
-  <!--------------------->
   <script>
     let isInitialized = false;
 
@@ -214,24 +211,6 @@
           return;
         }
 
-        // REMOVE IN 1.0.0
-        const hashHex = '0x' + CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex);
-        result = await fetch("/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            password_hash: hashHex,
-            subdomain: isSecureSubdomain ? firstPathItem : '',
-          }),
-        });
-
-        if (result.status < 399) {
-          window.location.reload();
-          return;
-        }
-        // END REMOVE IN 1.0.0
-
-        // Only show error if both attempts failed
         throw new Error("Login failed");
 
       } catch (err) {

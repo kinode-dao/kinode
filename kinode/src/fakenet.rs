@@ -12,16 +12,16 @@ use std::str::FromStr;
 
 use crate::{keygen, sol::*, KIMAP_ADDRESS, MULTICALL_ADDRESS};
 
-// TODO move these into contracts registry, doublecheck optimism deployments
-const FAKE_DOTDEV_TBA: &str = "0x27e913BF6dcd08E9E68530812B277224Be07890B";
-const FAKE_DOTOS_TBA: &str = "0xC026fE4950c12AdACF284689d900AcC74987c555";
-const _FAKE_ZEROTH_TBA: &str = "0x33b687295Cb095d9d962BA83732c67B96dffC8eA";
+// TODO move these into contracts registry
+const FAKE_DOTDEV_TBA: &str = "0xcc3A576b8cE5340f5CE23d0DDAf133C0822C3B6d";
+const FAKE_DOTOS_TBA: &str = "0xbE46837617f8304Aa5E6d0aE62B74340251f48Bf";
+const _FAKE_ZEROTH_TBA: &str = "0x4bb0778bb92564bf8e82d0b3271b7512443fb060";
 
-const KINO_ACCOUNT_IMPL: &str = "0x00ee0e0d00F01f6FF3aCcBA2986E07f99181b9c2";
+const KINO_ACCOUNT_IMPL: &str = "0x000000000012d439e33aAD99149d52A5c6f980Dc";
 
 const MULTICALL: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-const KIMAP: &str = "0x9CE8cCD2932DC727c70f9ae4f8C2b68E6Abed58C";
+const KIMAP: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 
 /// Attempts to connect to a local anvil fakechain,
 /// registering a name with its KiMap contract.
@@ -62,7 +62,7 @@ pub async fn mint_local(
     let namehash: [u8; 32] = keygen::namehash(name);
 
     let get_call = getCall {
-        node: namehash.into(),
+        namehash: namehash.into(),
     }
     .abi_encode();
 
@@ -137,10 +137,9 @@ pub async fn mint_local(
         // name is not registered, mint it with multicall in initialization param
         (
             mintCall {
-                who: wallet_address,
+                to: wallet_address,
                 label: Bytes::from(label.as_bytes().to_vec()),
                 initialization: execute_call.into(),
-                erc721Data: vec![].into(),
                 implementation: Address::from_str(KINO_ACCOUNT_IMPL).unwrap(),
             }
             .abi_encode(),
@@ -218,15 +217,20 @@ pub async fn assign_ws_local_helper(
     let multicalls = vec![
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: netkey_hash }.abi_encode()),
+            callData: Bytes::from(
+                getCall {
+                    namehash: netkey_hash,
+                }
+                .abi_encode(),
+            ),
         },
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: ws_hash }.abi_encode()),
+            callData: Bytes::from(getCall { namehash: ws_hash }.abi_encode()),
         },
         Call {
             target: kimap,
-            callData: Bytes::from(getCall { node: ip_hash }.abi_encode()),
+            callData: Bytes::from(getCall { namehash: ip_hash }.abi_encode()),
         },
     ];
 

@@ -2,34 +2,35 @@ use alloy_sol_macro::sol;
 
 sol! {
     function mint (
-        address who,
+        address to,
         bytes calldata label,
         bytes calldata initialization,
-        bytes calldata erc721Data,
         address implementation
     ) external returns (
         address tba
     );
 
     function get (
-        bytes32 node
+        bytes32 namehash
     ) external view returns (
         address tba,
         address owner,
         bytes data,
     );
 
+    function fact (
+        bytes calldata fact,
+        bytes calldata data
+    ) external returns (
+        bytes32 labelhash
+    );
+
     function note (
         bytes calldata note,
         bytes calldata data
     ) external returns (
-        bytes32 notenode
+        bytes32 labelhash
     );
-
-    function edit (
-        bytes32 _note,
-        bytes calldata _data
-    ) external;
 
     // tba account
     function execute(

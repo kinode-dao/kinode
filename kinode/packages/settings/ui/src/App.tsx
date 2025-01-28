@@ -310,13 +310,13 @@ function App() {
           <p>TBA: {appState.our_tba}</p>
           <p>Owner: {appState.our_owner}</p>
           <br />
-          <p>Routers: {appState.routers}</p>
+          <p>Routers: {appState.routers || 'none currently, direct node'}</p>
           <EditNote label="~routers" tba={appState.our_tba || ''} field_placeholder="router names, separated by commas (no spaces!)" />
-          <p>IP: {appState.ip}</p>
+          <p>IP: {appState.ip || 'none currently, indirect node'}</p>
           <EditNote label="~ip" tba={appState.our_tba || ''} field_placeholder="ip address encoded as hex" />
-          <p>TCP port: {appState.tcp_port}</p>
+          <p>TCP port: {appState.tcp_port || 'none currently, indirect node'}</p>
           <EditNote label="~tcp-port" tba={appState.our_tba || ''} field_placeholder="tcp port as a decimal number (e.g. 8080)" />
-          <p>WS port: {appState.ws_port}</p>
+          <p>WS port: {appState.ws_port || 'none currently, indirect node'}</p>
           <EditNote label="~ws-port" tba={appState.our_tba || ''} field_placeholder="ws port as a decimal number (e.g. 8080)" />
           <p>Add a brand new note to your node ID</p>
           <EditNote tba={appState.our_tba || ''} field_placeholder="note content" />
