@@ -25,7 +25,7 @@ wit_bindgen::generate!({
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // base
 #[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &'static str = "0x9CE8cCD2932DC727c70f9ae4f8C2b68E6Abed58C"; // local
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // local
 
 #[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID; // base

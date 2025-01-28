@@ -4,12 +4,15 @@ use crate::kinode::process::settings::{
     Request as SettingsRequest, Response as SettingsResponse, SettingsData, SettingsError,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_capability, homepage, http, kernel_types, kimap,
+    await_message, call_init,
+    eth::{self, Provider},
+    get_blob, get_capability, homepage, http, kernel_types,
+    kimap::{self, KIMAP_ADDRESS},
     net, println, Address, Capability, LazyLoadBlob, Message, ProcessId, Request, Response,
     SendError, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, str::FromStr, vec};
 
 const ICON: &str = include_str!("icon");
 
@@ -161,7 +164,16 @@ impl SettingsState {
         }
 
         // kimap
-        let kimap = kimap::Kimap::default(60);
+        let kimap = if cfg!(feature = "simulation-mode") {
+            let fake_provider = Provider::new(31337, 60);
+            kimap::Kimap::new(
+                fake_provider,
+                eth::Address::from_str(KIMAP_ADDRESS).unwrap(),
+            )
+        } else {
+            kimap::Kimap::default(60)
+        };
+
         let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
             return Err(anyhow::anyhow!(
                 "failed to get kimap node {} on kimap {}",
