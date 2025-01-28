@@ -36,7 +36,7 @@ function CommitDotOsName({
             }
         }
     });
-    const { isLoading: isConfirming, isSuccess: isConfirmed } =
+    const { isLoading: isConfirming, isSuccess: txConfirmed } =
         useWaitForTransactionReceipt({
             hash,
         });
@@ -45,6 +45,7 @@ function CommitDotOsName({
     const [name, setName] = useState('')
     const [nameValidities, setNameValidities] = useState<string[]>([])
     const [triggerNameCheck, setTriggerNameCheck] = useState<boolean>(false)
+    const [isConfirmed, setIsConfirmed] = useState(false)
 
     useEffect(() => {
         document.title = "Register"
@@ -69,11 +70,10 @@ function CommitDotOsName({
         }
         setName(toAscii(name));
         console.log("committing to .os name: ", name)
-        const commitSecret = keccak256(stringToHex(name))
         const commit = keccak256(
             encodeAbiParameters(
-                parseAbiParameters('bytes32, bytes32'),
-                [keccak256(stringToHex(name)), commitSecret]
+                parseAbiParameters('bytes memory, address'),
+                [stringToHex(name), address]
             )
         )
         writeContract({
@@ -87,11 +87,16 @@ function CommitDotOsName({
     }, [name, direct, address, writeContract, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal])
 
     useEffect(() => {
-        if (isConfirmed) {
-            setKnsName(`${name}.os`);
-            navigate("/mint-os-name");
+        if (txConfirmed) {
+            console.log("confirmed commit to .os name: ", name)
+            console.log("waiting 16 seconds to make commit valid...")
+            setTimeout(() => {
+                setIsConfirmed(true);
+                setKnsName(`${name}.os`);
+                navigate("/mint-os-name");
+            }, 16000)
         }
-    }, [isConfirmed, address, name, setKnsName, navigate]);
+    }, [txConfirmed, address, name, setKnsName, navigate]);
 
     return (
         <div className="container fade-in">
@@ -99,8 +104,12 @@ function CommitDotOsName({
             <div className="section">
                 {
                     <form className="form" onSubmit={handleCommit}>
-                        {isPending || isConfirming ? (
-                            <Loader msg={isConfirming ? 'Pre-committing to chosen name...' : 'Please confirm the transaction in your wallet'} />
+                        {isPending || isConfirming || (txConfirmed && !isConfirmed) ? (
+                            <Loader msg={
+                                isConfirming ? 'Pre-committing to chosen name...' :
+                                    (txConfirmed && !isConfirmed) ? 'Waiting 15s for commit to become valid...' :
+                                        'Please confirm the transaction in your wallet'
+                            } />
                         ) : (
                             <>
                                 <h3 className="form-label">

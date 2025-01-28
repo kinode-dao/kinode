@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1.0.71"
 clap = "4"
 fs-err = "2.11"
-kit = { git = "https://github.com/kinode-dao/kit", rev = "23ee399" }
+kit = { git = "https://github.com/kinode-dao/kit", tag = "v0.9.1" }
 serde_json = "1"
 tokio = "1.28"
 walkdir = "2.4"

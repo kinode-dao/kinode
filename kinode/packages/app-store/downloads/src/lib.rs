@@ -199,7 +199,7 @@ fn handle_message(
             }
             DownloadRequest::LocalDownload(download_request) => {
                 // we want to download a package.
-                if !message.is_local(our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("not local"));
                 }
 
@@ -284,7 +284,7 @@ fn handle_message(
                     .send();
             }
             DownloadRequest::DownloadComplete(req) => {
-                if !message.is_local(our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("got non local download complete"));
                 }
 
@@ -316,7 +316,7 @@ fn handle_message(
             DownloadRequest::GetFiles(maybe_id) => {
                 // if not local, throw to the boonies.
                 // note, can also implement a discovery protocol here in the future
-                if !message.is_local(our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("got non local get_files"));
                 }
                 let files = match maybe_id {
@@ -338,7 +338,7 @@ fn handle_message(
                 Response::new().body(&resp).send()?;
             }
             DownloadRequest::RemoveFile(remove_req) => {
-                if !message.is_local(our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("not local"));
                 }
                 let RemoveFileRequest {
@@ -359,7 +359,7 @@ fn handle_message(
                     .send()?;
             }
             DownloadRequest::AddDownload(add_req) => {
-                if !message.is_local(our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("not local"));
                 }
                 let Some(blob) = get_blob() else {
@@ -410,7 +410,7 @@ fn handle_message(
                     .send()?;
             }
             DownloadRequest::AutoUpdate(auto_update_request) => {
-                if !message.is_local(&our)
+                if !message.is_local()
                     && message.source().process != ProcessId::new(Some("chain"), "app-store", "sys")
                 {
                     return Err(anyhow::anyhow!(

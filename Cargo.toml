@@ -1,7 +1,7 @@
 [package]
 name = "kinode_lib"
 authors = ["Sybil Technologies AG"]
-version = "0.10.2"
+version = "1.0.0"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
 homepage = "https://kinode.org"
@@ -15,7 +15,8 @@ lib = { path = "lib" }
 members = [
     "lib", "kinode",
     "kinode/packages/app-store/app-store", "kinode/packages/app-store/ft-worker",
-    "kinode/packages/app-store/download", "kinode/packages/app-store/install", "kinode/packages/app-store/uninstall", "kinode/packages/app-store/downloads", "kinode/packages/app-store/chain",
+    "kinode/packages/app-store/downloads", "kinode/packages/app-store/chain",
+    "kinode/packages/app-store/download", "kinode/packages/app-store/install", "kinode/packages/app-store/uninstall", "kinode/packages/app-store/reset-store",
     "kinode/packages/chess/chess",
     "kinode/packages/contacts/contacts",
     "kinode/packages/homepage/homepage",

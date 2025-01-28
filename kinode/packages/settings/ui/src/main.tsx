@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom/client'
 
 import { WagmiProvider } from 'wagmi'
 import { http, createConfig } from 'wagmi'
-import { optimism } from 'wagmi/chains'
+import { base } from 'wagmi/chains'
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
 
 import App from './App.tsx'
@@ -15,9 +15,9 @@ import '@rainbow-me/rainbowkit/styles.css';
 globalThis.Buffer = Buffer
 
 export const config = createConfig({
-  chains: [optimism],
+  chains: [base],
   transports: {
-    [optimism.id]: http(),
+    [base.id]: http(),
   },
 })
 

@@ -14,10 +14,7 @@ const encodeRouters = (routers: string[]): `0x${string}` => {
 
 export const generateNetworkingKeys = async ({
     direct,
-    label,
-    our_address,
     setNetworkingKey,
-    setIpAddress,
     setWsPort,
     setTcpPort,
     setRouters,
@@ -48,7 +45,6 @@ export const generateNetworkingKeys = async ({
 
     const ipAddress = ipToBytes(ip_address);
 
-    // why are we doing these? TODO
     setNetworkingKey(networking_key);
     // setIpAddress(ipAddress);
     setWsPort(ws_port || 0);
@@ -149,7 +145,6 @@ export const generateNetworkingKeys = async ({
     //         our_address,
     //         encodePacked(["bytes"], [stringToHex(label)]),
     //         initCall,
-    //         "0x",
     //         KINO_ACCOUNT_IMPL,
     //     ]
     // })
