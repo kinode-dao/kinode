@@ -22,10 +22,7 @@ wit_bindgen::generate!({
     additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
-#[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // base
-#[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // local
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS;
 
 #[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID; // base
