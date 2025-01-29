@@ -57,11 +57,10 @@ const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.
 pub const CHAIN_ID: u64 = 8453; // base
 #[cfg(feature = "simulation-mode")]
 pub const CHAIN_ID: u64 = 31337; // fakenet
-#[cfg(not(feature = "simulation-mode"))]
-pub const KIMAP_ADDRESS: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
-#[cfg(feature = "simulation-mode")]
-pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+
 pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
+pub const KINO_ACCOUNT_IMPL: &str = "0x000000000012d439e33aAD99149d52A5c6f980Dc";
+pub const KIMAP_ADDRESS: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 
 #[tokio::main]
 async fn main() {
