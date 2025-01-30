@@ -54,14 +54,13 @@ const DEFAULT_MAX_PASSTHROUGHS: u64 = 0;
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
-pub const CHAIN_ID: u64 = 10;
+pub const CHAIN_ID: u64 = 8453; // base
 #[cfg(feature = "simulation-mode")]
-pub const CHAIN_ID: u64 = 31337;
-#[cfg(not(feature = "simulation-mode"))]
-pub const KIMAP_ADDRESS: &str = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
-#[cfg(feature = "simulation-mode")]
-pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+pub const CHAIN_ID: u64 = 31337; // fakenet
+
 pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
+pub const KINO_ACCOUNT_IMPL: &str = "0x000000000012d439e33aAD99149d52A5c6f980Dc";
+pub const KIMAP_ADDRESS: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 
 #[tokio::main]
 async fn main() {
@@ -883,20 +882,8 @@ async fn login_with_password(
 
     let password_hash_hex = format!("0x{}", password_hash);
 
-    // SWITCH BACK TO THIS IN 1.0.0
-    // let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
-    //     .expect("could not decode keyfile, password incorrect");
-
-    // REMOVE IN 1.0.0
-    let k = match keygen::decode_keyfile(&disk_keyfile, &password_hash_hex) {
-        Ok(k) => k,
-        Err(_) => {
-            use sha2::{Digest, Sha256};
-            let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
-            keygen::decode_keyfile(&disk_keyfile, &password_hash)
-                .expect("could not decode keyfile, password incorrect")
-        }
-    };
+    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash_hex)
+        .expect("could not decode keyfile, password incorrect");
 
     let mut our = Identity {
         name: k.username.clone(),

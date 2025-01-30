@@ -5,8 +5,8 @@ import { PageProps } from "../lib/types";
 
 import { useAccount, useWaitForTransactionReceipt, useSendTransaction } from "wagmi";
 import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit"
-import { dotOsAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
-import { encodePacked, encodeFunctionData, stringToHex, keccak256 } from "viem";
+import { generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS, tbaMintAbi } from "../abis";
+import { encodePacked, encodeFunctionData, stringToHex } from "viem";
 
 interface RegisterOsNameProps extends PageProps { }
 
@@ -73,18 +73,15 @@ function MintDotOsName({
 
     // strip .os suffix
     const name = knsName.replace(/\.os$/, '');
-    const commitSecret = keccak256(stringToHex(name))
 
     const data = encodeFunctionData({
-      abi: dotOsAbi,
+      abi: tbaMintAbi,
       functionName: 'mint',
       args: [
         address,
         encodePacked(["bytes"], [stringToHex(name)]),
         initCall,
-        "0x",
         KINO_ACCOUNT_IMPL,
-        commitSecret
       ],
     })
 

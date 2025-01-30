@@ -29,7 +29,6 @@
 //! Note: This process does not directly handle file transfers or on-chain operations.
 //! It delegates these responsibilities to the downloads and chain processes respectively.
 //!
-use crate::kinode::process::chain::ChainRequest;
 use crate::kinode::process::downloads::{
     AutoDownloadCompleteRequest, DownloadCompleteRequest, DownloadResponse, ProgressUpdate,
 };
@@ -39,7 +38,7 @@ use crate::kinode::process::main::{
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, print_to_terminal, println, vfs, Address,
-    LazyLoadBlob, Message, PackageId, Request, Response,
+    LazyLoadBlob, Message, PackageId, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{State, UpdateInfo, Updates};
@@ -79,7 +78,7 @@ pub enum Resp {
 call_init!(init);
 fn init(our: Address) {
     let mut http_server = http::server::HttpServer::new(5);
-    http_api::init_frontend(&our, &mut http_server);
+    http_api::init_frontend(&mut http_server);
 
     // state = state built from the filesystem, installed packages
     // updates = state saved with get/set_state(), auto_update metadata.
@@ -115,7 +114,7 @@ fn handle_message(
     if message.is_request() {
         match message.body().try_into()? {
             Req::LocalRequest(local_request) => {
-                if !message.is_local(our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("request from non-local node"));
                 }
                 let (body, blob) = handle_local_request(our, state, local_request);
@@ -127,7 +126,7 @@ fn handle_message(
                 }
             }
             Req::Http(server_request) => {
-                if !message.is_local(&our) || message.source().process != "http-server:distro:sys" {
+                if !message.is_local() || message.source().process != "http-server:distro:sys" {
                     return Err(anyhow::anyhow!("http-server from non-local node"));
                 }
                 http_server.handle_request(
@@ -139,7 +138,7 @@ fn handle_message(
                 );
             }
             Req::Progress(progress) => {
-                if !message.is_local(&our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("http-server from non-local node"));
                 }
                 http_server.ws_push_all_channels(
@@ -161,7 +160,7 @@ fn handle_message(
                 );
             }
             Req::AutoDownloadComplete(req) => {
-                if !message.is_local(&our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!(
                         "auto download complete from non-local node"
                     ));
@@ -244,7 +243,7 @@ fn handle_message(
                 }
             }
             Req::DownloadComplete(req) => {
-                if !message.is_local(&our) {
+                if !message.is_local() {
                     return Err(anyhow::anyhow!("download complete from non-local node"));
                 }
 
