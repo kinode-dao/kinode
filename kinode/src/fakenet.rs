@@ -10,18 +10,11 @@ use lib::core::{Identity, NodeRouting};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
-use crate::{keygen, sol::*, KIMAP_ADDRESS, MULTICALL_ADDRESS};
+use crate::{keygen, sol::*, KIMAP_ADDRESS, KINO_ACCOUNT_IMPL, MULTICALL_ADDRESS};
 
-// TODO move these into contracts registry
 const FAKE_DOTDEV_TBA: &str = "0xcc3A576b8cE5340f5CE23d0DDAf133C0822C3B6d";
 const FAKE_DOTOS_TBA: &str = "0xbE46837617f8304Aa5E6d0aE62B74340251f48Bf";
 const _FAKE_ZEROTH_TBA: &str = "0x4bb0778bb92564bf8e82d0b3271b7512443fb060";
-
-const KINO_ACCOUNT_IMPL: &str = "0x000000000012d439e33aAD99149d52A5c6f980Dc";
-
-const MULTICALL: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
-
-const KIMAP: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 
 /// Attempts to connect to a local anvil fakechain,
 /// registering a name with its KiMap contract.
@@ -40,10 +33,10 @@ pub async fn mint_local(
 
     let wallet: EthereumWallet = privkey_signer.into();
 
-    let multicall_address = Address::from_str(MULTICALL)?;
+    let multicall_address = Address::from_str(MULTICALL_ADDRESS)?;
     let dotos = Address::from_str(FAKE_DOTOS_TBA)?;
     let dotdev = Address::from_str(FAKE_DOTDEV_TBA)?;
-    let kimap = Address::from_str(KIMAP)?;
+    let kimap = Address::from_str(KIMAP_ADDRESS)?;
 
     let parts: Vec<&str> = name.split('.').collect();
     let label = parts[0];
