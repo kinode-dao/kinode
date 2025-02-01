@@ -9,12 +9,12 @@
                     "name": "eth-provider.kino",
                     "owner": "",
                     "node": "",
-                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
+                    "public_key": "0xda9bf23c77d833a1aba846d47c06c940f0c0d8372cb3a769bcb23559e49eeb6e",
                     "ips": [
-                        "147.135.114.167"
+                        "15.204.59.64"
                     ],
                     "ports": {
-                        "ws": 9999
+                        "ws": 9005
                     },
                     "routers": []
                 }
@@ -31,12 +31,12 @@
                     "name": "optimism-provider.kino",
                     "owner": "",
                     "node": "",
-                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
+                    "public_key": "0x498c9eacf22630fbec20b33320a919d086efa24962e82f30551b6f16f0b0aa63",
                     "ips": [
-                        "147.135.114.167"
+                        "15.204.59.64"
                     ],
                     "ports": {
-                        "ws": 9999
+                        "ws": 9006
                     },
                     "routers": []
                 }
@@ -53,12 +53,12 @@
                     "name": "base-provider.kino",
                     "owner": "",
                     "node": "",
-                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
+                    "public_key": "0xd5184461b7af5e7aad88b5c34508403ff53a68962423c89574eea9cef586f5a0",
                     "ips": [
-                        "147.135.114.167"
+                        "15.204.59.64"
                     ],
                     "ports": {
-                        "ws": 9999
+                        "ws": 9007
                     },
                     "routers": []
                 }
@@ -75,12 +75,12 @@
                     "name": "sepolia-provider.kino",
                     "owner": "",
                     "node": "",
-                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
+                    "public_key": "0xf4cde6752c55398b9c1b2815b1121b9a614aa1a7db0c3971dd84cf943cb7d0b7",
                     "ips": [
-                        "147.135.114.167"
+                        "15.204.59.64"
                     ],
                     "ports": {
-                        "ws": 9999
+                        "ws": 9008
                     },
                     "routers": []
                 }
