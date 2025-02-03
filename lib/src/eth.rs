@@ -1,3 +1,4 @@
+use alloy::rpc::client::Authorization;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -202,6 +203,7 @@ pub struct ProviderConfig {
     pub chain_id: u64,
     pub trusted: bool,
     pub provider: NodeOrRpcUrl,
+    pub auth: Option<Authorization>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]

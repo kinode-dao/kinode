@@ -1,5 +1,6 @@
 use alloy::providers::{Provider, RootProvider};
 use alloy::pubsub::PubSubFrontend;
+use alloy::rpc::client::Authorization;
 use alloy::rpc::json_rpc::RpcError;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -47,6 +48,7 @@ struct UrlProvider {
     pub url: String,
     /// a list, in case we build multiple providers for the same url
     pub pubsub: Vec<RootProvider<PubSubFrontend>>,
+    pub auth: Option<Authorization>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +88,7 @@ impl ActiveProviders {
                         trusted: new.trusted,
                         url,
                         pubsub: vec![],
+                        auth: None,
                     },
                 );
             }
