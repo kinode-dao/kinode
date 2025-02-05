@@ -557,7 +557,9 @@ fn eth_config_convert(
                             use_as_provider: true,
                         }
                     }
-                    SettingsNodeOrRpcUrl::RpcUrl { url, auth } => eth::NodeOrRpcUrl::RpcUrl { url, auth },
+                    SettingsNodeOrRpcUrl::RpcUrl { url, auth } => {
+                        eth::NodeOrRpcUrl::RpcUrl { url, auth }
+                    }
                 },
                 trusted: true,
             }))
