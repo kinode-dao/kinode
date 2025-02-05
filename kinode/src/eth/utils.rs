@@ -36,7 +36,10 @@ pub fn providers_to_saved_configs(providers: &Providers) -> SavedConfigs {
                     .iter()
                     .map(|url_provider| ProviderConfig {
                         chain_id: *entry.key(),
-                        provider: NodeOrRpcUrl::RpcUrl(url_provider.url.clone()),
+                        provider: NodeOrRpcUrl::RpcUrl {
+                            url: url_provider.url.clone(),
+                            auth: url_provider.auth.clone(),
+                        },
                         trusted: url_provider.trusted,
                     })
                     .chain(entry.nodes.iter().map(|node_provider| ProviderConfig {

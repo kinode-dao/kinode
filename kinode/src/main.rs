@@ -127,7 +127,10 @@ async fn main() {
             lib::eth::ProviderConfig {
                 chain_id: CHAIN_ID,
                 trusted: true,
-                provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
+                provider: lib::eth::NodeOrRpcUrl::RpcUrl {
+                    url: rpc.to_string(),
+                    auth: None, // TODO
+                },
             },
         );
         // save the new provider config
@@ -150,10 +153,10 @@ async fn main() {
             lib::eth::ProviderConfig {
                 chain_id: 31337,
                 trusted: true,
-                provider: lib::eth::NodeOrRpcUrl::RpcUrl(format!(
-                    "ws://localhost:{}",
-                    local_chain_port
-                )),
+                provider: lib::eth::NodeOrRpcUrl::RpcUrl {
+                    url: format!("ws://localhost:{local_chain_port}"),
+                    auth: None,
+                },
             },
         );
     }

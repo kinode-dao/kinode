@@ -203,7 +203,6 @@ pub struct ProviderConfig {
     pub chain_id: u64,
     pub trusted: bool,
     pub provider: NodeOrRpcUrl,
-    pub auth: Option<Authorization>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
@@ -212,14 +211,17 @@ pub enum NodeOrRpcUrl {
         kns_update: crate::core::KnsUpdate,
         use_as_provider: bool, // false for just-routers inside saved config
     },
-    RpcUrl(String),
+    RpcUrl {
+        url: String,
+        auth: Option<Authorization>,
+    },
 }
 
 impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
     fn eq(&self, other: &str) -> bool {
         match self {
             NodeOrRpcUrl::Node { kns_update, .. } => kns_update.name == other,
-            NodeOrRpcUrl::RpcUrl(url) => url == other,
+            NodeOrRpcUrl::RpcUrl { url, .. } => url == other,
         }
     }
 }

@@ -80,7 +80,7 @@ impl ActiveProviders {
                     },
                 );
             }
-            NodeOrRpcUrl::RpcUrl(url) => {
+            NodeOrRpcUrl::RpcUrl { url, auth } => {
                 self.remove_provider(&url);
                 self.urls.insert(
                     0,
@@ -88,7 +88,7 @@ impl ActiveProviders {
                         trusted: new.trusted,
                         url,
                         pubsub: vec![],
-                        auth: None,
+                        auth,
                     },
                 );
             }
