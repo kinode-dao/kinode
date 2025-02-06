@@ -205,7 +205,7 @@ pub struct ProviderConfig {
     pub provider: NodeOrRpcUrl,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Hash, Eq, PartialEq)]
 pub enum NodeOrRpcUrl {
     Node {
         kns_update: crate::core::KnsUpdate,
@@ -223,5 +223,48 @@ impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
             NodeOrRpcUrl::Node { kns_update, .. } => kns_update.name == other,
             NodeOrRpcUrl::RpcUrl { url, .. } => url == other,
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeOrRpcUrl {
+    fn deserialize<D>(serde::deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum RpcUrlHelper {
+            String(String),
+            Struct {
+                url: String,
+                auth: Option<Authorization>,
+            },
+        }
+
+        #[derive(Deserialize)]
+        #[serde(tag = "type")]
+        enum Helper {
+            Node {
+                kns_update: crate::core::KnsUpdate,
+                use_as_provider: bool,
+            },
+            RpcUrl(RpcUrlHelper),
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+
+        Ok(match helper {
+            Helper::Node {
+                kns_update,
+                use_as_provider,
+            } => NodeOrRpcUrl::Node {
+                kns_update,
+                use_as_provider,
+            },
+            Helper::RpcUrl(url_helper) => match url_helper {
+                RpcUrlHelper::String(url) => NodeOrRpcUrl::RpcUrl { url, auth: None },
+                RpcUrlHelper::Struct { url, auth } => NodeOrRpcUrl::RpcUrl { url, auth },
+            },
+        })
     }
 }
