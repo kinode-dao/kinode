@@ -1,4 +1,4 @@
-import { multicallAbi, kimapAbi, mechAbi, KIMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "./";
+import { multicallAbi, kimapAbi, mechAbi, KIMAP, MULTICALL, KINO_ACCOUNT_IMPL, KINO_ACCOUNT_UPGRADABLE_IMPL } from "./";
 import { encodeFunctionData, encodePacked, stringToHex } from "viem";
 
 export function encodeMulticalls(metadataUri: string, metadataHash: string) {
