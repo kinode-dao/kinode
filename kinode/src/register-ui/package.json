@@ -8,7 +8,6 @@
     "@rainbow-me/rainbowkit": "^2.1.6",
     "@szhsin/react-menu": "^4.1.0",
     "@tanstack/react-query": "^5.45.1",
-    "argon2-browser": "^1.18.0",
     "idna-uts46-hx": "^6.0.4",
     "is-valid-domain": "^0.1.6",
     "jazzicon": "^1.5.0",
@@ -51,7 +50,6 @@
   "devDependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
-    "@types/argon2-browser": "^1.18.4",
     "@types/node": "^20.10.4",
     "@types/react-dom": "^18.2.17",
     "@types/react-modal": "^3.16.2",
