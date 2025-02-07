@@ -19,6 +19,7 @@ tokio = { version = "1.28", features = ["rt-multi-thread"] }
 [dependencies]
 alloy = { version = "0.8.1", features = [
     "json-rpc",
+    "rpc-client",
     "rpc-types",
     "rpc-types-eth",
 ] }

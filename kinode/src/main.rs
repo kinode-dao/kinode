@@ -6,6 +6,7 @@ use lib::types::core::{
     NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, ProcessVerbosity,
     Request, KERNEL_PROCESS_ID,
 };
+use lib::types::eth::RpcUrlConfigInput;
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::collections::HashMap;
@@ -84,6 +85,7 @@ async fn main() {
         .get_one::<u8>("verbosity")
         .expect("verbosity required");
     let rpc = matches.get_one::<String>("rpc");
+    let rpc_config = matches.get_one::<String>("rpc-config");
     let password = matches.get_one::<String>("password");
 
     // logging mode is toggled at runtime by CTRL+L
@@ -129,10 +131,34 @@ async fn main() {
                 trusted: true,
                 provider: lib::eth::NodeOrRpcUrl::RpcUrl {
                     url: rpc.to_string(),
-                    auth: None, // TODO
+                    auth: None,
                 },
             },
         );
+        // save the new provider config
+        tokio::fs::write(
+            home_directory_path.join(".eth_providers"),
+            serde_json::to_string(&eth_provider_config).unwrap(),
+        )
+        .await
+        .expect("failed to save new eth provider config!");
+    }
+    if let Some(rpc_config) = rpc_config {
+        let rpc_config = tokio::fs::read_to_string(rpc_config).await.expect("could not read rpc-config");
+        let rpc_config: Vec<RpcUrlConfigInput> = serde_json::from_str(&rpc_config).expect("rpc-config had invalid format");
+        for RpcUrlConfigInput { url, auth } in rpc_config {
+            eth_provider_config.insert(
+                0,
+                lib::eth::ProviderConfig {
+                    chain_id: CHAIN_ID,
+                    trusted: true,
+                    provider: lib::eth::NodeOrRpcUrl::RpcUrl {
+                        url,
+                        auth,
+                    },
+                },
+            );
+        }
         // save the new provider config
         tokio::fs::write(
             home_directory_path.join(".eth_providers"),
@@ -731,6 +757,7 @@ fn build_command() -> Command {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
+        .arg(arg!(--"rpc-config" <RPC_CONFIG_PATH> "Add WebSockets RPC URLs specified in config at boot"))
         .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"))
         .arg(
             arg!(--"max-log-size" <MAX_LOG_SIZE_BYTES> "Max size of all logs in bytes; setting to 0 -> no size limit (default 16MB)")

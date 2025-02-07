@@ -1,4 +1,4 @@
-use alloy::rpc::client::Authorization;
+use alloy::transports::Authorization as AlloyAuthorization;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -227,7 +227,7 @@ impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
 }
 
 impl<'de> Deserialize<'de> for NodeOrRpcUrl {
-    fn deserialize<D>(serde::deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -242,7 +242,6 @@ impl<'de> Deserialize<'de> for NodeOrRpcUrl {
         }
 
         #[derive(Deserialize)]
-        #[serde(tag = "type")]
         enum Helper {
             Node {
                 kns_update: crate::core::KnsUpdate,
@@ -266,5 +265,28 @@ impl<'de> Deserialize<'de> for NodeOrRpcUrl {
                 RpcUrlHelper::Struct { url, auth } => NodeOrRpcUrl::RpcUrl { url, auth },
             },
         })
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct RpcUrlConfigInput {
+    pub url: String,
+    pub auth: Option<Authorization>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
+pub enum Authorization {
+    Basic(String),
+    Bearer(String),
+    Raw(String),
+}
+
+impl From<Authorization> for AlloyAuthorization {
+    fn from(auth: Authorization) -> AlloyAuthorization {
+        match auth {
+            Authorization::Basic(value) => AlloyAuthorization::Basic(value),
+            Authorization::Bearer(value) => AlloyAuthorization::Bearer(value),
+            Authorization::Raw(value) => AlloyAuthorization::Raw(value),
+        }
     }
 }

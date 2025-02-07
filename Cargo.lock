@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "kinode"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -3680,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "kinode_lib"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "lib",
 ]
@@ -3714,6 +3714,28 @@ name = "kinode_process_lib"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "342fca3e6bb09cbbb4d8166f40577daeb607ae8380a002491ece6e51c71092de"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http 1.2.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "regex",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "1.1.0"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -3812,7 +3834,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -5685,7 +5707,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.1.0",
  "rmp-serde",
  "serde",
  "serde_json",

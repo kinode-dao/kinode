@@ -1,6 +1,5 @@
 use alloy::providers::{Provider, RootProvider};
 use alloy::pubsub::PubSubFrontend;
-use alloy::rpc::client::Authorization;
 use alloy::rpc::json_rpc::RpcError;
 use anyhow::Result;
 use dashmap::DashMap;
