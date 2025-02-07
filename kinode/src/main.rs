@@ -111,6 +111,7 @@ async fn main() {
     );
 
     // default eth providers/routers
+    let mut is_eth_provider_config_updated = false;
     let mut eth_provider_config: lib::eth::SavedConfigs = if let Ok(contents) =
         tokio::fs::read_to_string(home_directory_path.join(".eth_providers")).await
     {
@@ -121,6 +122,7 @@ async fn main() {
             serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap()
         }
     } else {
+        is_eth_provider_config_updated = true;
         serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap()
     };
     if let Some(rpc) = rpc {
@@ -135,18 +137,12 @@ async fn main() {
                 },
             },
         );
-        // save the new provider config
-        tokio::fs::write(
-            home_directory_path.join(".eth_providers"),
-            serde_json::to_string(&eth_provider_config).unwrap(),
-        )
-        .await
-        .expect("failed to save new eth provider config!");
+        is_eth_provider_config_updated = true;
     }
     if let Some(rpc_config) = rpc_config {
         let rpc_config = tokio::fs::read_to_string(rpc_config)
             .await
-            .expect("could not read rpc-config");
+            .expect("cant read rpc-config");
         let rpc_config: Vec<RpcUrlConfigInput> =
             serde_json::from_str(&rpc_config).expect("rpc-config had invalid format");
         for RpcUrlConfigInput { url, auth } in rpc_config {
@@ -159,6 +155,9 @@ async fn main() {
                 },
             );
         }
+        is_eth_provider_config_updated = true;
+    }
+    if is_eth_provider_config_updated {
         // save the new provider config
         tokio::fs::write(
             home_directory_path.join(".eth_providers"),

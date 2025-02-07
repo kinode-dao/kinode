@@ -192,7 +192,21 @@ impl SavedConfigs {
     /// insert while enforcing that each config is unique
     pub fn insert(&mut self, index: usize, config: ProviderConfig) {
         // filter out any configs which are the same as incoming config
-        self.0.retain(|c| c != &config);
+        if let NodeOrRpcUrl::RpcUrl { ref url, .. } = config.provider {
+            // remove old occurrences with matching URLs to make sure
+            //  auth is what was passed in and never an old value
+            self.0.retain(|c| {
+                if let NodeOrRpcUrl::RpcUrl {
+                    url: ref old_url, ..
+                } = c.provider
+                {
+                    return url != old_url;
+                }
+                c != &config
+            });
+        } else {
+            self.0.retain(|c| c != &config);
+        }
         self.0.insert(index, config);
     }
 }
