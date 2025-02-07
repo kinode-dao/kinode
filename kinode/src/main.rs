@@ -144,18 +144,18 @@ async fn main() {
         .expect("failed to save new eth provider config!");
     }
     if let Some(rpc_config) = rpc_config {
-        let rpc_config = tokio::fs::read_to_string(rpc_config).await.expect("could not read rpc-config");
-        let rpc_config: Vec<RpcUrlConfigInput> = serde_json::from_str(&rpc_config).expect("rpc-config had invalid format");
+        let rpc_config = tokio::fs::read_to_string(rpc_config)
+            .await
+            .expect("could not read rpc-config");
+        let rpc_config: Vec<RpcUrlConfigInput> =
+            serde_json::from_str(&rpc_config).expect("rpc-config had invalid format");
         for RpcUrlConfigInput { url, auth } in rpc_config {
             eth_provider_config.insert(
                 0,
                 lib::eth::ProviderConfig {
                     chain_id: CHAIN_ID,
                     trusted: true,
-                    provider: lib::eth::NodeOrRpcUrl::RpcUrl {
-                        url,
-                        auth,
-                    },
+                    provider: lib::eth::NodeOrRpcUrl::RpcUrl { url, auth },
                 },
             );
         }
