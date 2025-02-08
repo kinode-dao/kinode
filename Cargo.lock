@@ -94,7 +94,7 @@ name = "alias"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -822,7 +822,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -1405,7 +1405,7 @@ name = "cat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1469,7 +1469,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -1488,7 +1488,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "pleco",
  "serde",
  "serde_json",
@@ -1686,7 +1686,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 name = "contacts"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -2263,7 +2263,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -2275,7 +2275,7 @@ name = "downloads"
 version = "0.5.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -2312,7 +2312,7 @@ dependencies = [
 name = "echo"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "wit-bindgen",
 ]
 
@@ -2580,7 +2580,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -2734,7 +2734,7 @@ dependencies = [
 name = "get_block"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2927,7 +2927,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 name = "help"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "wit-bindgen",
 ]
 
@@ -2950,7 +2950,7 @@ dependencies = [
 name = "hi"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2983,7 +2983,7 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3426,7 +3426,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -3604,7 +3604,7 @@ name = "kfetch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3616,7 +3616,7 @@ name = "kill"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3711,32 +3711,9 @@ dependencies = [
 
 [[package]]
 name = "kinode_process_lib"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "342fca3e6bb09cbbb4d8166f40577daeb607ae8380a002491ece6e51c71092de"
-dependencies = [
- "alloy",
- "alloy-primitives",
- "alloy-sol-macro",
- "alloy-sol-types",
- "anyhow",
- "bincode",
- "http 1.2.0",
- "mime_guess",
- "rand 0.8.5",
- "regex",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "url",
- "wit-bindgen",
-]
-
-[[package]]
-name = "kinode_process_lib"
-version = "1.1.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=5a06504#5a0650434356a4f0a161c836813a36ba60536299"
+checksum = "cc52bc9def424aee19bcba656aafc2f80d5178951d0782c9896686ebedbc9b16"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -3806,7 +3783,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "hex",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "rmp-serde",
  "serde",
@@ -4043,7 +4020,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "regex",
  "serde",
  "serde_json",
@@ -4212,7 +4189,7 @@ dependencies = [
 name = "net-diagnostics"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4255,7 +4232,7 @@ dependencies = [
 name = "node_info"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -4582,7 +4559,7 @@ dependencies = [
 name = "peer"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4592,7 +4569,7 @@ dependencies = [
 name = "peers"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -5226,7 +5203,7 @@ dependencies = [
 name = "reset"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -5238,7 +5215,7 @@ name = "reset-store"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -5707,7 +5684,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "kinode_process_lib 1.1.0",
+ "kinode_process_lib 1.0.1",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -5928,7 +5905,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -6130,7 +6107,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -6144,7 +6121,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
@@ -6419,7 +6396,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6752,7 +6729,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "kinode_process_lib 1.0.1",
  "process_macros",
  "serde",
  "serde_json",
