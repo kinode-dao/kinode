@@ -85,7 +85,8 @@ async fn main() {
         .get_one::<u8>("verbosity")
         .expect("verbosity required");
     let rpc = matches.get_one::<String>("rpc");
-    let rpc_config = matches.get_one::<String>("rpc-config");
+    let rpc_config = matches.get_one::<String>("rpc-config")
+        .map(|p| std::fs::canonicalize(&p).expect(&format!("specified rpc-config path {p} not found")));
     let password = matches.get_one::<String>("password");
 
     // logging mode is toggled at runtime by CTRL+L
