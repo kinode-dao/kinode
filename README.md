@@ -82,6 +82,7 @@ Here are all the available boot flags for the Kinode runtime:
 - `-l, --logging-off`: Run in non-logging mode. Do not write terminal output to file in .terminal_logs directory.
 - `-d, --detached`: Run in detached mode (don't accept input on terminal).
 - `--rpc <RPC>`: Add a WebSockets Optimism RPC URL at boot.
+- `--rpc-config <RPC_CONFIG_PATH>`: Add WebSockets RPC URLs specified in config at boot
 - `--password <PASSWORD>`: Node password (in double quotes).
 - `--max-log-size <MAX_LOG_SIZE_BYTES>`: Max size of all terminal logs in bytes. Setting to 0 means no size limit. Default is 16MB.
 - `--number-log-files <NUMBER_LOG_FILES>`: Number of terminal logs to rotate. Default is 4.
@@ -94,6 +95,22 @@ When compiled with the `simulation-mode` feature, two additional flags are avail
 - `--fake-node-name <NAME>`: Name of fake node to boot.
 - `--fakechain-port <FAKECHAIN_PORT>`: Port to bind to for local anvil-run blockchain.
 
+`RPC_CONFIG_PATH` must point to a file containing a JSON array of JSON objects with required key of `"url"` (whose value must be a string) and optional field of `"auth"`.
+`"auth"`, if included, must be a JSON object with one key, either `"Basic"`, `"Bearer"`, or `"Raw"`, and whose value must be a string.
+E.g.:
+
+```json
+[
+    {
+        "url": "wss://path.to.my.rpc.com",
+        "auth": {
+            "Bearer": "this.is.my.bearer.key"
+        }
+    }
+]
+```
+
+This allows authorization headers to be set for RPC providers.
 
 ## Configuring the ETH RPC Provider
 
