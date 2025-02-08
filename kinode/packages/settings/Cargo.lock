@@ -60,6 +60,7 @@ dependencies = [
  "alloy-rpc-client",
  "alloy-rpc-types",
  "alloy-serde",
+ "alloy-transport",
  "alloy-transport-http",
 ]
 
@@ -1759,9 +1760,9 @@ dependencies = [
 
 [[package]]
 name = "kinode_process_lib"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "342fca3e6bb09cbbb4d8166f40577daeb607ae8380a002491ece6e51c71092de"
+checksum = "cc52bc9def424aee19bcba656aafc2f80d5178951d0782c9896686ebedbc9b16"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -2679,7 +2680,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
- "bincode",
  "kinode_process_lib",
  "rmp-serde",
  "serde",

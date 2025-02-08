@@ -47,6 +47,7 @@ struct UrlProvider {
     pub url: String,
     /// a list, in case we build multiple providers for the same url
     pub pubsub: Vec<RootProvider<PubSubFrontend>>,
+    pub auth: Option<Authorization>,
 }
 
 #[derive(Debug, Clone)]
@@ -78,7 +79,7 @@ impl ActiveProviders {
                     },
                 );
             }
-            NodeOrRpcUrl::RpcUrl(url) => {
+            NodeOrRpcUrl::RpcUrl { url, auth } => {
                 self.remove_provider(&url);
                 self.urls.insert(
                     0,
@@ -86,6 +87,7 @@ impl ActiveProviders {
                         trusted: new.trusted,
                         url,
                         pubsub: vec![],
+                        auth,
                     },
                 );
             }

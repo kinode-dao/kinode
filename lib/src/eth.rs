@@ -1,3 +1,4 @@
+use alloy::transports::Authorization as AlloyAuthorization;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -191,7 +192,21 @@ impl SavedConfigs {
     /// insert while enforcing that each config is unique
     pub fn insert(&mut self, index: usize, config: ProviderConfig) {
         // filter out any configs which are the same as incoming config
-        self.0.retain(|c| c != &config);
+        if let NodeOrRpcUrl::RpcUrl { ref url, .. } = config.provider {
+            // remove old occurrences with matching URLs to make sure
+            //  auth is what was passed in and never an old value
+            self.0.retain(|c| {
+                if let NodeOrRpcUrl::RpcUrl {
+                    url: ref old_url, ..
+                } = c.provider
+                {
+                    return url != old_url;
+                }
+                c != &config
+            });
+        } else {
+            self.0.retain(|c| c != &config);
+        }
         self.0.insert(index, config);
     }
 }
@@ -204,20 +219,88 @@ pub struct ProviderConfig {
     pub provider: NodeOrRpcUrl,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Hash, Eq, PartialEq)]
 pub enum NodeOrRpcUrl {
     Node {
         kns_update: crate::core::KnsUpdate,
         use_as_provider: bool, // false for just-routers inside saved config
     },
-    RpcUrl(String),
+    RpcUrl {
+        url: String,
+        auth: Option<Authorization>,
+    },
 }
 
 impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
     fn eq(&self, other: &str) -> bool {
         match self {
             NodeOrRpcUrl::Node { kns_update, .. } => kns_update.name == other,
-            NodeOrRpcUrl::RpcUrl(url) => url == other,
+            NodeOrRpcUrl::RpcUrl { url, .. } => url == other,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for NodeOrRpcUrl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum RpcUrlHelper {
+            String(String),
+            Struct {
+                url: String,
+                auth: Option<Authorization>,
+            },
+        }
+
+        #[derive(Deserialize)]
+        enum Helper {
+            Node {
+                kns_update: crate::core::KnsUpdate,
+                use_as_provider: bool,
+            },
+            RpcUrl(RpcUrlHelper),
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+
+        Ok(match helper {
+            Helper::Node {
+                kns_update,
+                use_as_provider,
+            } => NodeOrRpcUrl::Node {
+                kns_update,
+                use_as_provider,
+            },
+            Helper::RpcUrl(url_helper) => match url_helper {
+                RpcUrlHelper::String(url) => NodeOrRpcUrl::RpcUrl { url, auth: None },
+                RpcUrlHelper::Struct { url, auth } => NodeOrRpcUrl::RpcUrl { url, auth },
+            },
+        })
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct RpcUrlConfigInput {
+    pub url: String,
+    pub auth: Option<Authorization>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
+pub enum Authorization {
+    Basic(String),
+    Bearer(String),
+    Raw(String),
+}
+
+impl From<Authorization> for AlloyAuthorization {
+    fn from(auth: Authorization) -> AlloyAuthorization {
+        match auth {
+            Authorization::Basic(value) => AlloyAuthorization::Basic(value),
+            Authorization::Bearer(value) => AlloyAuthorization::Bearer(value),
+            Authorization::Raw(value) => AlloyAuthorization::Raw(value),
         }
     }
 }

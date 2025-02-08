@@ -10,7 +10,11 @@ use url::Url;
 pub async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
     match Url::parse(&provider.url)?.scheme() {
         "ws" | "wss" => {
-            let ws = WsConnect::new(provider.url.to_string());
+            let ws = WsConnect {
+                url: provider.url.to_string(),
+                auth: provider.auth.clone().map(|a| a.into()),
+                config: None,
+            };
 
             let client = tokio::time::timeout(
                 std::time::Duration::from_secs(10),
@@ -36,7 +40,10 @@ pub fn providers_to_saved_configs(providers: &Providers) -> SavedConfigs {
                     .iter()
                     .map(|url_provider| ProviderConfig {
                         chain_id: *entry.key(),
-                        provider: NodeOrRpcUrl::RpcUrl(url_provider.url.clone()),
+                        provider: NodeOrRpcUrl::RpcUrl {
+                            url: url_provider.url.clone(),
+                            auth: url_provider.auth.clone(),
+                        },
                         trusted: url_provider.trusted,
                     })
                     .chain(entry.nodes.iter().map(|node_provider| ProviderConfig {

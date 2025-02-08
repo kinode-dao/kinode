@@ -557,7 +557,9 @@ fn eth_config_convert(
                             use_as_provider: true,
                         }
                     }
-                    SettingsNodeOrRpcUrl::RpcUrl(url) => eth::NodeOrRpcUrl::RpcUrl(url),
+                    SettingsNodeOrRpcUrl::RpcUrl(url) => {
+                        eth::NodeOrRpcUrl::RpcUrl { url, auth: None }
+                    }
                 },
                 trusted: true,
             }))
@@ -666,7 +668,7 @@ fn make_widget(state: &SettingsState) -> String {
                                     None
                                 }
                             }
-                            eth::NodeOrRpcUrl::RpcUrl(url) => Some(format!(
+                            eth::NodeOrRpcUrl::RpcUrl { url, .. } => Some(format!( // TODO
                                 "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
                                 url,
                                 config.chain_id

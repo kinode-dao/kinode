@@ -7,7 +7,7 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-kinode_process_lib = "1.0.0"
+kinode_process_lib = "1.0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 process_macros = "0.1"
