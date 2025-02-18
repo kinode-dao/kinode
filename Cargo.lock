@@ -94,7 +94,7 @@ name = "alias"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -822,7 +822,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -1405,7 +1405,7 @@ name = "cat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1469,7 +1469,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -1488,7 +1488,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "pleco",
  "serde",
  "serde_json",
@@ -1686,7 +1686,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 name = "contacts"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -2263,7 +2263,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -2275,7 +2275,7 @@ name = "downloads"
 version = "0.5.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -2312,7 +2312,7 @@ dependencies = [
 name = "echo"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "wit-bindgen",
 ]
 
@@ -2580,7 +2580,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "rand 0.8.5",
  "serde",
@@ -2734,7 +2734,7 @@ dependencies = [
 name = "get_block"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2927,7 +2927,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 name = "help"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "wit-bindgen",
 ]
 
@@ -2950,7 +2950,7 @@ dependencies = [
 name = "hi"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2983,7 +2983,7 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3165,6 +3165,93 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "hyperdrive"
+version = "1.1.0"
+dependencies = [
+ "aes-gcm",
+ "alloy",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "base64 0.22.1",
+ "bincode",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dashmap 5.5.3",
+ "futures",
+ "generic-array",
+ "hex",
+ "hmac",
+ "http 1.2.0",
+ "indexmap",
+ "jwt",
+ "lazy_static",
+ "lib",
+ "libc",
+ "nohash-hasher",
+ "open",
+ "public-ip",
+ "rand 0.8.5",
+ "regex",
+ "reqwest",
+ "ring",
+ "rmp-serde",
+ "rocksdb",
+ "route-recognizer",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "snow",
+ "socket2 0.5.8",
+ "static_dir",
+ "tokio",
+ "tokio-tungstenite 0.21.0",
+ "unicode-segmentation",
+ "unicode-width 0.1.14",
+ "url",
+ "warp",
+ "wasmtime",
+ "wasmtime-wasi",
+ "zip 1.1.4",
+]
+
+[[package]]
+name = "hyperdrive_lib"
+version = "1.1.0"
+dependencies = [
+ "lib",
+]
+
+[[package]]
+name = "hyperware_process_lib"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c80405897b911c54f87418e96185d847aaa6ba68ccd79271d1422f9b87932b7d"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http 1.2.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "regex",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "url",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3426,7 +3513,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -3604,7 +3691,7 @@ name = "kfetch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3616,127 +3703,16 @@ name = "kill"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "serde",
  "serde_json",
- "wit-bindgen",
-]
-
-[[package]]
-name = "kinode"
-version = "1.0.0"
-dependencies = [
- "aes-gcm",
- "alloy",
- "alloy-primitives",
- "alloy-sol-macro",
- "alloy-sol-types",
- "anyhow",
- "argon2",
- "async-trait",
- "base64 0.22.1",
- "bincode",
- "chrono",
- "clap",
- "crossterm",
- "dashmap 5.5.3",
- "futures",
- "generic-array",
- "hex",
- "hmac",
- "http 1.2.0",
- "indexmap",
- "jwt",
- "lazy_static",
- "lib",
- "libc",
- "nohash-hasher",
- "open",
- "public-ip",
- "rand 0.8.5",
- "regex",
- "reqwest",
- "ring",
- "rmp-serde",
- "rocksdb",
- "route-recognizer",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "snow",
- "socket2 0.5.8",
- "static_dir",
- "tokio",
- "tokio-tungstenite 0.21.0",
- "unicode-segmentation",
- "unicode-width 0.1.14",
- "url",
- "warp",
- "wasmtime",
- "wasmtime-wasi",
- "zip 1.1.4",
-]
-
-[[package]]
-name = "kinode_lib"
-version = "1.0.0"
-dependencies = [
- "lib",
-]
-
-[[package]]
-name = "kinode_process_lib"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "832da3db18c1328e3263f41303d34663d8d90217a8c85f778472f59f8397bf85"
-dependencies = [
- "alloy",
- "alloy-primitives",
- "alloy-sol-macro",
- "alloy-sol-types",
- "anyhow",
- "bincode",
- "http 1.2.0",
- "mime_guess",
- "rand 0.8.5",
- "regex",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "url",
- "wit-bindgen",
-]
-
-[[package]]
-name = "kinode_process_lib"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "342fca3e6bb09cbbb4d8166f40577daeb607ae8380a002491ece6e51c71092de"
-dependencies = [
- "alloy",
- "alloy-primitives",
- "alloy-sol-macro",
- "alloy-sol-types",
- "anyhow",
- "bincode",
- "http 1.2.0",
- "mime_guess",
- "rand 0.8.5",
- "regex",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "url",
  "wit-bindgen",
 ]
 
 [[package]]
 name = "kit"
-version = "0.9.1"
-source = "git+https://github.com/kinode-dao/kit?tag=v0.9.1#a6c304fa9e1da1eab98574c5f337bf9af3386ec1"
+version = "1.0.0"
+source = "git+https://github.com/hyperware-ai/kit?rev=b594b6f#b594b6f858280ac8806d9e78d61a6f929240ce4b"
 dependencies = [
  "alloy",
  "alloy-sol-macro",
@@ -3751,7 +3727,7 @@ dependencies = [
  "fs-err",
  "git2",
  "hex",
- "kinode_process_lib 0.10.2",
+ "hyperware_process_lib",
  "nix 0.27.1",
  "proc-macro2",
  "regex",
@@ -3783,7 +3759,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "hex",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "rmp-serde",
  "serde",
@@ -3812,7 +3788,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -4020,7 +3996,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "regex",
  "serde",
  "serde_json",
@@ -4189,7 +4165,7 @@ dependencies = [
 name = "net-diagnostics"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4232,7 +4208,7 @@ dependencies = [
 name = "node_info"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -4559,7 +4535,7 @@ dependencies = [
 name = "peer"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4569,7 +4545,7 @@ dependencies = [
 name = "peers"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -5203,7 +5179,7 @@ dependencies = [
 name = "reset"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -5215,7 +5191,7 @@ name = "reset-store"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -5684,8 +5660,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -5906,7 +5881,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -6108,7 +6083,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -6122,7 +6097,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",
@@ -6397,7 +6372,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6730,7 +6705,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 1.0.0",
+ "hyperware_process_lib",
  "process_macros",
  "serde",
  "serde_json",

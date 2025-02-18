@@ -77,7 +77,7 @@ fn build_and_zip_package(
 
 fn main() -> anyhow::Result<()> {
     let matches = Command::new("build-packages")
-        .about("Build the core Kinode packages.")
+        .about("Build the hyperdrive packages.")
         .arg(
             Arg::new("FEATURES")
                 .long("features")
@@ -98,7 +98,7 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
-    // kinode/target/debug/build-package
+    // hyperdrive/target/debug/build-package
     let current_exe_dir = std::env::current_exe() // build-package
         .unwrap();
     let top_level_dir = current_exe_dir
@@ -106,10 +106,10 @@ fn main() -> anyhow::Result<()> {
         .unwrap()
         .parent() // target/
         .unwrap()
-        .parent() // kinode/
+        .parent() // hyperdrive/
         .unwrap();
-    let kinode_dir = top_level_dir.join("kinode");
-    let packages_dir = kinode_dir.join("packages");
+    let hyperdrive_dir = top_level_dir.join("hyperdrive");
+    let packages_dir = hyperdrive_dir.join("packages");
 
     let mut features = matches
         .get_many::<String>("FEATURES")

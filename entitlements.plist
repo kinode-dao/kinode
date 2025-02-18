@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Required for running Kinode binary on macOS. Do I know why? Absolutely not.
+	<!-- Required for running hyperdrive binary on macOS. Do I know why? Absolutely not.
 	     Do not touch without testing after notarizing, changes break things unexpectedly.-->
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>

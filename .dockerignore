@@ -14,8 +14,8 @@ packages/**/pkg/*.wasm
 packages/**/wit
 */**/node_modules
 .env
-kinode/src/bootstrapped_processes.rs
-kinode/packages/**/wasi_snapshot_preview1.wasm
+hyperdrive/src/bootstrapped_processes.rs
+hyperdrive/packages/**/wasi_snapshot_preview1.wasm
 
 LICENSE
 pull_request_template.md

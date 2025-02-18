@@ -42,9 +42,9 @@ def main():
 
     default_excludes = [
         '.git',
-        'kinode/packages',
+        'hyperdrive/packages',
         'target',
-        'kinode/src/register-ui/node_modules',
+        'hyperdrive/src/register-ui/node_modules',
     ]
     excludes = default_excludes + args.exclude
 
@@ -57,7 +57,7 @@ def main():
     ]
 
     # Run the build scripts
-    build_script_dir = os.path.join(repo_root, 'kinode', 'src', 'register-ui')
+    build_script_dir = os.path.join(repo_root, 'hyperdrive', 'src', 'register-ui')
     build_script_name = 'build.sh'
     build_script = os.path.join(build_script_dir, build_script_name)
     if not os.path.exists(build_script):

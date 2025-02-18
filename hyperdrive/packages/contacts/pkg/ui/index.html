@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link rel="stylesheet" href="/hyperware.css">
+    <link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,700,500,600,300&display=swap" rel="stylesheet" />
+    <script src="/our.js"></script>
+    <script>
+        document.title = "contacts - " + window.our.node;
+    </script>
+    <style>
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        p,
+        a,
+        li {
+            font-family: 'Kode Mono', monospace;
+        }
+
+        #title {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            max-width: 720px;
+            min-width: 300px;
+            margin: 0 auto;
+        }
+
+        #title h1 {
+            margin: 0;
+            flex-grow: 1;
+            text-align: right;
+        }
+
+        #title button {
+            margin-right: 20px;
+        }
+
+        #edit {
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        #contacts-article {
+            margin: 20px;
+        }
+
+        main {
+            margin: 0 auto;
+            padding: 20px;
+            max-width: 960px;
+            min-width: 300px;
+        }
+
+        form.add-contact {
+            max-width: 400px;
+        }
+
+        #contacts {
+            list-style: none;
+        }
+
+        .contact:first-of-type {
+            margin-top: 10px;
+        }
+
+        .contact {
+            padding: 10px;
+            border: 1px solid var(--tasteful-dark);
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: grid;
+            gap: 10px;
+            grid-auto-flow: row;
+            grid-template-areas:
+                "name name delete"
+                "fields fields fields"
+                "add-field add-field add-field";
+        }
+
+        .contact h3 {
+            grid-area: name;
+        }
+
+        .contact ul {
+            grid-area: fields;
+            list-style: none;
+            max-width: 100%;
+            min-width: 0;
+        }
+
+        .contact ul li {
+            font-size: 1em;
+        }
+
+        form.delete-contact {
+            grid-area: delete;
+        }
+
+        form.add-field {
+            grid-area: add-field;
+            max-width: 400px;
+        }
+
+        .remove-field {
+            background-color: var(--tasteful-red);
+            font-size: 0.8em;
+            padding: 3px 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <span id="title">
+        <button id="back-button"><svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 576 512"
+                height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
+                <path
+                    d="M280.37 148.26L96 300.11V464a16 16 0 0 0 16 16l112.06-.29a16 16 0 0 0 15.92-16V368a16 16 0 0 1 16-16h64a16 16 0 0 1 16 16v95.64a16 16 0 0 0 16 16.05L464 480a16 16 0 0 0 16-16V300L295.67 148.26a12.19 12.19 0 0 0-15.3 0zM571.6 251.47L488 182.56V44.05a12 12 0 0 0-12-12h-56a12 12 0 0 0-12 12v72.61L318.47 43a48 48 0 0 0-61 0L4.34 251.47a12 12 0 0 0-1.6 16.9l25.5 31A12 12 0 0 0 45.15 301l235.22-193.74a12.19 12.19 0 0 1 15.3 0L530.9 301a12 12 0 0 0 16.9-1.6l25.5-31a12 12 0 0 0-1.7-16.93z">
+                </path>
+            </svg></button>
+        <h1>contacts</h1>
+    </span>
+    <main>
+        <article id="edit">
+            <form id="add-contact">
+                <input type="text" name="node" placeholder="node name (e.g. my-friend.os)">
+                <button type="submit">add new contact</button>
+            </form>
+        </article>
+
+        <article id="contacts-article">
+            <ul id="contacts"></ul>
+        </article>
+
+        <script src="/contacts:contacts:sys/script.js"></script>
+    </main>
+</body>
+
+</html>
