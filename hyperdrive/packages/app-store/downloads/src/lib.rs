@@ -673,7 +673,9 @@ fn try_next_mirror(
             // gather and send error to main.
             let node_tries = metadata.mirrors_failed;
             let auto_download_error = AutoDownloadCompleteRequest::Err(AutoDownloadError {
-                package_id: crate::hyperware::process::main::PackageId::from_process_lib(package_id),
+                package_id: crate::hyperware::process::main::PackageId::from_process_lib(
+                    package_id,
+                ),
                 version_hash,
                 tries: node_tries,
             });

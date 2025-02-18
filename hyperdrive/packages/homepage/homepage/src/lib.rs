@@ -149,7 +149,12 @@ fn init(our: Address) {
         .bind_http_path("/order", http_config)
         .expect("failed to bind /order");
 
-    hyperware_process_lib::homepage::add_to_homepage("Clock", None, None, Some(&make_clock_widget()));
+    hyperware_process_lib::homepage::add_to_homepage(
+        "Clock",
+        None,
+        None,
+        Some(&make_clock_widget()),
+    );
 
     // load persisted app order
     let mut persisted_app_order =

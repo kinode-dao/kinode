@@ -643,7 +643,9 @@ fn handle_eth_log(
         println!("kicking off auto-update for {package_id}");
         Request::to(("our", "downloads", "app-store", "sys"))
             .body(&DownloadRequest::AutoUpdate(AutoUpdateRequest {
-                package_id: crate::hyperware::process::main::PackageId::from_process_lib(package_id),
+                package_id: crate::hyperware::process::main::PackageId::from_process_lib(
+                    package_id,
+                ),
                 metadata: metadata.unwrap().into(),
             }))
             .send()

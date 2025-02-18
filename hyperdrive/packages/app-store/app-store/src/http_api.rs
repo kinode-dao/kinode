@@ -370,7 +370,8 @@ fn serve_paths(
                     format!("Missing id").into_bytes(),
                 ));
             };
-            let package_id = crate::hyperware::process::main::PackageId::from_process_lib(package_id);
+            let package_id =
+                crate::hyperware::process::main::PackageId::from_process_lib(package_id);
             let resp = Request::to(("our", "downloads", "app-store", "sys"))
                 .body(serde_json::to_vec(&DownloadRequest::GetFiles(Some(
                     package_id,
@@ -407,7 +408,8 @@ fn serve_paths(
                 ));
             };
 
-            let package_id = crate::hyperware::process::main::PackageId::from_process_lib(package_id);
+            let package_id =
+                crate::hyperware::process::main::PackageId::from_process_lib(package_id);
 
             // get the file corresponding to the version hash, extract manifest and return.
             let resp = Request::to(("our", "downloads", "app-store", "sys"))
@@ -535,7 +537,9 @@ fn serve_paths(
                 .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
 
             let download_request = DownloadRequest::LocalDownload(LocalDownloadRequest {
-                package_id: crate::hyperware::process::main::PackageId::from_process_lib(package_id),
+                package_id: crate::hyperware::process::main::PackageId::from_process_lib(
+                    package_id,
+                ),
                 download_from: download_from.clone(),
                 desired_version_hash: version_hash,
             });
@@ -612,7 +616,9 @@ fn serve_paths(
                     let resp = Request::new()
                         .target(downloads)
                         .body(serde_json::to_vec(&DownloadRequest::StartMirroring(
-                            crate::hyperware::process::main::PackageId::from_process_lib(package_id),
+                            crate::hyperware::process::main::PackageId::from_process_lib(
+                                package_id,
+                            ),
                         ))?)
                         .send_and_await_response(5)??;
                     let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
@@ -632,7 +638,9 @@ fn serve_paths(
                     let resp = Request::new()
                         .target(downloads)
                         .body(serde_json::to_vec(&DownloadRequest::StopMirroring(
-                            crate::hyperware::process::main::PackageId::from_process_lib(package_id),
+                            crate::hyperware::process::main::PackageId::from_process_lib(
+                                package_id,
+                            ),
                         ))?)
                         .send_and_await_response(5)??;
                     let msg = serde_json::from_slice::<DownloadResponse>(resp.body())?;
@@ -673,7 +681,9 @@ fn serve_paths(
                 .map(|s| s.to_string())
                 .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
             let download_request = DownloadRequest::RemoveFile(RemoveFileRequest {
-                package_id: crate::hyperware::process::main::PackageId::from_process_lib(package_id),
+                package_id: crate::hyperware::process::main::PackageId::from_process_lib(
+                    package_id,
+                ),
                 version_hash: version_hash,
             });
 

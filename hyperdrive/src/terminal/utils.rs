@@ -88,7 +88,7 @@ pub fn splash(
             stdout,
             crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta),
             crossterm::style::Print(format!(
-r#"    ▄█    █▄    ▄██   ▄      ▄███████▄    ▄████████    ▄████████
+                r#"    ▄█    █▄    ▄██   ▄      ▄███████▄    ▄████████    ▄████████
    ███    ███   ███   ██▄   ███    ███   ███    ███   ███    ███
    ███    ███   ███▄▄▄███   ███    ███   ███    █▀    ███    ███
   ▄███▄▄▄▄███▄▄ ▀▀▀▀▀▀███   ███    ███  ▄███▄▄▄      ▄███▄▄▄▄██▀
