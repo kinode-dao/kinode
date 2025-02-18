@@ -17,7 +17,6 @@ members = [
     "hyperdrive/packages/app-store/app-store", "hyperdrive/packages/app-store/ft-worker",
     "hyperdrive/packages/app-store/downloads", "hyperdrive/packages/app-store/chain",
     "hyperdrive/packages/app-store/download", "hyperdrive/packages/app-store/install", "hyperdrive/packages/app-store/uninstall", "hyperdrive/packages/app-store/reset-store",
-    "hyperdrive/packages/chess/chess",
     "hyperdrive/packages/contacts/contacts",
     "hyperdrive/packages/homepage/homepage",
     "hyperdrive/packages/kns-indexer/kns-indexer", "hyperdrive/packages/kns-indexer/get-block", "hyperdrive/packages/settings/settings", "hyperdrive/packages/kns-indexer/reset",
