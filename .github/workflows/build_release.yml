@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-    - name: build and deploy kinode
+    - name: build and deploy hypedriver
       uses: appleboy/ssh-action@master
       with:
         host: ${{ secrets.SSH_PROD_API_HOST }}
@@ -19,4 +19,4 @@ jobs:
         port: ${{ secrets.SSH_PROD_PORT }}
         command_timeout: 60m
         script: |
-          curl -X PUT http://localhost:8000/monitor/build-kinode
+          curl -X PUT http://localhost:8000/monitor/build-hyperdrive

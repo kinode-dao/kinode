@@ -13,12 +13,12 @@ wit/
 /home
 */**/node_modules
 .env
-kinode/src/bootstrapped_processes.rs
-kinode/packages/**/wasi_snapshot_preview1.wasm
+hyperdrive/src/bootstrapped_processes.rs
+hyperdrive/packages/**/wasi_snapshot_preview1.wasm
 
-kinode/packages/app-store/pkg/ui/*
-kinode/packages/homepage/pkg/ui/*
-kinode/packages/settings/pkg/ui/*
-kinode/src/register-ui/build/
-kinode/src/register-ui/dist/
-kinode/packages/docs/pkg/ui
+hyperdrive/packages/app-store/pkg/ui/*
+hyperdrive/packages/homepage/pkg/ui/*
+hyperdrive/packages/settings/pkg/ui/*
+hyperdrive/src/register-ui/build/
+hyperdrive/src/register-ui/dist/
+hyperdrive/packages/docs/pkg/ui

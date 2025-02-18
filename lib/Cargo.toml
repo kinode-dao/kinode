@@ -1,11 +1,11 @@
 [package]
 name = "lib"
 authors = ["Sybil Technologies AG"]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
-homepage = "https://kinode.org"
-repository = "https://github.com/kinode-dao/kinode"
+homepage = "https://hyperware.ai"
+repository = "https://github.com/hyperware-ai/hyperware"
 license = "Apache-2.0"
 
 [lib]
@@ -19,6 +19,7 @@ tokio = { version = "1.28", features = ["rt-multi-thread"] }
 [dependencies]
 alloy = { version = "0.8.1", features = [
     "json-rpc",
+    "rpc-client",
     "rpc-types",
     "rpc-types-eth",
 ] }

@@ -10,4 +10,4 @@ ENV NVM_DIR=/root/.nvm \
 WORKDIR /input
 
 # Set the default command to run the build script
-CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && ./scripts/build-release.py && cp -r /tmp/kinode-release/* /output && chmod 664 /output/* && find . -user root -print0 2>/dev/null | xargs -0 rm -rf"]
+CMD ["/bin/bash", "-c", ". ~/.bashrc && . ~/.cargo/env && . $NVM_DIR/nvm.sh && ./scripts/build-release.py && cp -r /tmp/hyperdrive-release/* /output && chmod 664 /output/* && find . -user root -print0 2>/dev/null | xargs -0 rm -rf"]

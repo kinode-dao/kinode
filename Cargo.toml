@@ -1,11 +1,11 @@
 [package]
-name = "kinode_lib"
+name = "hyperdrive_lib"
 authors = ["Sybil Technologies AG"]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
-homepage = "https://kinode.org"
-repository = "https://github.com/kinode-dao/kinode"
+homepage = "https://hyperware.ai"
+repository = "https://github.com/hyperware-ai/hyperdrive"
 license = "Apache-2.0"
 
 [dependencies]
@@ -13,21 +13,21 @@ lib = { path = "lib" }
 
 [workspace]
 members = [
-    "lib", "kinode",
-    "kinode/packages/app-store/app-store", "kinode/packages/app-store/ft-worker",
-    "kinode/packages/app-store/downloads", "kinode/packages/app-store/chain",
-    "kinode/packages/app-store/download", "kinode/packages/app-store/install", "kinode/packages/app-store/uninstall", "kinode/packages/app-store/reset-store",
-    "kinode/packages/chess/chess",
-    "kinode/packages/contacts/contacts",
-    "kinode/packages/homepage/homepage",
-    "kinode/packages/kns-indexer/kns-indexer", "kinode/packages/kns-indexer/get-block", "kinode/packages/settings/settings", "kinode/packages/kns-indexer/reset",
-    "kinode/packages/kns-indexer/node-info", "kinode/packages/kns-indexer/state",
-    "kinode/packages/terminal/terminal",
-    "kinode/packages/terminal/alias", "kinode/packages/terminal/cat", "kinode/packages/terminal/echo",
-    "kinode/packages/terminal/help", "kinode/packages/terminal/hi", "kinode/packages/terminal/kfetch",
-    "kinode/packages/terminal/kill", "kinode/packages/terminal/m", "kinode/packages/terminal/top",
-    "kinode/packages/terminal/net-diagnostics", "kinode/packages/terminal/peer", "kinode/packages/terminal/peers",
-    "kinode/packages/tester/tester",
+    "lib", "hyperdrive",
+    "hyperdrive/packages/app-store/app-store", "hyperdrive/packages/app-store/ft-worker",
+    "hyperdrive/packages/app-store/downloads", "hyperdrive/packages/app-store/chain",
+    "hyperdrive/packages/app-store/download", "hyperdrive/packages/app-store/install", "hyperdrive/packages/app-store/uninstall", "hyperdrive/packages/app-store/reset-store",
+    "hyperdrive/packages/chess/chess",
+    "hyperdrive/packages/contacts/contacts",
+    "hyperdrive/packages/homepage/homepage",
+    "hyperdrive/packages/kns-indexer/kns-indexer", "hyperdrive/packages/kns-indexer/get-block", "hyperdrive/packages/settings/settings", "hyperdrive/packages/kns-indexer/reset",
+    "hyperdrive/packages/kns-indexer/node-info", "hyperdrive/packages/kns-indexer/state",
+    "hyperdrive/packages/terminal/terminal",
+    "hyperdrive/packages/terminal/alias", "hyperdrive/packages/terminal/cat", "hyperdrive/packages/terminal/echo",
+    "hyperdrive/packages/terminal/help", "hyperdrive/packages/terminal/hi", "hyperdrive/packages/terminal/kfetch",
+    "hyperdrive/packages/terminal/kill", "hyperdrive/packages/terminal/m", "hyperdrive/packages/terminal/top",
+    "hyperdrive/packages/terminal/net-diagnostics", "hyperdrive/packages/terminal/peer", "hyperdrive/packages/terminal/peers",
+    "hyperdrive/packages/tester/tester",
     "scripts/build-packages",
 ]
 default-members = ["lib"]

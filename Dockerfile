@@ -5,40 +5,40 @@ WORKDIR /tmp/download
 RUN apk update && apk add unzip wget --no-cache
 
 FROM downloader_start AS downloader_amd64
-ADD "https://github.com/kinode-dao/kinode/releases/download/${VERSION}/kinode-x86_64-unknown-linux-gnu.zip" kinode-x86_64-unknown-linux-gnu.zip
-RUN unzip kinode-x86_64-unknown-linux-gnu.zip
+ADD "https://github.com/hyperware-ai/hyperdrive/releases/download/${VERSION}/hyperdrive-x86_64-unknown-linux-gnu.zip" hyperdrive-x86_64-unknown-linux-gnu.zip
+RUN unzip hyperdrive-x86_64-unknown-linux-gnu.zip
 
 FROM downloader_start AS downloader_arm64
-ADD "https://github.com/kinode-dao/kinode/releases/download/${VERSION}/kinode-aarch64-unknown-linux-gnu.zip" kinode-aarch64-unknown-linux-gnu.zip
-RUN unzip kinode-aarch64-unknown-linux-gnu.zip
+ADD "https://github.com/hyperware-ai/hyperdrive/releases/download/${VERSION}/hyperdrive-aarch64-unknown-linux-gnu.zip" hyperdrive-aarch64-unknown-linux-gnu.zip
+RUN unzip hyperdrive-aarch64-unknown-linux-gnu.zip
 
 FROM downloader_${TARGETARCH} AS downloader
 
 FROM debian:12-slim
 
 # Create a non-root user and group
-RUN groupadd -r kinode && \
-    useradd -r -g kinode -d /kinode-home/home/kinode kinode
+RUN groupadd -r hyperdrive && \
+    useradd -r -g hyperdrive -d /hyperdrive-home/home/hyperdrive hyperdrive
 
 RUN apt-get update && \
     apt-get install openssl -y && \
     rm -rf /var/lib/apt/lists/*
 
-# Create directory for kinode and set permissions
-RUN mkdir -p /kinode-home/home/kinode && \
-    chown -R kinode:kinode /kinode-home
+# Create directory for hyperdrive and set permissions
+RUN mkdir -p /hyperdrive-home/home/hyperdrive && \
+    chown -R hyperdrive:hyperdrive /hyperdrive-home
 
-COPY --from=downloader /tmp/download/kinode /bin/kinode
-RUN chown kinode:kinode /bin/kinode && \
-    chmod 755 /bin/kinode
+COPY --from=downloader /tmp/download/hyperdrive /bin/hyperdrive
+RUN chown hyperdrive:hyperdrive /bin/hyperdrive && \
+    chmod 755 /bin/hyperdrive
 
 # Switch to non-root user
-USER kinode
+USER hyperdrive
 
-WORKDIR /kinode-home
+WORKDIR /hyperdrive-home
 
-ENTRYPOINT [ "/bin/kinode" ]
-CMD [ "/kinode-home" ]
+ENTRYPOINT [ "/bin/hyperdrive" ]
+CMD [ "/hyperdrive-home" ]
 
 EXPOSE 8080
 EXPOSE 9000
