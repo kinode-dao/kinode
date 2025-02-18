@@ -14,7 +14,7 @@
 
 ## Docs Update
 
-[Corresponding docs PR](https://github.com/kinode-dao/kinode-book/pull/my-pr-number)
+[Corresponding docs PR](https://github.com/hyperware-ai/hyperware-book/pull/my-pr-number)
 
 ## Notes
 

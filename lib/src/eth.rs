@@ -56,7 +56,7 @@ pub enum EthAction {
     },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
-    /// Raw request. Used by kinode_process_lib.
+    /// Raw request. Used by hyperware_process_lib.
     Request {
         chain_id: u64,
         method: String,
