@@ -1,20 +1,22 @@
 <p align="center">
-    <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/24c7982b-9d76-419a-96dc-ec4a25dda562">
+    <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/hyperware-ai/hyperdrive/assets/93405247/24c7982b-9d76-419a-96dc-ec4a25dda562">
     <br />
     <img src="https://img.shields.io/twitter/follow/Kinode">
 
 </p>
 
-Kinode is a general-purpose sovereign cloud computer, built for crypto.
+Hyperware is a general-purpose sovereign cloud computer, built for crypto.
+
+Hyperdrive is the runtime for Hyperware.
 
 This repo contains the core runtime and processes.
 Most developers need not build the runtime.
-Instead, check out the [Kinode book](https://book.kinode.org/), and in particular the ["My First App" tutorial](https://book.kinode.org/my_first_app/chapter_1.html).
+Instead, check out the [Hyperware Book](https://book.hyperware.ai/), and in particular the ["My First App" tutorial](https://book.hyperware.ai/my_first_app/chapter_1.html).
 
-If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/kinode-dao/kinode/tags).
-Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
+If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/hyperware-ai/hyperware/tags).
+Then follow the instructions to [install it](https://book.hyperware.ai/install.html) and [join the network](https://book.hyperware.ai/login.html).
 
-If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a line in `#dev-support`.
+If you have questions, join the [Hyperware discord](https://discord.gg/TCgdca5Bjt) and drop us a line in `#dev-support`.
 
 ## Setup
 
@@ -26,7 +28,7 @@ On certain operating systems, you may need to install these dependencies if they
 ```bash
 # Clone the repo.
 
-git clone git@github.com:kinode-dao/kinode.git
+git clone git@github.com:hyperware-ai/hyperware.git
 
 # Install Rust and some `cargo` tools so we can build the runtime and Wasm.
 
@@ -41,14 +43,14 @@ cargo install cargo-wasi
 # If you want to skip this step, build the packages with `cargo run -p build-packages -- --skip-build-frontend` to neglect building the frontends
 
 # Build the "distro" Wasm modules, then, build the runtime.
-# The compiled packages will be at `kinode/target/packages.zip`.
-# The compiled binary will be at `kinode/target/debug/kinode`.
-# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`).
+# The compiled packages will be at `hyperdrive/target/packages.zip`.
+# The compiled binary will be at `hyperdrive/target/debug/hyperdrive`.
+# OPTIONAL: --release flag (slower build; faster runtime; binary at `hyperdrive/target/release/hyperdrive`).
 
-cd kinode
+cd hyperdrive
 cargo run -p build-packages
 # OPTIONAL: --release flag
-cargo build -p kinode
+cargo build -p hyperdrive
 ```
 
 [To build on Windows](https://gist.github.com/nick1udwig/f2d39a3fc6ccc7f7ad2912e8d3aeaae0)
@@ -65,19 +67,19 @@ That report can be found [here](https://github.com/Enigma-Dark/security-review-r
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
 ```bash
-cargo run -p kinode -- home
+cargo run -p hyperdrive -- home
 ```
 
 On boot you will be prompted to navigate to `localhost:8080` or whatever HTTP port your node bound to: it will try 8080 and go up from there, or use the port passed with the `--port` boot flag. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
 
 #### Boot Flags
 
-Here are all the available boot flags for the Kinode runtime:
+Here are all the available boot flags for the Hyperdrive runtime:
 
 - `[home]`: (Required) Path to home directory.
 - `-p, --port <PORT>`: Port to bind for HTTP. Default is the first unbound port at or above 8080.
-- `--ws-port <PORT>`: Kinode internal WebSockets protocol port. Default is the first unbound port at or above 9000.
-- `--tcp-port <PORT>`: Kinode internal TCP protocol port. Default is the first unbound port at or above 10000.
+- `--ws-port <PORT>`: Hyperdrive internal WebSockets protocol port. Default is the first unbound port at or above 9000.
+- `--tcp-port <PORT>`: Hyperdrive internal TCP protocol port. Default is the first unbound port at or above 10000.
 - `-v, --verbosity <VERBOSITY>`: Verbosity level: higher (up to 3)is more verbose. Default is 0.
 - `-l, --logging-off`: Run in non-logging mode. Do not write terminal output to file in .terminal_logs directory.
 - `-d, --detached`: Run in detached mode (don't accept input on terminal).
@@ -114,9 +116,14 @@ This allows authorization headers to be set for RPC providers.
 
 ## Configuring the ETH RPC Provider
 
-By default, a node will use the [hardcoded providers](./kinode/src/eth/default_providers_mainnet.json) for the network it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/src/eth/default_providers_mainnet.json) for a template to create `.eth_providers`.
+By default, a node will use the [hardcoded providers](./hyperdrive/src/eth/default_providers_mainnet.json) for the network it is booted on.
+A node can use a WebSockets RPC URL directly, or use another node as a relay point.
+To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot).
+See the Hyperdrive Book for more docs, and see the [default providers file here](./hyperdrive/src/eth/default_providers_mainnet.json) for a template to create `.eth_providers`.
 
-You may also add a RPC provider or otherwise modify your configuration by sending messages from the terminal to the `eth:distro:sys` process. You can get one for free at `alchemy.com`. Use this message format to add a provider -- this will make your node's performance better when accessing a blockchain:
+You may also add a RPC provider or otherwise modify your configuration by sending messages from the terminal to the `eth:distro:sys` process.
+You can get one for free at `alchemy.com`.
+Use this message format to add a provider -- this will make your node's performance better when accessing a blockchain:
 
 ```
 m our@eth:distro:sys '{"AddProvider": {"chain_id": <SOME_CHAIN_ID>, "trusted": true, "provider": {"RpcUrl": "<WS_RPC_URL>"}}}'
@@ -126,9 +133,13 @@ You can also do the same thing by using the `--rpc` boot flag with an Optimism W
 
 ## Distro and Runtime processes
 
-The base OS install comes with certain runtime modules. These are interacted with in the same way as userspace processes, but are deeply ingrained to the system and the APIs they present at their Process IDs are assumed to be available by userspace processes. All of these are identified in the `distro:sys` package.
+Hyperdrive comes with certain runtime modules.
+These are interacted with in the same way as userspace processes, but are deeply ingrained to the system and the APIs they present at their Process IDs are assumed to be available by userspace processes.
+All of these are identified in the `distro:sys` package.
 
-This distribution of the OS also comes with userspace packages pre-installed. Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns-indexer`. Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
+Hyperdrive also comes with userspace packages pre-installed.
+Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns-indexer`.
+Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
 
 The runtime distro processes are:
 
@@ -156,7 +167,9 @@ The distro userspace packages are:
 - `terminal:sys`
 - `tester:sys` (used with `kit` for running test suites, only installed in `simulation-mode`)
 
-The `sys` publisher is not a real node ID, but it's also not a special case value. Packages, whether runtime or userspace, installed from disk when a node bootstraps do not have their package ID or publisher node ID validated. Packages installed (not injected locally, as is done during development) after a node has booted will have their publisher field validated.
+The `sys` publisher is not a real node ID, but it's also not a special case value.
+Packages, whether runtime or userspace, installed from disk when a node bootstraps do not have their package ID or publisher node ID validated.
+Packages installed (not injected locally, as is done during development) after a node has booted will have their publisher field validated.
 
 ## Terminal syntax
 
@@ -166,7 +179,8 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - CTRL+J to toggle debug mode
 - CTRL+S to step through events in debug mode
 
-- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file. On by default, this will write all events and verbose prints with timestamps.
+- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file.
+  On by default, this will write all events and verbose prints with timestamps.
 
 - CTRL+A to jump to beginning of input
 - CTRL+E to jump to end of input
@@ -213,11 +227,16 @@ A list of the terminal scripts included in this distro:
 
 ## Running as a Docker container
 
-This image expects a volume mounted at `/kinode-home`. This volume may be empty or may contain another Kinode's data. It will be used as the home directory of your Kinode.
+This image expects a volume mounted at `/hyperdrive-home`.
+This volume may be empty or may contain another nodes data.
+It will be used as the home directory of your node.
 
-The image includes EXPOSE directives for TCP port `8080` and TCP port `9000`. Port `8080` is used for serving the Kinode web dashboard over HTTP, and it may be mapped to a different port on the host. Port `9000` is optional and is only required for a direct node.
+The image includes EXPOSE directives for TCP port `8080` and TCP port `9000`.
+Port `8080` is used for serving the Hyperdrive web dashboard over HTTP, and it may be mapped to a different port on the host.
+Port `9000` is optional and is only required for a direct node.
 
-If you are running a direct node, you must map port `9000` to the same port on the host and on your router. Otherwise, your Kinode will not be able to connect to the rest of the network as connection info is written to the chain, and this information is based on the view from inside the Docker container.
+If you are running a direct node, you must map port `9000` to the same port on the host and on your router.
+Otherwise, your node will not be able to connect to the rest of the network as connection info is written to the chain, and this information is based on the view from inside the Docker container.
 
 To build a local Docker image, run the following command in this project root.
 
@@ -226,10 +245,10 @@ To build a local Docker image, run the following command in this project root.
 export VERSION=0.9.8
 
 # Build for your system's architecture
-docker build . -t kinode-${VERSION} --build-arg VERSION=v${VERSION} --platform linux/amd64
+docker build . -t hyperdrive-${VERSION} --build-arg VERSION=v${VERSION} --platform linux/amd64
 
 # Build a multiarch image
-docker buildx build . -t kinode-${VERSION} --build-arg VERSION=v${VERSION} --platform arm64,amd64
+docker buildx build . -t hyperdrive-${VERSION} --build-arg VERSION=v${VERSION} --platform arm64,amd64
 ```
 
 To run, for example for a node named `helloworld.os`:
@@ -237,18 +256,18 @@ To run, for example for a node named `helloworld.os`:
 ```bash
 export NODENAME=helloworld.os
 
-docker volume create kinode-${NODENAME}
+docker volume create hyperdrive-${NODENAME}
 
-docker run -p 8080:8080 --rm -it --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+docker run -p 8080:8080 --rm -it --name hyperdrive-${NODENAME} --mount type=volume,source=hyperdrive-${NODENAME},destination=/hyperdrive-home hyperdrive-${VERSION}
 ```
 
 which will launch your Kinode container attached to the terminal.
 Alternatively you can run it detached:
 ```
-docker run -p 8080:8080 --rm -dt --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION}
+docker run -p 8080:8080 --rm -dt --name hyperdrive-${NODENAME} --mount type=volume,source=hyperdrive-${NODENAME},destination=/hyperdrive-home hyperdrive-${VERSION}
 ```
 Note that the `-t` flag *must* be passed.
 If it is not passed, you must pass the `--detached` argument to the Kinode binary, i.e.
 ```
-docker run -p 8080:8080 --rm -d --name kinode-${NODENAME} --mount type=volume,source=kinode-${NODENAME},destination=/kinode-home kinode-${VERSION} /kinode-home --detached
+docker run -p 8080:8080 --rm -d --name hyperdrive-${NODENAME} --mount type=volume,source=hyperdrive-${NODENAME},destination=/hyperdrive-home hyperdrive-${VERSION} /hyperdrive-home --detached
 ```

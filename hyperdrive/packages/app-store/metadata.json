@@ -1,0 +1,18 @@
+{
+    "name": "App Store",
+    "description": "A package manager + app store for Hyperware.",
+    "image": "",
+    "properties": {
+        "package_name": "app-store",
+        "publisher": "sys",
+        "current_version": "1.0.0",
+        "mirrors": [],
+        "code_hashes": {
+            "1.0.0": ""
+        },
+        "wit_version": 1,
+        "dependencies": []
+    },
+    "external_url": "https://hyperware.ai",
+    "animation_url": ""
+}

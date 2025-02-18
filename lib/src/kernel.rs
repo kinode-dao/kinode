@@ -581,7 +581,7 @@ impl From<PersistedProcess> for UserspacePersistedProcess {
     }
 }
 
-/// Represents the metadata associated with a kinode package, which is an ERC721 compatible token.
+/// Represents the metadata associated with a hyperware package, which is an ERC721 compatible token.
 /// This is deserialized from the `metadata.json` file in a package.
 /// Fields:
 /// - `name`: An optional field representing the display name of the package. This does not have to be unique, and is not used for identification purposes.
@@ -600,7 +600,7 @@ pub struct Erc721Metadata {
     pub properties: Erc721Properties,
 }
 
-/// Represents critical fields of a kinode package in an ERC721 compatible format.
+/// Represents critical fields of a hyperware package in an ERC721 compatible format.
 /// This follows the [ERC1155](https://github.com/ethereum/ercs/blob/master/ERCS/erc-1155.md#erc-1155-metadata-uri-json-schema) metadata standard.
 ///
 /// Fields:

@@ -25,7 +25,7 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
     print(f"BUILDING {feature if feature else 'default'}")
     print("=" * 50 + "\n")
 
-    zip_prefix = f"kinode-{architecture}-{os_name}"
+    zip_prefix = f"hyperdrive-{architecture}-{os_name}"
     release_env = os.environ.copy()
     release_env["CARGO_PROFILE_RELEASE_LTO"] = "fat"
     release_env["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = "1"
@@ -39,7 +39,7 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
             #stderr=subprocess.PIPE,
         )
         subprocess.run(
-            ["cargo", "build", "--release", "-p", "kinode", "--features", feature],
+            ["cargo", "build", "--release", "-p", "hyperdrive", "--features", feature],
             check=True,
             env=release_env,
             #stdout=subprocess.PIPE,
@@ -49,14 +49,14 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
     else:
         subprocess.run(["cargo", "run", "-p", "build-packages"], check=True)
         subprocess.run(
-            ["cargo", "build", "--release", "-p", "kinode"],
+            ["cargo", "build", "--release", "-p", "hyperdrive"],
             check=True,
             env=release_env,
         )
         zip_name = f"{zip_prefix}.zip"
 
     # Move and rename the binary
-    binary_name = "kinode"
+    binary_name = "hyperdrive"
     source_path = f"target/release/{binary_name}"
     dest_path = os.path.join(tmp_dir, binary_name)
     shutil.move(source_path, dest_path)
@@ -75,7 +75,7 @@ def main():
     architecture, os_name = get_system_info()
 
     # Modify the temporary directory path
-    tmp_dir = "/tmp/kinode-release"
+    tmp_dir = "/tmp/hyperdrive-release"
     if os.path.exists(tmp_dir):
         shutil.rmtree(tmp_dir)
     os.makedirs(tmp_dir)

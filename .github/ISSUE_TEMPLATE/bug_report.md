@@ -26,7 +26,7 @@ If applicable, add screenshots to help explain your problem.
 **Desktop (please complete the following information):**
  - OS: [e.g. iOS]
  - Browser [e.g. chrome, safari]
- - Kinode version [e.g. v1.0.0]
+ - hyperdrive version [e.g. v1.0.0]
  - process_lib version [e.g. v1.0.0]
 
 **Additional context**
