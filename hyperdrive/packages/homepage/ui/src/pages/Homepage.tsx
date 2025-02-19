@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import KinodeBird from "../components/KinodeBird";
+import HyperwareLogo from "../components/HyperwareLogo";
 import useHomepageStore from "../store/homepageStore";
 import AllApps from "../components/AllApps";
 import Widgets from "../components/Widgets";
@@ -43,7 +43,7 @@ function Homepage() {
     <div id="homepage">
       <div className="container">
         <header>
-          <KinodeBird />
+          <HyperwareLogo />
           <h2>
             {new Date().getHours() < 4
               ? "Good evening" // midnight to 4am

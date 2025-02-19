@@ -59,4 +59,4 @@ function HyperdriveHome({ knsName }: OsHomeProps) {
     )
 }
 
-export default KinodeHome
+export default HyperdriveHome
