@@ -16,16 +16,16 @@
         "public": false,
         "request_networking": false,
         "request_capabilities": [
-            "kns-indexer:kns-indexer:sys",
+            "hns-indexer:hns-indexer:sys",
             {
-                "process": "kns-indexer:kns-indexer:sys",
+                "process": "hns-indexer:hns-indexer:sys",
                 "params": {
                     "root": true
                 }
             }
         ],
         "grant_capabilities": [
-            "kns-indexer:kns-indexer:sys"
+            "hns-indexer:hns-indexer:sys"
         ],
         "wit_version": 1
     },
@@ -34,10 +34,10 @@
         "public": false,
         "request_networking": false,
         "request_capabilities": [
-            "kns-indexer:kns-indexer:sys"
+            "hns-indexer:hns-indexer:sys"
         ],
         "grant_capabilities": [
-            "kns-indexer:kns-indexer:sys"
+            "hns-indexer:hns-indexer:sys"
         ],
         "wit_version": 1
     },
@@ -46,10 +46,10 @@
         "public": false,
         "request_networking": false,
         "request_capabilities": [
-            "kns-indexer:kns-indexer:sys"
+            "hns-indexer:hns-indexer:sys"
         ],
         "grant_capabilities": [
-            "kns-indexer:kns-indexer:sys"
+            "hns-indexer:hns-indexer:sys"
         ],
         "wit_version": 1
     }

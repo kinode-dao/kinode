@@ -35,7 +35,7 @@ pub async fn receiver(ext: IdentityExt, data: NetData) -> Result<()> {
         Ok(ws) => ws,
         Err(_e) => {
             return Err(anyhow::anyhow!(
-                "net: fatal error: can't listen on port {ws_port}, update your KNS identity or free up that port"
+                "net: fatal error: can't listen on port {ws_port}, update your HNS identity or free up that port"
             ));
         }
     };
@@ -250,11 +250,11 @@ async fn recv_connection(
     // <- s, se
     let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut socket).await?;
 
-    // now validate this handshake payload against the KNS PKI
+    // now validate this handshake payload against the HNS PKI
     let their_id = data
         .pki
         .get(&their_handshake.name)
-        .ok_or(anyhow!("unknown KNS name '{}'", their_handshake.name))?;
+        .ok_or(anyhow!("unknown HNS name '{}'", their_handshake.name))?;
     validate_handshake(
         &their_handshake,
         noise
@@ -341,7 +341,7 @@ async fn connect_with_handshake(
     // <- e, ee, s, es
     let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut socket).await?;
 
-    // now validate this handshake payload against the KNS PKI
+    // now validate this handshake payload against the HNS PKI
     validate_handshake(
         &their_handshake,
         noise
@@ -414,7 +414,7 @@ async fn connect_with_handshake_via_router(
     // <- s, se
     let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut socket).await?;
 
-    // now validate this handshake payload against the KNS PKI
+    // now validate this handshake payload against the HNS PKI
     validate_handshake(
         &their_handshake,
         noise

@@ -1,5 +1,5 @@
 use crate::{keygen, sol::*};
-use crate::{KIMAP_ADDRESS, MULTICALL_ADDRESS};
+use crate::{HYPERMAP_ADDRESS, MULTICALL_ADDRESS};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::pubsub::PubSubFrontend;
 use alloy::rpc::client::WsConnect;
@@ -310,7 +310,7 @@ async fn handle_boot(
     networking_keypair: Arc<Vec<u8>>,
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
-    let kimap = EthAddress::from_str(KIMAP_ADDRESS).unwrap();
+    let hypermap = EthAddress::from_str(HYPERMAP_ADDRESS).unwrap();
     let mut our = our.as_ref().clone();
 
     our.name = info.username;
@@ -349,7 +349,7 @@ async fn handle_boot(
     let get_call = getCall { namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(get_call));
 
-    let tx = TransactionRequest::default().to(kimap).input(tx_input);
+    let tx = TransactionRequest::default().to(hypermap).input(tx_input);
 
     // this call can fail if the indexer has not caught up to the transaction
     // that just got confirmed on our frontend. for this reason, we retry
@@ -360,7 +360,7 @@ async fn handle_boot(
             Ok(get) => {
                 let Ok(node_info) = getCall::abi_decode_returns(&get, false) else {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Failed to decode kimap entry from return bytes"),
+                        warp::reply::json(&"Failed to decode hypermap entry from return bytes"),
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
                     .into_response());
@@ -370,10 +370,10 @@ async fn handle_boot(
                 let chain_id: u64 = 8453; // base
 
                 let domain = eip712_domain! {
-                    name: "Kimap",
+                    name: "Hypermap",
                     version: "1",
                     chain_id: chain_id,
-                    verifying_contract: kimap,
+                    verifying_contract: hypermap,
                 };
 
                 let boot = Boot {
@@ -570,7 +570,7 @@ pub async fn assign_routing(
     tcp_networking_port: (u16, bool),
 ) -> anyhow::Result<()> {
     let multicall = EthAddress::from_str(MULTICALL_ADDRESS)?;
-    let kimap = EthAddress::from_str(KIMAP_ADDRESS)?;
+    let hypermap = EthAddress::from_str(HYPERMAP_ADDRESS)?;
 
     let netkey_hash =
         FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~net-key.{}", our.name)));
@@ -582,7 +582,7 @@ pub async fn assign_routing(
 
     let multicalls = vec![
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(
                 getCall {
                     namehash: netkey_hash,
@@ -591,15 +591,15 @@ pub async fn assign_routing(
             ),
         },
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(getCall { namehash: ws_hash }.abi_encode()),
         },
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(getCall { namehash: tcp_hash }.abi_encode()),
         },
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(getCall { namehash: ip_hash }.abi_encode()),
         },
     ];
@@ -609,11 +609,11 @@ pub async fn assign_routing(
     let tx = TransactionRequest::default().to(multicall).input(tx_input);
 
     let Ok(multicall_return) = provider.call(&tx).await else {
-        return Err(anyhow::anyhow!("Failed to fetch node IP data from kimap"));
+        return Err(anyhow::anyhow!("Failed to fetch node IP data from hypermap"));
     };
 
     let Ok(results) = aggregateCall::abi_decode_returns(&multicall_return, false) else {
-        return Err(anyhow::anyhow!("Failed to decode kimap multicall data"));
+        return Err(anyhow::anyhow!("Failed to decode hypermap multicall data"));
     };
 
     let netkey = getCall::abi_decode_returns(&results.returnData[0], false)?;

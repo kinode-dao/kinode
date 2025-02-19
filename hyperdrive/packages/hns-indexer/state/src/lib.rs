@@ -1,9 +1,9 @@
-use crate::hyperware::process::kns_indexer::{GetStateRequest, IndexerRequest, IndexerResponse};
+use crate::hyperware::process::hns_indexer::{GetStateRequest, IndexerRequest, IndexerResponse};
 use hyperware_process_lib::{eth, script, Address, Message, Request};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "kns-indexer-sys-v0",
+    world: "hns-indexer-sys-v0",
     generate_unused_types: true,
     additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
@@ -13,12 +13,12 @@ fn init(_our: Address, _args: String) -> String {
     // we don't take any args
 
     let Ok(Message::Response { body, .. }) =
-        Request::to(("our", "kns-indexer", "kns-indexer", "sys"))
+        Request::to(("our", "hns-indexer", "hns-indexer", "sys"))
             .body(IndexerRequest::GetState(GetStateRequest { block: 0 }))
             .send_and_await_response(10)
             .unwrap()
     else {
-        return "failed to get state from kns-indexer".to_string();
+        return "failed to get state from hns-indexer".to_string();
     };
     let Ok(IndexerResponse::GetState(state)) = body.try_into() else {
         return "failed to deserialize state".to_string();

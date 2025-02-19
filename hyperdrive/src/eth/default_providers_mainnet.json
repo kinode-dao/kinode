@@ -5,7 +5,7 @@
         "provider": {
             "Node": {
                 "use_as_provider": true,
-                "kns_update": {
+                "hns_update": {
                     "name": "eth-provider.kino",
                     "owner": "",
                     "node": "",
@@ -27,7 +27,7 @@
         "provider": {
             "Node": {
                 "use_as_provider": true,
-                "kns_update": {
+                "hns_update": {
                     "name": "optimism-provider.kino",
                     "owner": "",
                     "node": "",
@@ -49,7 +49,7 @@
         "provider": {
             "Node": {
                 "use_as_provider": true,
-                "kns_update": {
+                "hns_update": {
                     "name": "base-provider.kino",
                     "owner": "",
                     "node": "",
@@ -71,7 +71,7 @@
         "provider": {
             "Node": {
                 "use_as_provider": true,
-                "kns_update": {
+                "hns_update": {
                     "name": "sepolia-provider.kino",
                     "owner": "",
                     "node": "",

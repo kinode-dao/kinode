@@ -7,7 +7,7 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-hyperware_process_lib = "1.0.2"
+hyperware_process_lib = "1.0.3"
 rmp-serde = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }
 wit-bindgen = "0.36.0"

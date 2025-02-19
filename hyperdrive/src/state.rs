@@ -1,5 +1,5 @@
 use lib::types::core::{
-    check_process_id_kimap_safe, Address, Capability, Erc721Metadata, KernelMessage, LazyLoadBlob,
+    check_process_id_hypermap_safe, Address, Capability, Erc721Metadata, KernelMessage, LazyLoadBlob,
     Message, MessageReceiver, MessageSender, NetworkErrorSender, OnExit, PackageManifestEntry,
     PersistedProcess, PrintSender, Printout, ProcessId, ProcessMap, Request, Response,
     ReverseCapIndex, StateAction, StateError, StateResponse, KERNEL_PROCESS_ID, STATE_PROCESS_ID,
@@ -69,8 +69,8 @@ pub async fn load_state(
 
     let processes = process_map.keys().cloned().collect::<Vec<_>>();
     for process in processes {
-        if check_process_id_kimap_safe(&process).is_err() {
-            println!("bootstrap: removing non-Kimap-safe process {process}\n(all process IDs must contain only a-z, 0-9, `-`, and `.`s in the publisher)\r");
+        if check_process_id_hypermap_safe(&process).is_err() {
+            println!("bootstrap: removing non-Hypermap-safe process {process}\n(all process IDs must contain only a-z, 0-9, `-`, and `.`s in the publisher)\r");
             process_map.remove(&process);
         }
     }

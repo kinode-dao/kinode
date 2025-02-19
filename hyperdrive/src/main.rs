@@ -61,7 +61,7 @@ pub const CHAIN_ID: u64 = 31337; // fakenet
 
 pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 pub const KINO_ACCOUNT_IMPL: &str = "0x000000000012d439e33aAD99149d52A5c6f980Dc";
-pub const KIMAP_ADDRESS: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
+pub const HYPERMAP_ADDRESS: &str = "0x000000000033e5CCbC52Ec7BDa87dB768f9aA93F";
 
 #[tokio::main]
 async fn main() {
@@ -395,8 +395,8 @@ async fn main() {
             .0
             .into_iter()
             .filter_map(|config| {
-                if let lib::eth::NodeOrRpcUrl::Node { kns_update, .. } = config.provider {
-                    Some(kns_update)
+                if let lib::eth::NodeOrRpcUrl::Node { hns_update, .. } = config.provider {
+                    Some(hns_update)
                 } else {
                     None
                 }

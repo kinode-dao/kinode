@@ -15,8 +15,8 @@ interface MintCustomNameProps extends PageProps { }
 function MintCustom({
     direct,
     setDirect,
-    knsName,
-    setKnsName,
+    hnsName,
+    setHnsName,
     setNetworkingKey,
     setIpAddress,
     setWsPort,
@@ -30,7 +30,7 @@ function MintCustom({
     const { data: hash, sendTransaction, isPending, isError, error } = useSendTransaction({
         mutation: {
             onSuccess: (data) => {
-                addRecentTransaction({ hash: data, description: `Mint ${knsName}` });
+                addRecentTransaction({ hash: data, description: `Mint ${hnsName}` });
             }
         }
     });
@@ -68,7 +68,7 @@ function MintCustom({
         const initCall = await generateNetworkingKeys({
             direct,
             our_address: address,
-            label: knsName,
+            label: hnsName,
             setNetworkingKey,
             setIpAddress,
             setWsPort,
@@ -77,11 +77,11 @@ function MintCustom({
             reset: false,
         });
 
-        setKnsName(formData.get('full-kns-name') as string)
+        setHnsName(formData.get('full-hns-name') as string)
 
         const name = formData.get('name') as string
 
-        console.log("full kns name", formData.get('full-kns-name'))
+        console.log("full hns name", formData.get('full-hns-name'))
         console.log("name", name)
 
         const data = encodeFunctionData({
@@ -128,8 +128,8 @@ function MintCustom({
                                 <p className="form-label">
                                     Register a name on a different top-level zone -- this will likely fail if that zone's requirements are not met
                                 </p>
-                                <input type="text" name="name" placeholder="Enter kimap name" />
-                                <input type="text" name="full-kns-name" placeholder="Enter full KNS name" />
+                                <input type="text" name="name" placeholder="Enter hypermap name" />
+                                <input type="text" name="full-hns-name" placeholder="Enter full HNS name" />
                                 <input type="text" name="tba" placeholder="Enter TBA to mint under" />
                                 <DirectCheckbox {...{ direct, setDirect }} />
                                 <div className="button-group">

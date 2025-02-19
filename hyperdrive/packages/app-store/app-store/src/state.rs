@@ -1,5 +1,5 @@
 use crate::{hyperware::process::downloads::DownloadError, utils, VFS_TIMEOUT};
-use hyperware_process_lib::{get_state, kimap, set_state, vfs, PackageId};
+use hyperware_process_lib::{get_state, hypermap, set_state, vfs, PackageId};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 pub enum AppStoreLogError {
     NoBlockNumber,
     GetNameError,
-    DecodeLogError(kimap::DecodeLogError),
+    DecodeLogError(hypermap::DecodeLogError),
     PackageHashMismatch,
     InvalidPublisherName,
     MetadataNotFound,

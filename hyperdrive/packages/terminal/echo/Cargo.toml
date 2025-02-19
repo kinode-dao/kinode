@@ -7,7 +7,7 @@ edition = "2021"
 simulation-mode = []
 
 [dependencies]
-hyperware_process_lib = "1.0.2"
+hyperware_process_lib = "1.0.3"
 wit-bindgen = "0.36.0"
 
 [lib]

@@ -10,19 +10,19 @@ import { PageProps } from "../lib/types";
 import { MULTICALL, generateNetworkingKeys, mechAbi } from "../abis";
 import { Tooltip } from "../components/Tooltip";
 import DirectCheckbox from "../components/DirectCheckbox";
-import EnterKnsName from "../components/EnterKnsName";
+import EnterHnsName from "../components/EnterHnsName";
 
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit";
 
 interface ResetProps extends PageProps { }
 
-function ResetKnsName({
+function ResetHnsName({
   direct,
   setDirect,
   setReset,
-  knsName,
-  setKnsName,
+  hnsName,
+  setHnsName,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
@@ -36,7 +36,7 @@ function ResetKnsName({
   const { data: hash, writeContract, isPending, isError, error } = useWriteContract({
     mutation: {
       onSuccess: (data) => {
-        addRecentTransaction({ hash: data, description: `Reset KNS ID: ${name}` });
+        addRecentTransaction({ hash: data, description: `Reset HNS ID: ${name}` });
       }
     }
   });
@@ -46,7 +46,7 @@ function ResetKnsName({
     });
   const addRecentTransaction = useAddRecentTransaction();
 
-  const [name, setName] = useState<string>(knsName);
+  const [name, setName] = useState<string>(hnsName);
   const [nameValidities, setNameValidities] = useState<string[]>([])
   const [tba, setTba] = useState<string>("");
   const [triggerNameCheck, setTriggerNameCheck] = useState<boolean>(false);
@@ -74,7 +74,7 @@ function ResetKnsName({
         return;
       }
 
-      setKnsName(name);
+      setHnsName(name);
 
       try {
         const data = await generateNetworkingKeys({
@@ -132,7 +132,7 @@ function ResetKnsName({
                     Node ID to reset:
                   </Tooltip>
                 </h3>
-                <EnterKnsName {...{ address, name, setName, triggerNameCheck, nameValidities, setNameValidities, setTba, isReset: true }} />
+                <EnterHnsName {...{ address, name, setName, triggerNameCheck, nameValidities, setNameValidities, setTba, isReset: true }} />
                 <DirectCheckbox {...{ direct, setDirect }} />
                 <p>
                   A reset will not delete any data. It only updates the networking information that your node publishes onchain.
@@ -157,4 +157,4 @@ function ResetKnsName({
     </div>
   );
 }
-export default ResetKnsName;
+export default ResetHnsName;

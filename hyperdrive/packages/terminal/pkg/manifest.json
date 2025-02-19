@@ -19,9 +19,9 @@
             "http-server:distro:sys",
             "http-client:distro:sys",
             "kernel:distro:sys",
-            "kns-indexer:kns-indexer:sys",
+            "hns-indexer:hns-indexer:sys",
             {
-                "process": "kns-indexer:kns-indexer:sys",
+                "process": "hns-indexer:hns-indexer:sys",
                 "params": {
                     "root": true
                 }

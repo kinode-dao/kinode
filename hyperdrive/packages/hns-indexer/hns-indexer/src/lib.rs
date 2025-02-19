@@ -1,12 +1,12 @@
-use crate::hyperware::process::kns_indexer::{
+use crate::hyperware::process::hns_indexer::{
     IndexerRequest, IndexerResponse, NamehashToNameRequest, NodeInfoRequest, ResetError,
-    ResetResult, WitKnsUpdate, WitState,
+    ResetResult, WitHnsUpdate, WitState,
 };
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use hyperware::process::standard::clear_state;
 use hyperware_process_lib::{
-    await_message, call_init, eth, get_state, kimap, net, print_to_terminal, println, set_state,
+    await_message, call_init, eth, get_state, hypermap, net, print_to_terminal, println, set_state,
     timer, Address, Capability, Message, Request, Response,
 };
 use std::{
@@ -17,22 +17,22 @@ use std::{
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "kns-indexer-sys-v0",
+    world: "hns-indexer-sys-v0",
     generate_unused_types: true,
     additional_derives: [serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS;
+const HYPERMAP_ADDRESS: &'static str = hypermap::HYPERMAP_ADDRESS;
 
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID; // base
+const CHAIN_ID: u64 = hypermap::HYPERMAP_CHAIN_ID; // base
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // base
+const HYPERMAP_FIRST_BLOCK: u64 = hypermap::HYPERMAP_FIRST_BLOCK; // base
 #[cfg(feature = "simulation-mode")]
-const KIMAP_FIRST_BLOCK: u64 = 1; // local
+const HYPERMAP_FIRST_BLOCK: u64 = 1; // local
 
 const MAX_PENDING_ATTEMPTS: u8 = 3;
 const SUBSCRIPTION_TIMEOUT: u64 = 60;
@@ -48,7 +48,7 @@ struct State {
     /// namehash to human readable name
     names: HashMap<String, String>,
     /// human readable name to most recent on-chain routing information as json
-    nodes: HashMap<String, net::KnsUpdate>,
+    nodes: HashMap<String, net::HnsUpdate>,
     /// last saved checkpoint block
     last_checkpoint_block: u64,
 }
@@ -57,10 +57,10 @@ impl State {
     fn new() -> Self {
         State {
             chain_id: CHAIN_ID,
-            contract_address: eth::Address::from_str(KIMAP_ADDRESS).unwrap(),
+            contract_address: eth::Address::from_str(HYPERMAP_ADDRESS).unwrap(),
             names: HashMap::new(),
             nodes: HashMap::new(),
-            last_checkpoint_block: KIMAP_FIRST_BLOCK,
+            last_checkpoint_block: HYPERMAP_FIRST_BLOCK,
         }
     }
 
@@ -96,16 +96,16 @@ impl State {
     fn send_nodes(&self) -> anyhow::Result<()> {
         for node in self.nodes.values() {
             Request::to(("our", "net", "distro", "sys"))
-                .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(node.clone()))?)
+                .body(rmp_serde::to_vec(&net::NetAction::HnsUpdate(node.clone()))?)
                 .send()?;
         }
         Ok(())
     }
 }
 
-impl From<net::KnsUpdate> for WitKnsUpdate {
-    fn from(k: net::KnsUpdate) -> Self {
-        WitKnsUpdate {
+impl From<net::HnsUpdate> for WitHnsUpdate {
+    fn from(k: net::HnsUpdate) -> Self {
+        WitHnsUpdate {
             name: k.name,
             public_key: k.public_key,
             ips: k.ips,
@@ -115,9 +115,9 @@ impl From<net::KnsUpdate> for WitKnsUpdate {
     }
 }
 
-impl From<WitKnsUpdate> for net::KnsUpdate {
-    fn from(k: WitKnsUpdate) -> Self {
-        net::KnsUpdate {
+impl From<WitHnsUpdate> for net::HnsUpdate {
+    fn from(k: WitHnsUpdate) -> Self {
+        net::HnsUpdate {
             name: k.name,
             public_key: k.public_key,
             ips: k.ips,
@@ -145,7 +145,7 @@ impl From<State> for WitState {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum KnsError {
+enum HnsError {
     #[error("Parent node for note not found")]
     NoParentError,
 }
@@ -180,7 +180,7 @@ fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
     let mut last_block = state.last_checkpoint_block.saturating_sub(1);
 
     // sub_id: 1
-    // listen to all mint events in kimap
+    // listen to all mint events in hypermap
     let mints_filter = eth::Filter::new()
         .address(state.contract_address)
         .from_block(last_block)
@@ -188,7 +188,7 @@ fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
     // sub_id: 2
-    // listen to all note events that are relevant to the KNS protocol within kimap
+    // listen to all note events that are relevant to the HNS protocol within hypermap
     let notes_filter = eth::Filter::new()
         .address(state.contract_address)
         .from_block(last_block)
@@ -216,7 +216,7 @@ fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
     // pending_requests temporarily on timeout.
     // very naughty.
     // let mut pending_requests: BTreeMap<u64, Vec<IndexerRequest>> = BTreeMap::new();
-    let mut pending_notes: BTreeMap<u64, Vec<(kimap::contract::Note, u8)>> = BTreeMap::new();
+    let mut pending_notes: BTreeMap<u64, Vec<(hypermap::contract::Note, u8)>> = BTreeMap::new();
 
     // if block in state is < current_block, get logs from that part.
     print_to_terminal(2, &format!("syncing old logs from block: {}", last_block));
@@ -299,23 +299,23 @@ fn main(our: &Address, state: &mut State) -> anyhow::Result<()> {
                 }
                 IndexerRequest::NodeInfo(NodeInfoRequest { ref name, .. }) => {
                     // if we don't have the node in our state, before sending a response,
-                    // try a kimap get to see if it exists onchain and the indexer missed it.
+                    // try a hypermap get to see if it exists onchain and the indexer missed it.
                     match state.nodes.get(name) {
                         Some(node) => IndexerResponse::NodeInfo(Some(node.clone().into())),
                         None => {
                             let mut response = IndexerResponse::NodeInfo(None);
                             if let Some(timeout) = expects_response {
-                                if let Some(kns_update) = fetch_node(timeout, name, state) {
+                                if let Some(hns_update) = fetch_node(timeout, name, state) {
                                     response =
-                                        IndexerResponse::NodeInfo(Some(kns_update.clone().into()));
+                                        IndexerResponse::NodeInfo(Some(hns_update.clone().into()));
                                     // save the node to state
-                                    state.nodes.insert(name.clone(), kns_update.clone());
+                                    state.nodes.insert(name.clone(), hns_update.clone());
                                     // produce namehash and save in names map
-                                    state.names.insert(kimap::namehash(name), name.clone());
+                                    state.names.insert(hypermap::namehash(name), name.clone());
                                     // send the node to net
                                     Request::to(("our", "net", "distro", "sys"))
-                                        .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
-                                            kns_update,
+                                        .body(rmp_serde::to_vec(&net::NetAction::HnsUpdate(
+                                            hns_update,
                                         ))?)
                                         .send()?;
                                 }
@@ -361,7 +361,7 @@ fn handle_eth_message(
     eth_provider: &eth::Provider,
     tick: bool,
     checkpoint: bool,
-    pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
+    pending_notes: &mut BTreeMap<u64, Vec<(hypermap::contract::Note, u8)>>,
     body: &[u8],
     mints_filter: &eth::Filter,
     notes_filter: &eth::Filter,
@@ -409,7 +409,7 @@ fn handle_eth_message(
 
 fn handle_pending_notes(
     state: &mut State,
-    pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
+    pending_notes: &mut BTreeMap<u64, Vec<(hypermap::contract::Note, u8)>>,
     last_block: &mut u64,
 ) -> anyhow::Result<()> {
     if pending_notes.is_empty() {
@@ -426,11 +426,11 @@ fn handle_pending_notes(
                     continue;
                 }
                 if let Err(e) = handle_note(state, &note) {
-                    match e.downcast_ref::<KnsError>() {
+                    match e.downcast_ref::<HnsError>() {
                         None => {
                             print_to_terminal(1, &format!("pending note handling error: {e:?}"))
                         }
-                        Some(KnsError::NoParentError) => {
+                        Some(HnsError::NoParentError) => {
                             keep_notes.push((note, attempt + 1));
                         }
                     }
@@ -452,16 +452,16 @@ fn handle_pending_notes(
     Ok(())
 }
 
-fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Result<()> {
+fn handle_note(state: &mut State, note: &hypermap::contract::Note) -> anyhow::Result<()> {
     let note_label = String::from_utf8(note.label.to_vec())?;
     let node_hash = note.parenthash.to_string();
 
-    if !kimap::valid_note(&note_label) {
+    if !hypermap::valid_note(&note_label) {
         return Err(anyhow::anyhow!("skipping invalid note: {note_label}"));
     }
 
     let Some(node_name) = state.names.get(&node_hash) else {
-        return Err(KnsError::NoParentError.into());
+        return Err(HnsError::NoParentError.into());
     };
 
     match note_label.as_str() {
@@ -519,7 +519,7 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
                 || node_info.routers.len() > 0)
         {
             Request::to(("our", "net", "distro", "sys"))
-                .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
+                .body(rmp_serde::to_vec(&net::NetAction::HnsUpdate(
                     node_info.clone(),
                 ))?)
                 .send()?;
@@ -531,7 +531,7 @@ fn handle_note(state: &mut State, note: &kimap::contract::Note) -> anyhow::Resul
 
 fn handle_log(
     state: &mut State,
-    pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
+    pending_notes: &mut BTreeMap<u64, Vec<(hypermap::contract::Note, u8)>>,
     log: &eth::Log,
     last_block: &mut u64,
 ) -> anyhow::Result<()> {
@@ -540,13 +540,13 @@ fn handle_log(
     }
 
     match log.topics()[0] {
-        kimap::contract::Mint::SIGNATURE_HASH => {
-            let decoded = kimap::contract::Mint::decode_log_data(log.data(), true).unwrap();
+        hypermap::contract::Mint::SIGNATURE_HASH => {
+            let decoded = hypermap::contract::Mint::decode_log_data(log.data(), true).unwrap();
             let parent_hash = decoded.parenthash.to_string();
             let child_hash = decoded.childhash.to_string();
             let name = String::from_utf8(decoded.label.to_vec())?;
 
-            if !kimap::valid_name(&name) {
+            if !hypermap::valid_name(&name) {
                 return Err(anyhow::anyhow!("skipping invalid name: {name}"));
             }
 
@@ -558,7 +558,7 @@ fn handle_log(
             state.names.insert(child_hash.clone(), full_name.clone());
             state.nodes.insert(
                 full_name.clone(),
-                net::KnsUpdate {
+                net::HnsUpdate {
                     name: full_name.clone(),
                     public_key: String::new(),
                     ips: Vec::new(),
@@ -567,16 +567,16 @@ fn handle_log(
                 },
             );
         }
-        kimap::contract::Note::SIGNATURE_HASH => {
-            let decoded = kimap::contract::Note::decode_log_data(log.data(), true).unwrap();
+        hypermap::contract::Note::SIGNATURE_HASH => {
+            let decoded = hypermap::contract::Note::decode_log_data(log.data(), true).unwrap();
             let note: String = String::from_utf8(decoded.label.to_vec())?;
 
-            if !kimap::valid_note(&note) {
+            if !hypermap::valid_note(&note) {
                 return Err(anyhow::anyhow!("skipping invalid note: {note}"));
             }
             // handle note: if it precedes parent mint event, add it to pending_notes
             if let Err(e) = handle_note(state, &decoded) {
-                if let Some(KnsError::NoParentError) = e.downcast_ref::<KnsError>() {
+                if let Some(HnsError::NoParentError) = e.downcast_ref::<HnsError>() {
                     if let Some(block_number) = log.block_number {
                         // print_to_terminal(
                         //     1,
@@ -603,7 +603,7 @@ fn fetch_and_process_logs(
     eth_provider: &eth::Provider,
     state: &mut State,
     filter: eth::Filter,
-    pending_notes: &mut BTreeMap<u64, Vec<(kimap::contract::Note, u8)>>,
+    pending_notes: &mut BTreeMap<u64, Vec<(hypermap::contract::Note, u8)>>,
     last_block: &mut u64,
 ) {
     loop {
@@ -625,29 +625,29 @@ fn fetch_and_process_logs(
     }
 }
 
-fn fetch_node(timeout: u64, name: &str, state: &State) -> Option<net::KnsUpdate> {
-    let kimap = kimap::Kimap::default(timeout - 1);
-    if let Ok((_tba, _owner, _data)) = kimap.get(name) {
-        let Ok(Some(public_key_bytes)) = kimap
+fn fetch_node(timeout: u64, name: &str, state: &State) -> Option<net::HnsUpdate> {
+    let hypermap = hypermap::Hypermap::default(timeout - 1);
+    if let Ok((_tba, _owner, _data)) = hypermap.get(name) {
+        let Ok(Some(public_key_bytes)) = hypermap
             .get(&format!("~net-key.{name}"))
             .map(|(_, _, data)| data)
         else {
             return None;
         };
 
-        let maybe_ip = kimap
+        let maybe_ip = hypermap
             .get(&format!("~ip.{name}"))
             .map(|(_, _, data)| data.map(|b| bytes_to_ip(&b)));
 
-        let maybe_tcp_port = kimap
+        let maybe_tcp_port = hypermap
             .get(&format!("~tcp-port.{name}"))
             .map(|(_, _, data)| data.map(|b| bytes_to_port(&b)));
 
-        let maybe_ws_port = kimap
+        let maybe_ws_port = hypermap
             .get(&format!("~ws-port.{name}"))
             .map(|(_, _, data)| data.map(|b| bytes_to_port(&b)));
 
-        let maybe_routers = kimap
+        let maybe_routers = hypermap
             .get(&format!("~routers.{name}"))
             .map(|(_, _, data)| data.map(|b| decode_routers(&b, state)));
 
@@ -659,7 +659,7 @@ fn fetch_node(timeout: u64, name: &str, state: &State) -> Option<net::KnsUpdate>
             ports.insert("ws".to_string(), ws_port);
         }
 
-        Some(net::KnsUpdate {
+        Some(net::HnsUpdate {
             name: name.to_string(),
             public_key: hex::encode(public_key_bytes),
             ips: if let Ok(Some(Ok(ip))) = maybe_ip {
@@ -694,7 +694,7 @@ fn add_temp_hardcoded_tlzs(state: &mut State) {
     );
 }
 
-/// Decodes bytes under ~routers in kimap into an array of keccak256 hashes (32 bytes each)
+/// Decodes bytes under ~routers in hypermap into an array of keccak256 hashes (32 bytes each)
 /// and returns the associated node identities.
 fn decode_routers(data: &[u8], state: &State) -> Vec<String> {
     if data.len() % 32 != 0 {
@@ -721,7 +721,7 @@ fn decode_routers(data: &[u8], state: &State) -> Vec<String> {
     routers
 }
 
-/// convert IP address stored at ~ip in kimap to IpAddr
+/// convert IP address stored at ~ip in hypermap to IpAddr
 pub fn bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
     match bytes.len() {
         4 => {
@@ -738,7 +738,7 @@ pub fn bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
     }
 }
 
-/// convert port stored at ~[protocol]-port in kimap to u16
+/// convert port stored at ~[protocol]-port in hypermap to u16
 pub fn bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
     match bytes.len() {
         2 => Ok(u16::from_be_bytes([bytes[0], bytes[1]])),

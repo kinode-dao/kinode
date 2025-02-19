@@ -40,7 +40,7 @@ interface settings {
     /// This will be converted to the ProviderConfig type used in `eth`.
     /// `trusted` in ProviderConfig will always be true.
     /// Rather than provide full NodeOrRpcUrl, the settings
-    /// process will fetch KNS update for node-providers
+    /// process will fetch HNS update for node-providers
     /// and convert this to the type used in `eth`.
     record provider-config {
         chain-id: u64,

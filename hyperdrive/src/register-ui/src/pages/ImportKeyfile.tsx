@@ -23,7 +23,7 @@ function ImportKeyfile({
   const [pwVet, _setPwVet] = useState<boolean>(false);
   const [pwDebounced, _setPwDebounced] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
-  const [knsName, setKnsName] = useState<string>("");
+  const [hnsName, setHnsName] = useState<string>("");
 
   useEffect(() => {
     document.title = "Import Keyfile";
@@ -55,7 +55,7 @@ function ImportKeyfile({
 
       try {
         if (keyErrs.length === 0 && localKey !== null) {
-          argon2.hash({ pass: pw, salt: knsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
+          argon2.hash({ pass: pw, salt: hnsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
             const hashed_password_hex = `0x${h.hashHex}`;
 
             const result = await fetch("/import-keyfile", {
@@ -114,7 +114,7 @@ function ImportKeyfile({
                   <input
                     type="text"
                     className="name-input"
-                    onChange={(e) => setKnsName(e.target.value)}
+                    onChange={(e) => setHnsName(e.target.value)}
                   />
                 </label>
               </div>

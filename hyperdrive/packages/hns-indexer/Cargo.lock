@@ -1427,6 +1427,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "hns-indexer"
+version = "0.2.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-sol-types",
+ "anyhow",
+ "hex",
+ "hyperware_process_lib",
+ "process_macros",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "http"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1522,9 +1539,9 @@ dependencies = [
 
 [[package]]
 name = "hyperware_process_lib"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c80405897b911c54f87418e96185d847aaa6ba68ccd79271d1422f9b87932b7d"
+checksum = "003b605a36ca638d3c8501e19ab33237abf6a7cf0e1547cfc6db2520dd58ef02"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -1790,23 +1807,6 @@ checksum = "505d1856a39b200489082f90d897c3f07c455563880bc5952e38eabf731c83b6"
 dependencies = [
  "digest 0.10.7",
  "sha3-asm",
-]
-
-[[package]]
-name = "kns-indexer"
-version = "0.2.0"
-dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
- "anyhow",
- "hex",
- "hyperware_process_lib",
- "process_macros",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "wit-bindgen",
 ]
 
 [[package]]

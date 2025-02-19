@@ -605,7 +605,7 @@ pub struct Erc721Metadata {
 ///
 /// Fields:
 /// - `package_name`: The unique name of the package, used in the `PackageId`, e.g. `package_name:publisher`.
-/// - `publisher`: The KNS identity of the package publisher used in the `PackageId`, e.g. `package_name:publisher`
+/// - `publisher`: The HNS identity of the package publisher used in the `PackageId`, e.g. `package_name:publisher`
 /// - `current_version`: A string representing the current version of the package, e.g. `1.0.0`.
 /// - `mirrors`: A list of NodeIds where the package can be found, providing redundancy.
 /// - `code_hashes`: A map from version names to their respective SHA-256 hashes.

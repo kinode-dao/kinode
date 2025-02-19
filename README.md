@@ -138,7 +138,7 @@ These are interacted with in the same way as userspace processes, but are deeply
 All of these are identified in the `distro:sys` package.
 
 Hyperdrive also comes with userspace packages pre-installed.
-Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns-indexer`.
+Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `hns-indexer`.
 Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
 
 The runtime distro processes are:
@@ -162,7 +162,7 @@ The distro userspace packages are:
 - `chess:sys`
 - `contacts:sys`
 - `homepage:sys`
-- `kns-indexer:sys`
+- `hns-indexer:sys`
 - `settings:sys`
 - `terminal:sys`
 - `tester:sys` (used with `kit` for running test suites, only installed in `simulation-mode`)
@@ -202,7 +202,7 @@ Subsequent use of the shorthand will then be interpolated as the process ID.
 A list of the terminal scripts included in this distro:
 
 - `alias <shorthand> <process_id>`: create an alias for a script.
-    - Example: `alias get_block get-block:kns-indexer:sys`
+    - Example: `alias get_block get-block:hns-indexer:sys`
     - note: all of these listed commands are just default aliases for terminal scripts.
 - `cat <vfs-file-path>`: print the contents of a file in the terminal.
     - Example: `cat /terminal:sys/pkg/scripts.json`

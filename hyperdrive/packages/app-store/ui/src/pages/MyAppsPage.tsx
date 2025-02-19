@@ -11,7 +11,7 @@ const CORE_PACKAGES = [
     "chess:sys",
     "contacts:sys",
     "homepage:sys",
-    "kns-indexer:sys",
+    "hns-indexer:sys",
     "settings:sys",
     "terminal:sys",
 ];

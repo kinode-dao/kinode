@@ -57,25 +57,25 @@ struct NodeProvider {
     /// semi-temporary flag to mark if this provider is currently usable
     /// future updates will make this more dynamic
     pub usable: bool,
-    /// the KNS update that describes this node provider
+    /// the HNS update that describes this node provider
     /// kept so we can re-serialize to SavedConfigs
-    pub kns_update: KnsUpdate,
+    pub hns_update: HnsUpdate,
 }
 
 impl ActiveProviders {
     fn add_provider_config(&mut self, new: ProviderConfig) {
         match new.provider {
             NodeOrRpcUrl::Node {
-                kns_update,
+                hns_update,
                 use_as_provider,
             } => {
-                self.remove_provider(&kns_update.name);
+                self.remove_provider(&hns_update.name);
                 self.nodes.insert(
                     0,
                     NodeProvider {
                         trusted: new.trusted,
                         usable: use_as_provider,
-                        kns_update,
+                        hns_update,
                     },
                 );
             }
@@ -96,7 +96,7 @@ impl ActiveProviders {
 
     fn remove_provider(&mut self, remove: &str) {
         self.urls.retain(|x| x.url != remove);
-        self.nodes.retain(|x| x.kns_update.name != remove);
+        self.nodes.retain(|x| x.hns_update.name != remove);
     }
 }
 
@@ -868,7 +868,7 @@ async fn fulfill_request(
             print_tx,
             &format!(
                 "eth: attempting to fulfill via {}",
-                node_provider.kns_update.name
+                node_provider.hns_update.name
             ),
         )
         .await;
@@ -887,7 +887,7 @@ async fn fulfill_request(
                 set_node_unusable(
                     &providers,
                     &chain_id,
-                    &node_provider.kns_update.name,
+                    &node_provider.hns_update.name,
                     print_tx,
                 )
                 .await;
@@ -909,14 +909,14 @@ async fn forward_to_node_provider(
     send_to_loop: &MessageSender,
     receiver: &mut ProcessMessageReceiver,
 ) -> EthResponse {
-    if !node_provider.usable || node_provider.kns_update.name == our {
+    if !node_provider.usable || node_provider.hns_update.name == our {
         return EthResponse::Err(EthError::PermissionDenied);
     }
     kernel_message(
         our,
         km_id,
         Address {
-            node: node_provider.kns_update.name.clone(),
+            node: node_provider.hns_update.name.clone(),
             process: ETH_PROCESS_ID.clone(),
         },
         rsvp,

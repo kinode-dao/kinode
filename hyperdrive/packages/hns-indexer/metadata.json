@@ -1,9 +1,9 @@
 {
-    "name": "KNS Indexer",
+    "name": "HNS Indexer",
     "description": "Hyperware PKI indexer",
     "image": "",
     "properties": {
-        "package_name": "kns-indexer",
+        "package_name": "hns-indexer",
         "current_version": "1.0.0",
         "publisher": "sys",
         "mirrors": [],

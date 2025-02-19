@@ -1,8 +1,8 @@
 
 import { NetworkingInfo } from "../lib/types";
 import { kinohash } from "../utils/kinohash";
-import { ipToBytes, portToBytes } from "../utils/kns_encoding";
-import { multicallAbi, kimapAbi, mechAbi, KIMAP, MULTICALL } from "./";
+import { ipToBytes, portToBytes } from "../utils/hns_encoding";
+import { multicallAbi, hypermapAbi, mechAbi, HYPERMAP, MULTICALL } from "./";
 import { encodeFunctionData, encodePacked, stringToHex, bytesToHex } from "viem";
 
 // Function to encode router names into keccak256 hashes
@@ -54,7 +54,7 @@ export const generateNetworkingKeys = async ({
     console.log("networking_key: ", networking_key);
 
     const netkeycall = encodeFunctionData({
-        abi: kimapAbi,
+        abi: hypermapAbi,
         functionName: 'note',
         args: [
             encodePacked(["bytes"], [stringToHex("~net-key")]),
@@ -64,7 +64,7 @@ export const generateNetworkingKeys = async ({
 
     const ws_port_call =
         encodeFunctionData({
-            abi: kimapAbi,
+            abi: hypermapAbi,
             functionName: 'note',
             args: [
                 encodePacked(["bytes"], [stringToHex("~ws-port")]),
@@ -74,7 +74,7 @@ export const generateNetworkingKeys = async ({
 
     const tcp_port_call =
         encodeFunctionData({
-            abi: kimapAbi,
+            abi: hypermapAbi,
             functionName: 'note',
             args: [
                 encodePacked(["bytes"], [stringToHex("~tcp-port")]),
@@ -84,7 +84,7 @@ export const generateNetworkingKeys = async ({
 
     const ip_address_call =
         encodeFunctionData({
-            abi: kimapAbi,
+            abi: hypermapAbi,
             functionName: 'note',
             args: [
                 encodePacked(["bytes"], [stringToHex("~ip")]),
@@ -96,7 +96,7 @@ export const generateNetworkingKeys = async ({
 
     const router_call =
         encodeFunctionData({
-            abi: kimapAbi,
+            abi: hypermapAbi,
             functionName: 'note',
             args: [
                 encodePacked(["bytes"], [stringToHex("~routers")]),
@@ -107,13 +107,13 @@ export const generateNetworkingKeys = async ({
         });
 
     const calls = direct ? [
-        { target: KIMAP, callData: netkeycall },
-        { target: KIMAP, callData: ws_port_call },
-        { target: KIMAP, callData: tcp_port_call },
-        { target: KIMAP, callData: ip_address_call },
+        { target: HYPERMAP, callData: netkeycall },
+        { target: HYPERMAP, callData: ws_port_call },
+        { target: HYPERMAP, callData: tcp_port_call },
+        { target: HYPERMAP, callData: ip_address_call },
     ] : [
-        { target: KIMAP, callData: netkeycall },
-        { target: KIMAP, callData: router_call },
+        { target: HYPERMAP, callData: netkeycall },
+        { target: HYPERMAP, callData: router_call },
     ];
 
     const multicalls = encodeFunctionData({
@@ -139,7 +139,7 @@ export const generateNetworkingKeys = async ({
 
     // to mint a subname of your own, you would do something like this.
     // const mintCall = encodeFunctionData({
-    //     abi: kimapAbi,
+    //     abi: hypermapAbi,
     //     functionName: 'mint',
     //     args: [
     //         our_address,

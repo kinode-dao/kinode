@@ -1,7 +1,7 @@
 [
     {
-        "process_name": "kns-indexer",
-        "process_wasm_path": "/kns-indexer.wasm",
+        "process_name": "hns-indexer",
+        "process_wasm_path": "/hns-indexer.wasm",
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [

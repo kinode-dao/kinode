@@ -33,7 +33,7 @@
             "downloads:app-store:sys",
             "eth:distro:sys",
             "http-client:distro:sys",
-            "kns-indexer:kns-indexer:sys",
+            "hns-indexer:hns-indexer:sys",
             "main:app-store:sys",
             "sqlite:distro:sys",
             "terminal:terminal:sys",
@@ -47,7 +47,7 @@
         "grant_capabilities": [
             "eth:distro:sys",
             "http-client:distro:sys",
-            "kns-indexer:kns-indexer:sys",
+            "hns-indexer:hns-indexer:sys",
             "sqlite:distro:sys",
             "terminal:terminal:sys",
             "timer:distro:sys"
@@ -76,7 +76,7 @@
             },
             "http-server:distro:sys",
             "kernel:distro:sys",
-            "kns-indexer:kns-indexer:sys",
+            "hns-indexer:hns-indexer:sys",
             "kv:distro:sys",
             "sqlite:distro:sys",
             "terminal:terminal:sys",
@@ -90,7 +90,7 @@
         ],
         "grant_capabilities": [
             "http-server:distro:sys",
-            "kns-indexer:kns-indexer:sys",
+            "hns-indexer:hns-indexer:sys",
             "terminal:terminal:sys",
             "homepage:homepage:sys",
             "vfs:distro:sys"

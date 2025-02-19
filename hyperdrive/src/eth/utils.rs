@@ -49,7 +49,7 @@ pub fn providers_to_saved_configs(providers: &Providers) -> SavedConfigs {
                     .chain(entry.nodes.iter().map(|node_provider| ProviderConfig {
                         chain_id: *entry.key(),
                         provider: NodeOrRpcUrl::Node {
-                            kns_update: node_provider.kns_update.clone(),
+                            hns_update: node_provider.hns_update.clone(),
                             use_as_provider: node_provider.usable,
                         },
                         trusted: node_provider.trusted,
@@ -185,7 +185,7 @@ pub async fn set_node_unusable(
         let Some(index) = find_index(
             &aps.nodes
                 .iter()
-                .map(|n| n.kns_update.name.as_str())
+                .map(|n| n.hns_update.name.as_str())
                 .collect(),
             &node_name,
         ) else {

@@ -10,7 +10,7 @@ use lib::core::{Identity, NodeRouting};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
-use crate::{keygen, sol::*, KIMAP_ADDRESS, KINO_ACCOUNT_IMPL, MULTICALL_ADDRESS};
+use crate::{keygen, sol::*, HYPERMAP_ADDRESS, KINO_ACCOUNT_IMPL, MULTICALL_ADDRESS};
 
 const FAKE_DOTDEV_TBA: &str = "0xcc3A576b8cE5340f5CE23d0DDAf133C0822C3B6d";
 const FAKE_DOTOS_TBA: &str = "0xbE46837617f8304Aa5E6d0aE62B74340251f48Bf";
@@ -36,7 +36,7 @@ pub async fn mint_local(
     let multicall_address = Address::from_str(MULTICALL_ADDRESS)?;
     let dotos = Address::from_str(FAKE_DOTOS_TBA)?;
     let dotdev = Address::from_str(FAKE_DOTDEV_TBA)?;
-    let kimap = Address::from_str(KIMAP_ADDRESS)?;
+    let hypermap = Address::from_str(HYPERMAP_ADDRESS)?;
 
     let parts: Vec<&str> = name.split('.').collect();
     let label = parts[0];
@@ -60,7 +60,7 @@ pub async fn mint_local(
     .abi_encode();
 
     let get_tx = TransactionRequest::default()
-        .to(kimap)
+        .to(hypermap)
         .input(TransactionInput::new(get_call.into()));
 
     let exists = provider.call(&get_tx).await?;
@@ -80,7 +80,7 @@ pub async fn mint_local(
     let pubkey = hex::decode(pubkey)?;
     let multicalls: Vec<Call> = vec![
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(
                 noteCall {
                     note: "~ip".into(),
@@ -90,7 +90,7 @@ pub async fn mint_local(
             ),
         },
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(
                 noteCall {
                     note: "~ws-port".into(),
@@ -100,7 +100,7 @@ pub async fn mint_local(
             ),
         },
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(
                 noteCall {
                     note: "~net-key".into(),
@@ -187,14 +187,14 @@ pub async fn mint_local(
     Ok(())
 }
 
-/// Booting from a keyfile, fetches the node's IP data from the KNS contract
+/// Booting from a keyfile, fetches the node's IP data from the HNS contract
 /// and assigns it to the Identity struct.
 pub async fn assign_ws_local_helper(
     our: &mut Identity,
     ws_port: u16,
     fakechain_port: u16,
 ) -> Result<(), anyhow::Error> {
-    let kimap = Address::from_str(KIMAP_ADDRESS)?;
+    let hypermap = Address::from_str(HYPERMAP_ADDRESS)?;
     let multicall = Address::from_str(MULTICALL_ADDRESS)?;
 
     let endpoint = format!("ws://localhost:{}", fakechain_port);
@@ -209,7 +209,7 @@ pub async fn assign_ws_local_helper(
 
     let multicalls = vec![
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(
                 getCall {
                     namehash: netkey_hash,
@@ -218,11 +218,11 @@ pub async fn assign_ws_local_helper(
             ),
         },
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(getCall { namehash: ws_hash }.abi_encode()),
         },
         Call {
-            target: kimap,
+            target: hypermap,
             callData: Bytes::from(getCall { namehash: ip_hash }.abi_encode()),
         },
     ];
@@ -233,11 +233,11 @@ pub async fn assign_ws_local_helper(
     let tx = TransactionRequest::default().to(multicall).input(tx_input);
 
     let Ok(multicall_return) = provider.call(&tx).await else {
-        return Err(anyhow::anyhow!("Failed to fetch node IP data from kimap"));
+        return Err(anyhow::anyhow!("Failed to fetch node IP data from hypermap"));
     };
 
     let Ok(results) = aggregateCall::abi_decode_returns(&multicall_return, false) else {
-        return Err(anyhow::anyhow!("Failed to decode kimap multicall data"));
+        return Err(anyhow::anyhow!("Failed to decode hypermap multicall data"));
     };
 
     let netkey = getCall::abi_decode_returns(&results.returnData[0], false)?;

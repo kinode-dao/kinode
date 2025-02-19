@@ -12,8 +12,8 @@ function Login({
   setPw,
   routers,
   setRouters,
-  knsName,
-  setKnsName,
+  hnsName,
+  setHnsName,
 }: LoginProps) {
   const navigate = useNavigate();
 
@@ -29,7 +29,7 @@ function Login({
           res.json()
         )) as UnencryptedIdentity;
         setRouters(infoData.allowed_routers);
-        setKnsName(infoData.name);
+        setHnsName(infoData.name);
       } catch { }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -47,7 +47,7 @@ function Login({
           // Try argon2 hash first
           const h = await argon2.hash({
             pass: pw,
-            salt: knsName,
+            salt: hnsName,
             hashLen: 32,
             time: 2,
             mem: 19456,
@@ -96,7 +96,7 @@ function Login({
           <div className="form-group">
             <div className="form-header">
               <Tooltip text={`(${isDirect ? "direct" : "indirect"} node)`}>
-                <h3>{knsName}</h3>
+                <h3>{hnsName}</h3>
               </Tooltip>
             </div>
             <input

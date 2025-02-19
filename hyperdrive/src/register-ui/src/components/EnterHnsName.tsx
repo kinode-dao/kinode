@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { toAscii } from "idna-uts46-hx";
 import { usePublicClient } from 'wagmi'
 
-import { KIMAP, kimapAbi } from '../abis'
+import { HYPERMAP, hypermapAbi } from '../abis'
 import { kinohash } from "../utils/kinohash";
 
 export const NAME_URL = "Name must contain only valid characters (a-z, 0-9, and -)";
@@ -24,7 +24,7 @@ type EnterNameProps = {
   isReset?: boolean;
 };
 
-function EnterKnsName({
+function EnterHnsName({
   address,
   name,
   setName,
@@ -86,8 +86,8 @@ function EnterKnsName({
           const namehash = kinohash(normalized)
 
           const data = await client?.readContract({
-            address: KIMAP,
-            abi: kimapAbi,
+            address: HYPERMAP,
+            abi: hypermapAbi,
             functionName: "get",
             args: [namehash]
           })
@@ -119,18 +119,18 @@ function EnterKnsName({
     e.target.value.indexOf(" ") === -1 && setName(e.target.value);
 
   return (
-    <div className="enter-kns-name">
+    <div className="enter-hns-name">
       <div className="input-wrapper">
         <input
           value={name}
           onChange={noSpaces}
           type="text"
           required
-          name="kns-name"
+          name="hns-name"
           placeholder="node-name"
-          className="kns-input"
+          className="hns-input"
         />
-        {fixedTlz && <span className="kns-suffix">{fixedTlz}</span>}
+        {fixedTlz && <span className="hns-suffix">{fixedTlz}</span>}
       </div>
       {nameValidities.map((x, i) => (
         <p key={i} className="error-message">{x}</p>
@@ -140,4 +140,4 @@ function EnterKnsName({
   );
 }
 
-export default EnterKnsName;
+export default EnterHnsName;

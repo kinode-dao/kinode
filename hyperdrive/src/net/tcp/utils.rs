@@ -4,7 +4,7 @@ use crate::net::{
     utils::{print_debug, print_loud, IDLE_TIMEOUT, MESSAGE_MAX_SIZE},
 };
 use lib::types::core::{
-    check_process_id_kimap_safe, KernelMessage, MessageSender, NodeId, PrintSender,
+    check_process_id_hypermap_safe, KernelMessage, MessageSender, NodeId, PrintSender,
 };
 use {
     tokio::io::{AsyncReadExt, AsyncWriteExt},
@@ -66,11 +66,11 @@ pub async fn maintain_connection(
                         .await;
                         break;
                     }
-                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                    if check_process_id_hypermap_safe(&km.source.process).is_err() {
                         print_loud(
                             &read_print_tx,
                             &format!(
-                                "net: got message from non-Kimap-safe process: {}",
+                                "net: got message from non-Hypermap-safe process: {}",
                                 km.source
                             ),
                         )

@@ -7,7 +7,7 @@ use hyperware_process_lib::{
     await_message, call_init,
     eth::{self, Provider},
     get_blob, get_capability, homepage, http, kernel_types,
-    kimap::{self, KIMAP_ADDRESS},
+    hypermap::{self, HYPERMAP_ADDRESS},
     net, println, Address, Capability, LazyLoadBlob, Message, ProcessId, Request, Response,
     SendError, SendErrorKind,
 };
@@ -163,43 +163,43 @@ impl SettingsState {
             self.stylesheet = Some(String::from_utf8_lossy(&bytes).to_string());
         }
 
-        // kimap
-        let kimap = if cfg!(feature = "simulation-mode") {
+        // hypermap
+        let hypermap = if cfg!(feature = "simulation-mode") {
             let fake_provider = Provider::new(31337, 60);
-            kimap::Kimap::new(
+            hypermap::Hypermap::new(
                 fake_provider,
-                eth::Address::from_str(KIMAP_ADDRESS).unwrap(),
+                eth::Address::from_str(HYPERMAP_ADDRESS).unwrap(),
             )
         } else {
-            kimap::Kimap::default(60)
+            hypermap::Hypermap::default(60)
         };
 
-        let Ok((tba, owner, _bytes)) = kimap.get(self.our.node()) else {
+        let Ok((tba, owner, _bytes)) = hypermap.get(self.our.node()) else {
             return Err(anyhow::anyhow!(
-                "failed to get kimap node {} on kimap {}",
+                "failed to get hypermap node {} on hypermap {}",
                 self.our.node(),
-                kimap.address()
+                hypermap.address()
             ));
         };
         self.our_tba = tba;
         self.our_owner = owner;
-        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~net-key.{}", self.our.node())) else {
+        let Ok((_tba, _owner, bytes)) = hypermap.get(&format!("~net-key.{}", self.our.node())) else {
             return Err(anyhow::anyhow!("failed to get net-key"));
         };
         self.net_key = bytes;
-        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~routers.{}", self.our.node())) else {
+        let Ok((_tba, _owner, bytes)) = hypermap.get(&format!("~routers.{}", self.our.node())) else {
             return Err(anyhow::anyhow!("failed to get routers"));
         };
         self.routers = bytes;
-        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ip.{}", self.our.node())) else {
+        let Ok((_tba, _owner, bytes)) = hypermap.get(&format!("~ip.{}", self.our.node())) else {
             return Err(anyhow::anyhow!("failed to get ip"));
         };
         self.ip = bytes;
-        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~ws-port.{}", self.our.node())) else {
+        let Ok((_tba, _owner, bytes)) = hypermap.get(&format!("~ws-port.{}", self.our.node())) else {
             return Err(anyhow::anyhow!("failed to get ws-port"));
         };
         self.ws_port = bytes;
-        let Ok((_tba, _owner, bytes)) = kimap.get(&format!("~tcp-port.{}", self.our.node())) else {
+        let Ok((_tba, _owner, bytes)) = hypermap.get(&format!("~tcp-port.{}", self.our.node())) else {
             return Err(anyhow::anyhow!("failed to get tcp-port"));
         };
         self.tcp_port = bytes;
@@ -481,12 +481,12 @@ fn handle_settings_request(
                 .unwrap();
         }
         SettingsRequest::Reset => {
-            // reset KNS
-            let kns_address = Address::new(&state.our.node, ("kns-indexer", "kns-indexer", "sys"));
-            let root_cap = get_capability(&kns_address, "{\"root\":true}");
+            // reset HNS
+            let hns_address = Address::new(&state.our.node, ("hns-indexer", "hns-indexer", "sys"));
+            let root_cap = get_capability(&hns_address, "{\"root\":true}");
 
             if let Some(cap) = root_cap {
-                Request::to(("our", "kns-indexer", "kns-indexer", "sys"))
+                Request::to(("our", "hns-indexer", "hns-indexer", "sys"))
                     .body(serde_json::to_vec(&SettingsRequest::Reset).unwrap())
                     .capabilities(vec![cap])
                     .send()
@@ -545,9 +545,9 @@ fn eth_config_convert(
                 provider: match settings_provider_config.node_or_rpc_url {
                     SettingsNodeOrRpcUrl::Node(node_str) => {
                         // the eth module does not actually need the full routing info
-                        // so we can just use the name as the kns update
+                        // so we can just use the name as the hns update
                         eth::NodeOrRpcUrl::Node {
-                            kns_update: net::KnsUpdate {
+                            hns_update: net::HnsUpdate {
                                 name: node_str,
                                 public_key: "".to_string(),
                                 ips: vec![],
@@ -655,13 +655,13 @@ fn make_widget(state: &SettingsState) -> String {
                     .filter_map(|config| {
                         match &config.provider {
                             eth::NodeOrRpcUrl::Node {
-                                kns_update,
+                                hns_update,
                                 use_as_provider,
                             } => {
                                 if *use_as_provider {
                                     Some(format!(
                                         "<li style=\"border-bottom: 1px solid black; padding: 2px;\">{}: Chain ID {}</li>",
-                                        kns_update.name,
+                                        hns_update.name,
                                         config.chain_id
                                     ))
                                 } else {

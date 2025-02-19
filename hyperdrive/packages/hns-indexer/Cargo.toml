@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "get-block",
-    "kns-indexer",
+    "hns-indexer",
     "reset",
     "node-info",
     "state",

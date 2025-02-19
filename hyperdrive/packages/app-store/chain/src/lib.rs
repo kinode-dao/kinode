@@ -33,7 +33,7 @@ use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use hyperware::process::chain::ChainResponse;
 use hyperware_process_lib::{
-    await_message, call_init, eth, get_blob, http, kernel_types as kt, kimap, print_to_terminal,
+    await_message, call_init, eth, get_blob, http, kernel_types as kt, hypermap, print_to_terminal,
     println,
     sqlite::{self, Sqlite},
     timer, Address, Message, PackageId, Request, Response,
@@ -50,19 +50,19 @@ wit_bindgen::generate!({
 });
 
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID;
+const CHAIN_ID: u64 = hypermap::HYPERMAP_CHAIN_ID;
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
 const CHAIN_TIMEOUT: u64 = 60; // 60s
 
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS;
+const HYPERMAP_ADDRESS: &'static str = hypermap::HYPERMAP_ADDRESS;
 
 const DELAY_MS: u64 = 1_000; // 1s
 
 pub struct State {
-    /// the kimap helper we are using
-    pub kimap: kimap::Kimap,
+    /// the hypermap helper we are using
+    pub hypermap: hypermap::Hypermap,
     /// the last block at which we saved the state of the listings to disk.
     /// when we boot, we can read logs starting from this block and
     /// rebuild latest state.
@@ -387,12 +387,12 @@ fn init(our: Address) {
         let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
 
         let db = DB::connect(&our).expect("failed to open DB");
-        let kimap_helper =
-            kimap::Kimap::new(eth_provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap());
+        let hypermap_helper =
+            hypermap::Hypermap::new(eth_provider, eth::Address::from_str(HYPERMAP_ADDRESS).unwrap());
         let last_saved_block = db.get_last_saved_block().unwrap_or(0);
 
         let mut state = State {
-            kimap: kimap_helper,
+            hypermap: hypermap_helper,
             last_saved_block,
             db,
         };
@@ -444,13 +444,13 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                     serde_json::from_value::<eth::SubscriptionResult>(result)
                 {
                     // delay handling of ETH RPC subscriptions by DELAY_MS
-                    // to allow kns to have a chance to process block
+                    // to allow hns to have a chance to process block
                     timer::set_timer(DELAY_MS, Some(serde_json::to_vec(log)?));
                 }
             } else {
                 // re-subscribe if error
                 state
-                    .kimap
+                    .hypermap
                     .provider
                     .subscribe_loop(1, app_store_filter(state), 1, 0);
             }
@@ -536,7 +536,7 @@ fn handle_eth_log(
     let block_number: u64 = log
         .block_number
         .ok_or(anyhow::anyhow!("log missing block number"))?;
-    let Ok(note) = kimap::decode_note_log(&log) else {
+    let Ok(note) = hypermap::decode_note_log(&log) else {
         // ignore invalid logs here -- they're not actionable
         return Ok(());
     };
@@ -565,7 +565,7 @@ fn handle_eth_log(
         let hash_note = format!("~metadata-hash.{}", note.parent_path);
 
         // owner can change which we don't track (yet?) so don't save, need to get when desired
-        let (tba, _owner, data) = match state.kimap.get(&hash_note) {
+        let (tba, _owner, data) = match state.hypermap.get(&hash_note) {
             Ok(gr) => Ok(gr),
             Err(e) => match e {
                 eth::EthError::RpcError(_) => {
@@ -574,7 +574,7 @@ fn handle_eth_log(
                     // `timer:distro:sys` so that events are processed in
                     // order of receipt!
                     std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
-                    state.kimap.get(&hash_note)
+                    state.hypermap.get(&hash_note)
                 }
                 _ => Err(e),
             },
@@ -677,7 +677,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
 
     for (pid, mut listing) in updated_listings {
         let hash_note = format!("~metadata-hash.{}.{}", pid.package(), pid.publisher());
-        let (tba, metadata_hash) = match state.kimap.get(&hash_note) {
+        let (tba, metadata_hash) = match state.hypermap.get(&hash_note) {
             Ok((t, _owner, data)) => {
                 match data {
                     None => {
@@ -699,7 +699,7 @@ fn update_all_metadata(state: &mut State, last_saved_block: u64) {
                 // If RpcError, retry once after delay
                 if let eth::EthError::RpcError(_) = e {
                     std::thread::sleep(std::time::Duration::from_millis(DELAY_MS));
-                    match state.kimap.get(&hash_note) {
+                    match state.hypermap.get(&hash_note) {
                         Ok((t, _owner, data)) => {
                             if let Some(hash_note) = data {
                                 (t, String::from_utf8_lossy(&hash_note).to_string())
@@ -784,8 +784,8 @@ pub fn app_store_filter(state: &State) -> eth::Filter {
     let notes = vec![keccak256("~metadata-uri")];
 
     eth::Filter::new()
-        .address(*state.kimap.address())
-        .events([kimap::contract::Note::SIGNATURE])
+        .address(*state.hypermap.address())
+        .events([hypermap::contract::Note::SIGNATURE])
         .topic3(notes)
 }
 
@@ -794,9 +794,9 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
     // subscribe first so we don't miss any logs
-    state.kimap.provider.subscribe_loop(1, filter.clone(), 1, 0);
+    state.hypermap.provider.subscribe_loop(1, filter.clone(), 1, 0);
     // println!("fetching old logs from block {last_saved_block}");
-    for log in fetch_logs(&state.kimap.provider, &filter.from_block(last_saved_block)) {
+    for log in fetch_logs(&state.hypermap.provider, &filter.from_block(last_saved_block)) {
         if let Err(e) = handle_eth_log(our, state, log, true) {
             print_to_terminal(1, &format!("error ingesting log: {e}"));
         };
@@ -804,7 +804,7 @@ pub fn fetch_and_subscribe_logs(our: &Address, state: &mut State, last_saved_blo
 
     update_all_metadata(state, last_saved_block);
     // save updated last_saved_block
-    if let Ok(block_number) = state.kimap.provider.get_block_number() {
+    if let Ok(block_number) = state.hypermap.provider.get_block_number() {
         state.last_saved_block = block_number;
         if let Err(e) = state.db.set_last_saved_block(block_number) {
             print_to_terminal(0, &format!("error saving last block after startup: {e}"));

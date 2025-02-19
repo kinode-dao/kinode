@@ -20,7 +20,7 @@ mod ws;
 
 /// Entry point for all node to node networking. Manages the "working version" of the PKI,
 /// which may not be the complete PKI. Stateless: does not persist PKI information, only
-/// ingests it from [`NetAction::KnsUpdate`] and [`NetAction::KnsBatchUpdate`] requests.
+/// ingests it from [`NetAction::HnsUpdate`] and [`NetAction::HnsBatchUpdate`] requests.
 ///
 /// Handles messages from kernel that are directed at other nodes by locating that node
 /// in the PKI and finding a usable route to them, if any. Nodes can present indirect
@@ -84,7 +84,7 @@ pub async fn networking(
         NodeRouting::Direct { ip, ports } => {
             if *ext.our_ip != *ip {
                 return Err(anyhow::anyhow!(
-                    "net: fatal error: IP address mismatch: {} != {}, update your KNS identity",
+                    "net: fatal error: IP address mismatch: {} != {}, update your HNS identity",
                     ext.our_ip,
                     ip
                 ));
@@ -105,7 +105,7 @@ pub async fn networking(
         NodeRouting::Routers(routers) | NodeRouting::Both { routers, .. } => {
             if routers.is_empty() {
                 return Err(anyhow::anyhow!(
-                    "net: fatal error: need at least one router, update your KNS identity"
+                    "net: fatal error: need at least one router, update your HNS identity"
                 ));
             }
             utils::print_debug(&ext.print_tx, "going online as an indirect node").await;
@@ -177,10 +177,10 @@ async fn handle_local_request(
         Ok(NetAction::ConnectionRequest(_)) => {
             // we shouldn't get these locally, ignore
         }
-        Ok(NetAction::KnsUpdate(log)) => {
+        Ok(NetAction::HnsUpdate(log)) => {
             utils::ingest_log(log, &data.pki);
         }
-        Ok(NetAction::KnsBatchUpdate(logs)) => {
+        Ok(NetAction::HnsBatchUpdate(logs)) => {
             for log in logs {
                 utils::ingest_log(log, &data.pki);
             }
@@ -209,7 +209,7 @@ async fn handle_local_request(
                     let mut printout = String::new();
                     printout.push_str(&format!(
                         "indexing from contract address {}\r\n",
-                        crate::KIMAP_ADDRESS
+                        crate::HYPERMAP_ADDRESS
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(
@@ -370,7 +370,7 @@ async fn handle_remote_request(
     data: &NetData,
 ) -> anyhow::Result<()> {
     match rmp_serde::from_slice::<NetAction>(request_body) {
-        Ok(NetAction::KnsBatchUpdate(_)) | Ok(NetAction::KnsUpdate(_)) => {
+        Ok(NetAction::HnsBatchUpdate(_)) | Ok(NetAction::HnsUpdate(_)) => {
             // for now, we don't get these from remote, only locally.
             return Err(anyhow::anyhow!(
                 "net: not allowed to update PKI from remote"
