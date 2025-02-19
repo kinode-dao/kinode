@@ -12,7 +12,7 @@ interface RegisterOsNameProps extends PageProps { }
 
 function MintDotOsName({
   direct,
-  knsName,
+  hnsName,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
@@ -26,7 +26,7 @@ function MintDotOsName({
   const { data: hash, sendTransaction, isPending, isError, error } = useSendTransaction({
     mutation: {
       onSuccess: (data) => {
-        addRecentTransaction({ hash: data, description: `Mint ${knsName}` });
+        addRecentTransaction({ hash: data, description: `Mint ${hnsName}` });
       }
     }
   });
@@ -62,7 +62,7 @@ function MintDotOsName({
     const initCall = await generateNetworkingKeys({
       direct,
       our_address: address,
-      label: knsName,
+      label: hnsName,
       setNetworkingKey,
       setIpAddress,
       setWsPort,
@@ -72,7 +72,7 @@ function MintDotOsName({
     });
 
     // strip .os suffix
-    const name = knsName.replace(/\.os$/, '');
+    const name = hnsName.replace(/\.os$/, '');
 
     const data = encodeFunctionData({
       abi: tbaMintAbi,
@@ -98,7 +98,7 @@ function MintDotOsName({
       console.error('Failed to send transaction:', error)
       setHasMinted(false);
     }
-  }, [direct, address, sendTransaction, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal, knsName, hasMinted])
+  }, [direct, address, sendTransaction, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal, hnsName, hasMinted])
 
   useEffect(() => {
     if (address && !isPending && !isConfirming) {

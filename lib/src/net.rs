@@ -11,9 +11,9 @@ pub enum NetAction {
     /// with the NodeId given.
     ConnectionRequest(NodeId),
     /// can only receive from trusted source: requires net root cap
-    KnsUpdate(KnsUpdate),
+    HnsUpdate(HnsUpdate),
     /// can only receive from trusted source: requires net root cap
-    KnsBatchUpdate(Vec<KnsUpdate>),
+    HnsBatchUpdate(Vec<HnsUpdate>),
     /// get a list of peers we are connected to
     GetPeers,
     /// get the [`Identity`] struct for a single peer
@@ -54,11 +54,11 @@ pub enum NetResponse {
 }
 
 //
-// KNS parts of the networking protocol
+// HNS parts of the networking protocol
 //
 
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
-pub struct KnsUpdate {
+pub struct HnsUpdate {
     pub name: String,
     pub public_key: String,
     pub ips: Vec<String>,
@@ -66,7 +66,7 @@ pub struct KnsUpdate {
     pub routers: Vec<String>,
 }
 
-impl KnsUpdate {
+impl HnsUpdate {
     pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
         self.ports.get(protocol)
     }

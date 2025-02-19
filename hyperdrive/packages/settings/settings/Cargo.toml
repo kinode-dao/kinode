@@ -9,7 +9,7 @@ simulation-mode = []
 [dependencies]
 anyhow = "1.0"
 base64 = "0.22.0"
-hyperware_process_lib = "1.0.2"
+hyperware_process_lib = "1.0.3"
 rmp-serde = "1.2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

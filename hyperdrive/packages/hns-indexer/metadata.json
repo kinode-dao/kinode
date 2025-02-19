@@ -1,0 +1,18 @@
+{
+    "name": "HNS Indexer",
+    "description": "Hyperware PKI indexer",
+    "image": "",
+    "properties": {
+        "package_name": "hns-indexer",
+        "current_version": "1.0.0",
+        "publisher": "sys",
+        "mirrors": [],
+        "code_hashes": {
+            "1.0.0": ""
+        },
+        "wit_version": 1,
+        "dependencies": []
+    },
+    "external_url": "https://hyperware.ai",
+    "animation_url": ""
+}

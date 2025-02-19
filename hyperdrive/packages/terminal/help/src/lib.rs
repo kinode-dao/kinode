@@ -6,7 +6,7 @@ wit_bindgen::generate!({
 });
 
 const HELP_MESSAGES: [[&str; 2]; 11] = [
-    ["alias", "\n\x1b[1malias\x1b[0m <shorthand> <process-id>: create an alias for a script.\n    - Example: \x1b[1malias get-block get-block:kns-indexer:sys\x1b[0m\n    - note: all of these listed commands are just default aliases for terminal scripts."],
+    ["alias", "\n\x1b[1malias\x1b[0m <shorthand> <process-id>: create an alias for a script.\n    - Example: \x1b[1malias get-block get-block:hns-indexer:sys\x1b[0m\n    - note: all of these listed commands are just default aliases for terminal scripts."],
     ["cat", "\n\x1b[1mcat\x1b[0m <vfs-file-path>: print the contents of a file in the terminal.\n    - Example: \x1b[1mcat /terminal:sys/pkg/scripts.json\x1b[0m"],
     ["echo", "\n\x1b[1mecho\x1b[0m <text>: print text to the terminal.\n    - Example: \x1b[1mecho foo\x1b[0m"],
     ["hi", "\n\x1b[1mhi\x1b[0m <name> <string>: send a text message to another node's command line.\n    - Example: \x1b[1mhi mothu.kino hello world\x1b[0m"],

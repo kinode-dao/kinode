@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
 import { keccak256, toBytes } from 'viem';
-import { mechAbi, KIMAP, encodeIntoMintCall, encodeMulticalls, kimapAbi, MULTICALL } from "../abis";
+import { mechAbi, HYPERMAP, encodeIntoMintCall, encodeMulticalls, hypermapAbi, MULTICALL } from "../abis";
 import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
 import { PackageSelector } from "../components";
@@ -140,8 +140,8 @@ export default function PublishPage() {
         // Check if the package already exists and get its TBA
         console.log('packageName, publisherId: ', packageName, publisherId)
         let data = await publicClient.readContract({
-          abi: kimapAbi,
-          address: KIMAP,
+          abi: hypermapAbi,
+          address: HYPERMAP,
           functionName: 'get',
           args: [kinohash(`${packageName}.${publisherId}`)]
         });
@@ -153,8 +153,8 @@ export default function PublishPage() {
         // If the package doesn't exist, check for the publisher's TBA
         if (!currentTBA) {
           data = await publicClient.readContract({
-            abi: kimapAbi,
-            address: KIMAP,
+            abi: hypermapAbi,
+            address: HYPERMAP,
             functionName: 'get',
             args: [kinohash(publisherId)]
           });
@@ -177,10 +177,10 @@ export default function PublishPage() {
 
         writeContract({
           abi: mechAbi,
-          address: currentTBA || KIMAP,
+          address: currentTBA || HYPERMAP,
           functionName: 'execute',
           args: [
-            isUpdate ? MULTICALL : KIMAP,
+            isUpdate ? MULTICALL : HYPERMAP,
             BigInt(0),
             args,
             isUpdate ? 1 : 0
@@ -204,8 +204,8 @@ export default function PublishPage() {
         }
 
         const data = await publicClient.readContract({
-          abi: kimapAbi,
-          address: KIMAP,
+          abi: hypermapAbi,
+          address: HYPERMAP,
           functionName: 'get',
           args: [kinohash(`${packageName}.${publisherName}`)]
         });

@@ -9,7 +9,7 @@ use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use http::uri::Authority;
 use lib::types::core::{
-    check_process_id_kimap_safe, Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo,
+    check_process_id_hypermap_safe, Address, KernelCommand, KernelMessage, LazyLoadBlob, LoginInfo,
     Message, MessageReceiver, MessageSender, PrintSender, Printout, ProcessId, Request, Response,
     HTTP_SERVER_PROCESS_ID,
 };
@@ -1184,7 +1184,7 @@ async fn handle_app_message(
                     local_only,
                     cache,
                 } => {
-                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                    if check_process_id_hypermap_safe(&km.source.process).is_err() {
                         let source = km.source.clone();
                         send_action_response(
                             km.id,
@@ -1250,7 +1250,7 @@ async fn handle_app_message(
                     }
                 }
                 HttpServerAction::SecureBind { path, cache } => {
-                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                    if check_process_id_hypermap_safe(&km.source.process).is_err() {
                         let source = km.source.clone();
                         send_action_response(
                             km.id,
@@ -1330,7 +1330,7 @@ async fn handle_app_message(
                     authenticated,
                     extension,
                 } => {
-                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                    if check_process_id_hypermap_safe(&km.source.process).is_err() {
                         let source = km.source.clone();
                         send_action_response(
                             km.id,
@@ -1354,7 +1354,7 @@ async fn handle_app_message(
                     );
                 }
                 HttpServerAction::WebSocketSecureBind { path, extension } => {
-                    if check_process_id_kimap_safe(&km.source.process).is_err() {
+                    if check_process_id_hypermap_safe(&km.source.process).is_err() {
                         let source = km.source.clone();
                         send_action_response(
                             km.id,

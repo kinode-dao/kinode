@@ -1,0 +1,56 @@
+{
+    "get-block.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "eth:distro:sys"
+        ],
+        "grant_capabilities": [
+            "eth:distro:sys"
+        ],
+        "wit_version": 1
+    },
+    "reset.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "hns-indexer:hns-indexer:sys",
+            {
+                "process": "hns-indexer:hns-indexer:sys",
+                "params": {
+                    "root": true
+                }
+            }
+        ],
+        "grant_capabilities": [
+            "hns-indexer:hns-indexer:sys"
+        ],
+        "wit_version": 1
+    },
+    "node-info.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "hns-indexer:hns-indexer:sys"
+        ],
+        "grant_capabilities": [
+            "hns-indexer:hns-indexer:sys"
+        ],
+        "wit_version": 1
+    },
+    "state.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "hns-indexer:hns-indexer:sys"
+        ],
+        "grant_capabilities": [
+            "hns-indexer:hns-indexer:sys"
+        ],
+        "wit_version": 1
+    }
+}

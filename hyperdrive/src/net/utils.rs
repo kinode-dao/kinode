@@ -3,7 +3,7 @@ use crate::net::types::{
     RoutingRequest, TCP_PROTOCOL, WS_PROTOCOL,
 };
 use lib::types::core::{
-    Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
+    Identity, KernelMessage, HnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
     NodeId, NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
     WrappedSendError, NET_PROCESS_ID,
 };
@@ -252,7 +252,7 @@ pub async fn maintain_passthrough(
     active_passthroughs.remove(&(from, target));
 }
 
-pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI) {
+pub fn ingest_log(log: HnsUpdate, pki: &OnchainPKI) {
     pki.insert(
         log.name.clone(),
         Identity {
@@ -289,7 +289,7 @@ pub fn validate_routing_request(
 ) -> anyhow::Result<(Identity, Identity)> {
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
     let from_id = pki.get(&routing_request.source).ok_or(anyhow::anyhow!(
-        "unknown KNS name '{}'",
+        "unknown HNS name '{}'",
         routing_request.source
     ))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
@@ -303,7 +303,7 @@ pub fn validate_routing_request(
         )
         .map_err(|e| anyhow::anyhow!("their_networking_key.verify failed: {:?}", e))?;
     let target_id = pki.get(&routing_request.target).ok_or(anyhow::anyhow!(
-        "unknown KNS name '{}'",
+        "unknown HNS name '{}'",
         routing_request.target
     ))?;
     if routing_request.target == routing_request.source {

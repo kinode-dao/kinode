@@ -318,7 +318,7 @@ async fn build_subscription(
             &print_tx,
             &format!(
                 "eth: attempting to fulfill via {}",
-                node_provider.kns_update.name
+                node_provider.hns_update.name
             ),
         )
         .await;
@@ -351,14 +351,14 @@ async fn build_subscription(
                 )
                 .await;
                 response_channels.remove(&km_id);
-                return Ok(Err((node_provider.kns_update.name.clone(), remote_sub_id)));
+                return Ok(Err((node_provider.hns_update.name.clone(), remote_sub_id)));
             }
             EthResponse::Response { .. } => {
                 // the response to a SubscribeLogs request must be an 'ok'
                 set_node_unusable(
                     &providers,
                     &chain_id,
-                    &node_provider.kns_update.name,
+                    &node_provider.hns_update.name,
                     print_tx,
                 )
                 .await;
@@ -368,7 +368,7 @@ async fn build_subscription(
                     set_node_unusable(
                         &providers,
                         &chain_id,
-                        &node_provider.kns_update.name,
+                        &node_provider.hns_update.name,
                         print_tx,
                     )
                     .await;

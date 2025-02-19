@@ -1,5 +1,5 @@
 import { encodeFunctionData, encodePacked, stringToHex, bytesToHex } from "viem";
-import { kimapAbi } from "./";
+import { hypermapAbi } from "./";
 import sha3 from 'js-sha3';
 import { toUnicode } from 'idna-uts46-hx';
 
@@ -15,7 +15,7 @@ export function noteFunction(label: string, value: string) {
     }
 
     return encodeFunctionData({
-        abi: kimapAbi,
+        abi: hypermapAbi,
         functionName: 'note',
         args: [
             encodePacked(["bytes"], [stringToHex(label)]),

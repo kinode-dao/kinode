@@ -189,7 +189,7 @@ async fn handle_kernel_request(
                     .await;
                 return None;
             };
-            if let Err(e) = t::check_process_id_kimap_safe(&id) {
+            if let Err(e) = t::check_process_id_hypermap_safe(&id) {
                 t::Printout::new(0, KERNEL_PROCESS_ID.clone(), &format!("kernel: {e}"))
                     .send(send_to_terminal)
                     .await;
@@ -623,7 +623,7 @@ pub async fn kernel(
         Option<t::NetworkErrorSender>,
         bool,
     )>,
-    default_pki_entries: Vec<t::KnsUpdate>,
+    default_pki_entries: Vec<t::HnsUpdate>,
 ) -> anyhow::Result<()> {
     let mut config = Config::new();
     config.cache_config_load_default().unwrap();
@@ -798,7 +798,7 @@ pub async fn kernel(
         .message(t::Message::Request(t::Request {
             inherit: false,
             expects_response: None,
-            body: rmp_serde::to_vec(&t::NetAction::KnsBatchUpdate(default_pki_entries)).unwrap(),
+            body: rmp_serde::to_vec(&t::NetAction::HnsBatchUpdate(default_pki_entries)).unwrap(),
             metadata: None,
             capabilities: vec![],
         }))

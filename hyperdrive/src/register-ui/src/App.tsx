@@ -21,7 +21,7 @@ function App() {
   const [keyFileName, setKeyFileName] = useState<string>('');
   const [reset, setReset] = useState<boolean>(false);
   const [direct, setDirect] = useState<boolean>(false);
-  const [knsName, setKnsName] = useState<string>('');
+  const [hnsName, setHnsName] = useState<string>('');
   const [networkingKey, setNetworkingKey] = useState<string>('');
   const [ipAddress, setIpAddress] = useState<number>(0);
   const [ws_port, setWsPort] = useState<number>(0);
@@ -47,7 +47,7 @@ function App() {
           const info: UnencryptedIdentity = await infoResponse.json()
 
           if (initialVisit) {
-            setKnsName(info.name)
+            setHnsName(info.name)
             setRouters(info.allowed_routers)
             setNavigateToLogin(true)
             setInitialVisit(false)
@@ -84,7 +84,7 @@ function App() {
     keyFileName, setKeyFileName,
     reset, setReset,
     pw, setPw,
-    knsName, setKnsName,
+    hnsName, setHnsName,
     connectOpen, openConnect, closeConnect,
     networkingKey, setNetworkingKey,
     ipAddress, setIpAddress,
@@ -107,19 +107,19 @@ function App() {
               } />
               <Route path="/commit-os-name" element={
                 <>
-                  <ProgressBar knsName={knsName} />
+                  <ProgressBar hnsName={hnsName} />
                   <CommitDotOsName {...props} />
                 </>
               } />
               <Route path="/mint-os-name" element={
                 <>
-                  <ProgressBar knsName={knsName} />
+                  <ProgressBar hnsName={hnsName} />
                   <MintDotOsName {...props} />
                 </>
               } />
               <Route path="/set-password" element={
                 <>
-                  <ProgressBar knsName={knsName} />
+                  <ProgressBar hnsName={hnsName} />
                   <SetPassword {...props} />
                 </>
               } />
@@ -128,7 +128,7 @@ function App() {
               <Route path="/login" element={<Login {...props} />} />
               <Route path="/custom-register" element={
                 <>
-                  <ProgressBar knsName={knsName} />
+                  <ProgressBar hnsName={hnsName} />
                   <MintCustom {...props} />
                 </>
               } />

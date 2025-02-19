@@ -1512,9 +1512,9 @@ dependencies = [
 
 [[package]]
 name = "hyperware_process_lib"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c80405897b911c54f87418e96185d847aaa6ba68ccd79271d1422f9b87932b7d"
+checksum = "003b605a36ca638d3c8501e19ab33237abf6a7cf0e1547cfc6db2520dd58ef02"
 dependencies = [
  "alloy",
  "alloy-primitives",

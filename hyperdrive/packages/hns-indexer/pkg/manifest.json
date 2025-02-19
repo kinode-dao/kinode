@@ -1,0 +1,22 @@
+[
+    {
+        "process_name": "hns-indexer",
+        "process_wasm_path": "/hns-indexer.wasm",
+        "on_exit": "Restart",
+        "request_networking": false,
+        "request_capabilities": [
+            "eth:distro:sys",
+            "http-server:distro:sys",
+            "net:distro:sys",
+            "timer:distro:sys",
+            "kv:distro:sys"
+        ],
+        "grant_capabilities": [
+            "eth:distro:sys",
+            "http-server:distro:sys",
+            "timer:distro:sys",
+            "kv:distro:sys"
+        ],
+        "public": false
+    }
+]

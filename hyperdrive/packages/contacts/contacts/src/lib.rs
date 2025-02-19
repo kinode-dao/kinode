@@ -1,6 +1,6 @@
 use crate::hyperware::process::contacts;
 use hyperware_process_lib::{
-    await_message, call_init, eth, get_blob, get_typed_state, homepage, http, kimap, set_state,
+    await_message, call_init, eth, get_blob, get_typed_state, homepage, http, hypermap, set_state,
     Address, Capability, LazyLoadBlob, Message, NodeId, Response,
 };
 use serde::{Deserialize, Serialize};
@@ -17,16 +17,16 @@ wit_bindgen::generate!({
 const ICON: &str = include_str!("icon");
 
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID;
+const CHAIN_ID: u64 = hypermap::HYPERMAP_CHAIN_ID;
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
 const CHAIN_TIMEOUT: u64 = 60; // 60s
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // base
+const HYPERMAP_ADDRESS: &'static str = hypermap::HYPERMAP_ADDRESS; // base
 #[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
+const HYPERMAP_ADDRESS: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Contact(HashMap<String, serde_json::Value>);
@@ -143,9 +143,9 @@ fn initialize(our: Address) {
     let mut state: VersionedState = get_typed_state(|bytes| serde_json::from_slice(bytes))
         .unwrap_or_else(|| VersionedState::new(our));
 
-    let kimap = kimap::Kimap::new(
+    let hypermap = hypermap::Hypermap::new(
         eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT),
-        eth::Address::from_str(KIMAP_ADDRESS).unwrap(),
+        eth::Address::from_str(HYPERMAP_ADDRESS).unwrap(),
     );
 
     let mut http_server = http::server::HttpServer::new(5);
@@ -161,12 +161,12 @@ fn initialize(our: Address) {
     http_server.secure_bind_http_path("/ask").unwrap();
     http_server.secure_bind_ws_path("/").unwrap();
 
-    main_loop(&mut state, &kimap, &mut http_server);
+    main_loop(&mut state, &hypermap, &mut http_server);
 }
 
 fn main_loop(
     state: &mut VersionedState,
-    kimap: &kimap::Kimap,
+    hypermap: &hypermap::Hypermap,
     http_server: &mut http::server::HttpServer,
 ) {
     loop {
@@ -186,7 +186,7 @@ fn main_loop(
                 if source.node() != state.our().node {
                     continue;
                 }
-                handle_request(&source, &body, capabilities, state, kimap, http_server);
+                handle_request(&source, &body, capabilities, state, hypermap, http_server);
             }
             _ => continue, // ignore responses
         }
@@ -198,7 +198,7 @@ fn handle_request(
     body: &[u8],
     capabilities: Vec<Capability>,
     state: &mut VersionedState,
-    kimap: &kimap::Kimap,
+    hypermap: &hypermap::Hypermap,
     http_server: &mut http::server::HttpServer,
 ) {
     // source node is ALWAYS ourselves since networking is disabled
@@ -208,14 +208,14 @@ fn handle_request(
 
         http_server.handle_request(
             server_request,
-            |req| handle_http_request(state, kimap, &req),
+            |req| handle_http_request(state, hypermap, &req),
             |_channel_id, _message_type, _blob| {
                 // we don't expect websocket messages
             },
         );
     } else {
         // if request is not from frontend, check that it has the required capabilities
-        let (response, blob) = handle_contacts_request(state, kimap, body, Some(capabilities));
+        let (response, blob) = handle_contacts_request(state, hypermap, body, Some(capabilities));
         let mut response = Response::new().body(response);
         if let Some(blob) = blob {
             response = response.blob(blob);
@@ -228,7 +228,7 @@ fn handle_request(
 /// Handle HTTP requests from our own frontend.
 fn handle_http_request(
     state: &mut VersionedState,
-    kimap: &kimap::Kimap,
+    hypermap: &hypermap::Hypermap,
     http_request: &http::server::IncomingHttpRequest,
 ) -> (http::server::HttpResponse, Option<LazyLoadBlob>) {
     match http_request.method().unwrap().as_str() {
@@ -242,7 +242,7 @@ fn handle_http_request(
         ),
         "POST" => {
             let blob = get_blob().unwrap();
-            let (response, blob) = handle_contacts_request(state, kimap, blob.bytes(), None);
+            let (response, blob) = handle_contacts_request(state, hypermap, blob.bytes(), None);
             if let contacts::Response::Err(e) = response {
                 return (
                     http::server::HttpResponse::new(http::StatusCode::BAD_REQUEST)
@@ -275,7 +275,7 @@ fn handle_http_request(
 
 fn handle_contacts_request(
     state: &mut VersionedState,
-    kimap: &kimap::Kimap,
+    hypermap: &hypermap::Hypermap,
     request_bytes: &[u8],
     capabilities: Option<Vec<Capability>>,
 ) -> (contacts::Response, Option<LazyLoadBlob>) {
@@ -339,14 +339,14 @@ fn handle_contacts_request(
             )),
         ),
         contacts::Request::AddContact(node) => {
-            if let Some((response, blob)) = invalid_node(kimap, &node) {
+            if let Some((response, blob)) = invalid_node(hypermap, &node) {
                 return (response, blob);
             }
             state.add_contact(node);
             (contacts::Response::AddContact, None)
         }
         contacts::Request::AddField((node, field, value)) => {
-            if let Some((response, blob)) = invalid_node(kimap, &node) {
+            if let Some((response, blob)) = invalid_node(hypermap, &node) {
                 return (response, blob);
             }
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&value) else {
@@ -367,10 +367,10 @@ fn handle_contacts_request(
 }
 
 fn invalid_node(
-    kimap: &kimap::Kimap,
+    hypermap: &hypermap::Hypermap,
     node: &str,
 ) -> Option<(contacts::Response, Option<LazyLoadBlob>)> {
-    if kimap
+    if hypermap
         .get(&node)
         .map(|(tba, _, _)| tba != eth::Address::ZERO)
         .unwrap_or(false)

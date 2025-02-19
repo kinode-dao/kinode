@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAccount, useSendTransaction } from 'wagmi';
 import { useConnectModal, useAddRecentTransaction } from '@rainbow-me/rainbowkit';
 import { noteFunction } from '../abis/helpers';
-import { KIMAP, mechAbi } from '../abis';
+import { HYPERMAP, mechAbi } from '../abis';
 import { encodeFunctionData } from 'viem';
 
 interface EditNoteProps {
@@ -45,7 +45,7 @@ const EditNote: React.FC<EditNoteProps> = ({ label: initialLabel, tba, field_pla
             abi: mechAbi,
             functionName: 'execute',
             args: [
-                KIMAP,
+                HYPERMAP,
                 BigInt(0),
                 noteFunction(label, value),
                 0,

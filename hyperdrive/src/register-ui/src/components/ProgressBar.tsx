@@ -8,10 +8,10 @@ const steps = [
 ];
 
 interface ProgressBarProps {
-  knsName: string;
+  hnsName: string;
 }
 
-const ProgressBar = ({ knsName }: ProgressBarProps) => {
+const ProgressBar = ({ hnsName }: ProgressBarProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -21,7 +21,7 @@ const ProgressBar = ({ knsName }: ProgressBarProps) => {
     // Home is always accessible
     if (index === 0) return true;
     
-    if (knsName && index <= 2) return true;
+    if (hnsName && index <= 2) return true;
     
     // Otherwise only allow going back
     return index <= currentStepIndex;
@@ -56,9 +56,9 @@ const ProgressBar = ({ knsName }: ProgressBarProps) => {
           );
         })}
       </div>
-      {knsName && (
+      {hnsName && (
         <div className="selected-name">
-          Selected name: <span>{knsName}</span>
+          Selected name: <span>{hnsName}</span>
         </div>
       )}
     </div>

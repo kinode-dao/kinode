@@ -203,7 +203,7 @@ function App() {
             <button
               onClick={handleReset}
             >
-              Reset KNS State
+              Reset HNS State
             </button>
           </div>
         </article>

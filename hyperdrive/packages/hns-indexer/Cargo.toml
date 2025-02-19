@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = [
+    "get-block",
+    "hns-indexer",
+    "reset",
+    "node-info",
+    "state",
+ ]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true

@@ -159,7 +159,7 @@ pub enum EthConfigAction {
 pub enum EthConfigResponse {
     Ok,
     /// Response from a GetProviders request.
-    /// Note the [`crate::core::KnsUpdate`] will only have the correct `name` field.
+    /// Note the [`crate::core::HnsUpdate`] will only have the correct `name` field.
     /// The rest of the Update is not saved in this module.
     Providers(SavedConfigs),
     /// Response from a GetAccessSettings request.
@@ -222,7 +222,7 @@ pub struct ProviderConfig {
 #[derive(Clone, Debug, Serialize, Hash, Eq, PartialEq)]
 pub enum NodeOrRpcUrl {
     Node {
-        kns_update: crate::core::KnsUpdate,
+        hns_update: crate::core::HnsUpdate,
         use_as_provider: bool, // false for just-routers inside saved config
     },
     RpcUrl {
@@ -234,7 +234,7 @@ pub enum NodeOrRpcUrl {
 impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
     fn eq(&self, other: &str) -> bool {
         match self {
-            NodeOrRpcUrl::Node { kns_update, .. } => kns_update.name == other,
+            NodeOrRpcUrl::Node { hns_update, .. } => hns_update.name == other,
             NodeOrRpcUrl::RpcUrl { url, .. } => url == other,
         }
     }
@@ -258,7 +258,7 @@ impl<'de> Deserialize<'de> for NodeOrRpcUrl {
         #[derive(Deserialize)]
         enum Helper {
             Node {
-                kns_update: crate::core::KnsUpdate,
+                hns_update: crate::core::HnsUpdate,
                 use_as_provider: bool,
             },
             RpcUrl(RpcUrlHelper),
@@ -268,10 +268,10 @@ impl<'de> Deserialize<'de> for NodeOrRpcUrl {
 
         Ok(match helper {
             Helper::Node {
-                kns_update,
+                hns_update,
                 use_as_provider,
             } => NodeOrRpcUrl::Node {
-                kns_update,
+                hns_update,
                 use_as_provider,
             },
             Helper::RpcUrl(url_helper) => match url_helper {

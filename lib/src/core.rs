@@ -29,45 +29,45 @@ lazy_static::lazy_static! {
 //
 
 pub type Context = Vec<u8>;
-pub type NodeId = String; // KNS domain name
+pub type NodeId = String; // HNS domain name
 
-/// Determine if the given `input` string is Kimap-safe or not.
-/// A Kimap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
-/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// Determine if the given `input` string is Hypermap-safe or not.
+/// A Hypermap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
+/// Because Hypermap entries are delimited by `.`s, `.`s are also somewhat restricted.
 /// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
-/// `is_kimap_safe()` allows `.`s.
-/// Use `is_kimap_safe_no_dots()` to disallow `.`s.
-pub fn is_kimap_safe(input: &str) -> bool {
+/// `is_hypermap_safe()` allows `.`s.
+/// Use `is_hypermap_safe_no_dots()` to disallow `.`s.
+pub fn is_hypermap_safe(input: &str) -> bool {
     let expression = r"^[a-z0-9\-.]+$";
     let re = regex::Regex::new(expression).unwrap();
     re.is_match(input)
 }
 
-/// Determine if the given `input` string is Kimap-safe or not.
-/// A Kimap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
-/// Because Kimap entries are delimited by `.`s, `.`s are also somewhat restricted.
+/// Determine if the given `input` string is Hypermap-safe or not.
+/// A Hypermap-safe string contains only lowercase alphanumeric characters, `-`, and `.`.
+/// Because Hypermap entries are delimited by `.`s, `.`s are also somewhat restricted.
 /// E.g., in `ProcessId`s, neither process name nor package name can contain `.`s.
-/// `is_kimap_safe_no_dots()` disallows `.`s.
-/// Use `is_kimap_safe()` to allow `.`s.
-pub fn is_kimap_safe_no_dots(input: &str) -> bool {
+/// `is_hypermap_safe_no_dots()` disallows `.`s.
+/// Use `is_hypermap_safe()` to allow `.`s.
+pub fn is_hypermap_safe_no_dots(input: &str) -> bool {
     let expression = r"^[a-z0-9\-]+$";
     let re = regex::Regex::new(expression).unwrap();
     re.is_match(input)
 }
 
-pub fn check_process_id_kimap_safe(p: &ProcessId) -> Result<(), AddressParseError> {
-    if !is_kimap_safe_no_dots(&p.process_name) {
-        return Err(AddressParseError::ProcessNameNotKimapSafe(
+pub fn check_process_id_hypermap_safe(p: &ProcessId) -> Result<(), AddressParseError> {
+    if !is_hypermap_safe_no_dots(&p.process_name) {
+        return Err(AddressParseError::ProcessNameNotHypermapSafe(
             p.process_name.clone(),
         ));
     }
-    if !is_kimap_safe_no_dots(&p.package_name) {
-        return Err(AddressParseError::PackageNameNotKimapSafe(
+    if !is_hypermap_safe_no_dots(&p.package_name) {
+        return Err(AddressParseError::PackageNameNotHypermapSafe(
             p.package_name.clone(),
         ));
     }
-    if !is_kimap_safe(&p.publisher_node) {
-        return Err(AddressParseError::PublisherNodeNotKimapSafe(
+    if !is_hypermap_safe(&p.publisher_node) {
+        return Err(AddressParseError::PublisherNodeNotHypermapSafe(
             p.publisher_node.clone(),
         ));
     }
@@ -145,7 +145,7 @@ impl ProcessId {
         }
     }
     pub fn check(self) -> Result<Self, AddressParseError> {
-        check_process_id_kimap_safe(&self)?;
+        check_process_id_hypermap_safe(&self)?;
         Ok(self)
     }
 }
@@ -241,13 +241,13 @@ impl PackageId {
         &self.publisher_node
     }
     pub fn check(self) -> Result<Self, AddressParseError> {
-        if !is_kimap_safe_no_dots(&self.package_name) {
-            return Err(AddressParseError::ProcessNameNotKimapSafe(
+        if !is_hypermap_safe_no_dots(&self.package_name) {
+            return Err(AddressParseError::ProcessNameNotHypermapSafe(
                 self.package_name.clone(),
             ));
         }
-        if !is_kimap_safe(&self.publisher_node) {
-            return Err(AddressParseError::PublisherNodeNotKimapSafe(
+        if !is_hypermap_safe(&self.publisher_node) {
+            return Err(AddressParseError::PublisherNodeNotHypermapSafe(
                 self.publisher_node.clone(),
             ));
         }
@@ -291,7 +291,7 @@ impl std::fmt::Display for PackageId {
 }
 
 /// An address is a node ID and a process ID, to uniquely globally identify a process.
-/// The [`NodeId`] is the KNS name of the node that the process is running on.
+/// The [`NodeId`] is the HNS name of the node that the process is running on.
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Address {
     pub node: NodeId,
@@ -325,10 +325,10 @@ impl Address {
         }
     }
     pub fn check(self) -> Result<Self, AddressParseError> {
-        if !is_kimap_safe(&self.node) {
-            return Err(AddressParseError::NodeNotKimapSafe(self.node.clone()));
+        if !is_hypermap_safe(&self.node) {
+            return Err(AddressParseError::NodeNotHypermapSafe(self.node.clone()));
         }
-        check_process_id_kimap_safe(&self.process)?;
+        check_process_id_hypermap_safe(&self.process)?;
         Ok(self)
     }
 }
@@ -435,13 +435,13 @@ pub enum AddressParseError {
     #[error("Missing field in ProcessId string")]
     MissingField,
     #[error("Process name ({0}) can only contain a-z, 0-9, `-`")]
-    ProcessNameNotKimapSafe(String),
+    ProcessNameNotHypermapSafe(String),
     #[error("Package name ({0}) can only contain a-z, 0-9, `-`")]
-    PackageNameNotKimapSafe(String),
+    PackageNameNotHypermapSafe(String),
     #[error("Node ({0}) can only contain a-z, 0-9, `-`, `.`")]
-    NodeNotKimapSafe(String),
+    NodeNotHypermapSafe(String),
     #[error("Publisher node ({0}) can only contain a-z, 0-9, `-`, `.`")]
-    PublisherNodeNotKimapSafe(String),
+    PublisherNodeNotHypermapSafe(String),
     #[error("Other: {0}")]
     Other(String),
 }

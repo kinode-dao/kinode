@@ -115,7 +115,7 @@
   /* Add some top padding to account for the fixed header */
 }
 
-.enter-kns-name {
+.enter-hns-name {
   width: 100%;
   margin-bottom: 1rem;
 }
@@ -126,7 +126,7 @@
   width: 100%;
 }
 
-.kns-input {
+.hns-input {
   flex-grow: 1;
   padding: 0.5rem;
   font-size: 1.2em;
@@ -134,7 +134,7 @@
   border-radius: 4px 0 0 4px;
 }
 
-.kns-suffix {
+.hns-suffix {
   padding: 0.5rem;
   background-color: var(--blue);
   border: 1px solid var(--tasteful-dark);

@@ -3,21 +3,21 @@ import Loader from "../components/Loader";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
 import { useSignTypedData, useAccount, useChainId } from 'wagmi'
-import { KIMAP } from "../abis";
+import { HYPERMAP } from "../abis";
 import { redirectToHomepage } from "../utils/redirect-to-homepage";
 
 type SetPasswordProps = {
   direct: boolean;
   pw: string;
   reset: boolean;
-  knsName: string;
+  hnsName: string;
   setPw: React.Dispatch<React.SetStateAction<string>>;
   nodeChainId: string;
   closeConnect: () => void;
 };
 
 function SetPassword({
-  knsName,
+  hnsName,
   direct,
   pw,
   reset,
@@ -50,17 +50,17 @@ function SetPassword({
 
       setTimeout(async () => {
         setLoading(true);
-        argon2.hash({ pass: pw, salt: knsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
+        argon2.hash({ pass: pw, salt: hnsName, hashLen: 32, time: 2, mem: 19456, type: argon2.ArgonType.Argon2id }).then(async h => {
           const hashed_password_hex = `0x${h.hashHex}` as `0x${string}`;
           let owner = address;
           let timestamp = Date.now();
 
           const signature = await signTypedDataAsync({
             domain: {
-              name: "Kimap",
+              name: "Hypermap",
               version: "1",
               chainId: chainId,
-              verifyingContract: KIMAP,
+              verifyingContract: HYPERMAP,
             },
             types: {
               Boot: [
@@ -74,7 +74,7 @@ function SetPassword({
             },
             primaryType: 'Boot',
             message: {
-              username: knsName,
+              username: hnsName,
               password_hash: hashed_password_hex,
               timestamp: BigInt(timestamp),
               direct,
@@ -91,7 +91,7 @@ function SetPassword({
               body: JSON.stringify({
                 password_hash: hashed_password_hex,
                 reset,
-                username: knsName,
+                username: hnsName,
                 direct,
                 owner,
                 timestamp,
@@ -101,7 +101,7 @@ function SetPassword({
             });
             const base64String = await result.json();
 
-            downloadKeyfile(knsName, base64String);
+            downloadKeyfile(hnsName, base64String);
             redirectToHomepage();
 
           } catch {
@@ -114,7 +114,7 @@ function SetPassword({
         });
       }, 500);
     },
-    [direct, pw, pw2, reset, knsName]
+    [direct, pw, pw2, reset, hnsName]
   );
 
   return (
@@ -125,7 +125,7 @@ function SetPassword({
         <form className="form" onSubmit={handleSubmit}>
           <div className="form-group">
             <Tooltip text="This password will be used to log in when you restart your node or switch browsers.">
-              <label className="form-label" htmlFor="password">Set password for {knsName}</label>
+              <label className="form-label" htmlFor="password">Set password for {hnsName}</label>
             </Tooltip>
             <input
               type="password"

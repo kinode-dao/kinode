@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toAscii } from "idna-uts46-hx";
-import EnterKnsName from "../components/EnterKnsName";
+import EnterHnsName from "../components/EnterHnsName";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
 
@@ -18,7 +18,7 @@ interface RegisterOsNameProps extends PageProps { }
 function CommitDotOsName({
     direct,
     setDirect,
-    setKnsName,
+    setHnsName,
     setNetworkingKey,
     setIpAddress,
     setWsPort,
@@ -92,11 +92,11 @@ function CommitDotOsName({
             console.log("waiting 16 seconds to make commit valid...")
             setTimeout(() => {
                 setIsConfirmed(true);
-                setKnsName(`${name}.os`);
+                setHnsName(`${name}.os`);
                 navigate("/mint-os-name");
             }, 16000)
         }
-    }, [txConfirmed, address, name, setKnsName, navigate]);
+    }, [txConfirmed, address, name, setHnsName, navigate]);
 
     return (
         <div className="container fade-in">
@@ -117,7 +117,7 @@ function CommitDotOsName({
                                         Choose a name for your node
                                     </Tooltip>
                                 </h3>
-                                <EnterKnsName {...enterOsNameProps} />
+                                <EnterHnsName {...enterOsNameProps} />
                                 <details>
                                     <summary>Advanced Options</summary>
                                     <DirectCheckbox {...{ direct, setDirect }} />

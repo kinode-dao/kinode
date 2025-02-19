@@ -2,18 +2,18 @@ import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 
 type OsHomeProps = {
-    knsName: string
+    hnsName: string
     nodeChainId: string
 }
 
-function HyperdriveHome({ knsName }: OsHomeProps) {
+function HyperdriveHome({ hnsName }: OsHomeProps) {
     const navigate = useNavigate()
     const registerRedir = () => navigate('/commit-os-name')
     const resetRedir = () => navigate('/reset')
     const importKeyfileRedir = () => navigate('/import-keyfile')
     const loginRedir = () => navigate('/login')
     const customRegisterRedir = () => navigate('/custom-register')
-    const previouslyBooted = Boolean(knsName)
+    const previouslyBooted = Boolean(hnsName)
 
     useEffect(() => {
         document.title = "Welcome | Hyperdrive"
@@ -59,4 +59,4 @@ function HyperdriveHome({ knsName }: OsHomeProps) {
     )
 }
 
-export default KinodeHome
+export default HyperdriveHome
